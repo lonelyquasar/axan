@@ -190,7 +190,3 @@ An entry with no icon of its own inherits one: node override → the profile's i
 ## Logging
 
 Structured, file-only logs (RFC 5424-inspired: timestamp, level, component, a structured-data block of key/values, message). Linux writes `~/.cache/axan/axan.log`; Windows writes `%LOCALAPPDATA%\Packages\sh.axan.Axan_…\LocalState\logs\axan.log`. Nothing goes to stdout, and a logging failure is never allowed to take down the terminal.
-
-## Status
-
-Pre-1.0, single-user dogfood. Schemas, the IPC surface, and on-disk formats may change without migration shims — migration code arrives once there are real users with real entries to migrate. Issues and patches welcome.
