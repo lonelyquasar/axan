@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=@gt_dns_name@
+Exec=@libexecdir@/@gt_name@-server

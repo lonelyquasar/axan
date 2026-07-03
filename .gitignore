@@ -1,0 +1,38 @@
+# Root-level ignores for the axan monorepo.
+# linux/ carries its own .gitignore (meson/GTK build artifacts); the vendored
+# windows/ tree carries Windows Terminal's own .gitignore + .gitattributes.
+# Keep this file for cross-cutting OS cruft and the future core/ build only.
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor scratch
+*~
+*.swp
+
+# Claude Code runtime artifacts (the lock is a transient per-session file,
+# not config — it should never have been tracked)
+/.claude/scheduled_tasks.lock
+
+# Future core/ build output (placeholder until the shared core lands)
+/core/build/
+
+# Build tooling logs (the .ps1 wrappers are tracked; their logs are artifacts)
+/.build-*.log
+/.build-*.out
+/.deploy-*.log
+/.deploy-*.out
+
+# Dev-loop window screenshots from .capture-axan.ps1 (the .ps1 is tracked; its
+# captures are transient verification artifacts)
+/.axan-*.png
+
+# Release packaging staging area (signed .msix + dependency bundle assembled by
+# the release build; published as GitHub Release assets, never committed)
+/.release/
+
+# Restored NuGet packages for the vendored windows/ tree — restorable from
+# NuGet.config, not source. (windows/.gitignore covers bin/ and obj/.)
+/windows/packages/

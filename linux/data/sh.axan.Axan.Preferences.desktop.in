@@ -1,0 +1,14 @@
+[Desktop Entry]
+Categories=GNOME;GTK;System;TerminalEmulator;
+Comment=Configure the command line
+DBusActivatable=false
+Exec=axan --preferences
+Icon=sh.axan.Axan.Preferences
+Keywords=shell;prompt;command;commandline;cmd;
+Name=Axan Preferences
+NoDisplay=true
+SingleMainWindow=true
+StartupNotify=true
+StartupWMClass=Axan-preferences
+TryExec=axan
+Type=Application

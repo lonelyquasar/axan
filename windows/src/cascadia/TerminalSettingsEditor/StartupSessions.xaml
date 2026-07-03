@@ -1,0 +1,178 @@
+<!--
+    Copyright (c) Lonely Quasar. All rights reserved. Licensed under
+    the MIT License. See LICENSE in the project root for license information.
+
+    axan D19 — the global "Startup sessions" page: a row list over the global
+    GlobalAppSettings.StartupSessions tree. Each row picks a profile (which shell) and
+    edits its directory/command/name/icon; indent/outdent nest, duplicate clones, import
+    loads a portable .toml. Replaces the per-profile Startup page.
+-->
+<Page x:Class="Microsoft.Terminal.Settings.Editor.StartupSessions"
+      x:Name="RootPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:local="using:Microsoft.Terminal.Settings.Editor"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:model="using:Microsoft.Terminal.Settings.Model"
+      xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
+      mc:Ignorable="d">
+
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="CommonResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <StackPanel Style="{StaticResource SettingsStackStyle}">
+
+        <TextBlock Margin="0,0,0,4"
+                   Style="{StaticResource TextBlockSubHeaderStyle}"
+                   Text="Startup sessions" />
+        <TextBlock Margin="0,0,0,12"
+                   Foreground="{ThemeResource SubgroupHeaderBrush}"
+                   Style="{StaticResource CaptionTextBlockStyle}"
+                   TextWrapping="Wrap"
+                   Text="The shells axan opens at launch. Each row spawns a profile (the shell) in an optional directory, optionally running a command; indent a row to nest it under the one above. Honored on a plain launch — command-line shells take precedence." />
+
+        <ItemsControl ItemsSource="{x:Bind ViewModel.Entries, Mode=OneWay}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Spacing="4" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="local:LaunchEntryViewModel">
+                    <StackPanel Margin="{x:Bind IndentMargin, Mode=OneWay}"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                TabFocusNavigation="Local">
+                        <!--
+                            axan #429: the per-row buttons are icon-only and Narrator doesn't
+                            read ToolTips as names, so each carries an AutomationProperties.Name.
+                        -->
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Outdent entry"
+                                Click="OutdentEntry_Click"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Outdent (move out one level)">
+                            <FontIcon FontSize="12" Glyph="&#xE76B;" />
+                        </Button>
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Indent entry"
+                                Click="IndentEntry_Click"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Indent (nest under the row above)">
+                            <FontIcon FontSize="12" Glyph="&#xE76C;" />
+                        </Button>
+                        <!--
+                            ItemsSource is set in code-behind (ProfileCombo_Loaded): a classic
+                            {Binding ElementName=RootPage} can't resolve property paths on a
+                            C++/WinRT page (no ICustomPropertyProvider — it fails silently and
+                            the combo stays empty), and x:Bind in this template only reaches the
+                            row's LaunchEntryViewModel. DisplayMemberPath has the same disease
+                            (it reflects on Model.Profile), hence the explicit item template.
+                        -->
+                        <ComboBox Width="150"
+                                  AutomationProperties.Name="Profile"
+                                  Loaded="ProfileCombo_Loaded"
+                                  SelectionChanged="ProfileCombo_SelectionChanged"
+                                  Tag="{x:Bind}"
+                                  ToolTipService.ToolTip="Which shell to spawn (a profile)">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:Profile">
+                                    <TextBlock Text="{x:Bind Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <!--
+                            axan #438: the icon is picked, not typed. The button shows the live
+                            preview; its flyout (content built in code-behind on Opening — same
+                            classic-Binding limitation as the profile combo above) offers the
+                            builtin-glyph vocabulary, an image-file browse, and a free-text row
+                            for emoji / tokens.
+                        -->
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Choose icon"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Icon: pick a builtin glyph, browse for an image, or type an emoji">
+                            <ContentControl Width="20"
+                                            Height="20"
+                                            VerticalAlignment="Center"
+                                            Content="{x:Bind IconPreview, Mode=OneWay}"
+                                            IsTabStop="False" />
+                            <Button.Flyout>
+                                <Flyout Opening="IconFlyout_Opening" />
+                            </Button.Flyout>
+                        </Button>
+                        <TextBox Width="130"
+                                 PlaceholderText="Name"
+                                 Text="{x:Bind Name, Mode=TwoWay}"
+                                 ToolTipService.ToolTip="Sidebar label template (optional)" />
+                        <TextBox Width="170"
+                                 PlaceholderText="Directory"
+                                 Text="{x:Bind Directory, Mode=TwoWay}"
+                                 ToolTipService.ToolTip="Working directory; ~ = home (optional)" />
+                        <TextBox Width="170"
+                                 PlaceholderText="Command"
+                                 Text="{x:Bind Command, Mode=TwoWay}"
+                                 ToolTipService.ToolTip="Command to run; empty = the profile's shell" />
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Duplicate entry"
+                                Click="DuplicateEntry_Click"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Duplicate this session">
+                            <FontIcon FontSize="12" Glyph="&#xE8C8;" />
+                        </Button>
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Delete entry"
+                                Click="DeleteEntry_Click"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Remove this session">
+                            <FontIcon FontSize="12" Glyph="&#xE74D;" />
+                        </Button>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel Margin="0,8,0,0"
+                    Orientation="Horizontal"
+                    Spacing="8">
+            <Button x:Name="AddEntryButton"
+                    Click="AddEntry_Click">
+                <StackPanel Orientation="Horizontal">
+                    <FontIcon FontSize="14" Glyph="&#xE710;" />
+                    <TextBlock Margin="8,0,0,0" Text="Add session" />
+                </StackPanel>
+            </Button>
+            <Button x:Name="ImportButton"
+                    Click="Import_Click"
+                    ToolTipService.ToolTip="Load startup sessions from a portable axan startup-sessions .toml, replacing the list above.">
+                <StackPanel Orientation="Horizontal">
+                    <FontIcon FontSize="14" Glyph="&#xE8B5;" />
+                    <TextBlock Margin="8,0,0,0" Text="Import from TOML…" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
+
+        <!--  axan #435: a failed TOML import was previously silent end to end. Opened by
+              Import_Click when ImportFromToml returns false; the detailed reason is in
+              <LocalState>\logs\axan.log.  -->
+        <muxc:InfoBar x:Name="ImportFailureBar"
+                      Title="Import failed"
+                      Margin="0,8,0,0"
+                      IsClosable="True"
+                      IsOpen="False"
+                      Message="Couldn't load startup sessions from that file; the list above was left unchanged. See logs\axan.log in the app's LocalState folder for the reason."
+                      Severity="Error" />
+
+        <TextBlock Margin="0,10,0,0"
+                   Foreground="{ThemeResource SubgroupHeaderBrush}"
+                   Style="{StaticResource CaptionTextBlockStyle}"
+                   TextWrapping="Wrap"
+                   Text="A portable .toml mirror is written automatically when you save — find startup-sessions.toml (this list) and per-profile mirrors in the app's LocalState 'profiles' folder. Import startup-sessions.toml on another machine to carry these sessions across." />
+    </StackPanel>
+</Page>

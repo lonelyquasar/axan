@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Introspection 0.1//EN"
+                      "http://www.freedesktop.org/software/dbus/introspection.dtd">
+<!--
+  Copyright © 2011 Christian Persch
+
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3, or (at your option)
+  any later version.
+
+  This program is distributed in the hope conf it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<node>
+  <interface name="sh.axan.Axan.Factory0">
+    <annotation name="org.gtk.GDBus.C.Name" value="Factory" />
+    <method name="CreateInstance">
+      <arg type="a{sv}" name="options" direction="in" />
+      <arg type="o" name="receiver" direction="out" />
+    </method>
+    <!-- Capture the live state of the most-recently-active axan window's
+         sidebar tree as default-launch-entries tuples. Used by the
+         Preferences > Startup tab to populate a profile from the current
+         window. The returned array follows the schema:
+         a(ssssssss) of (id, parent_id, name, directory, command, icon,
+         color, color_target) where `id` and `parent_id` are fresh UUIDs
+         reflecting the captured hierarchy, `name` is the display-name
+         template if the screen has one, `directory` is the live cwd,
+         `command` is always empty (the wrapper-shell exec means we can't
+         reliably recover the original argv), and `icon`, `color`, and
+         `color_target` are always empty (per-node appearance is profile-
+         declared metadata, not recovered from live row state). Pre-order
+         ordering preserves the forward-reference invariant. -->
+    <method name="CaptureWindowState">
+      <arg type="a(ssssssss)" name="entries" direction="out" />
+    </method>
+  </interface>
+
+  <interface name="sh.axan.Axan.Terminal0">
+    <annotation name="org.gtk.GDBus.C.Name" value="Receiver" />
+    <method name="Exec">
+      <annotation name="org.gtk.GDBus.C.UnixFD" value="true" />
+      <arg type="a{sv}" name="options" direction="in" />
+      <arg type="aay" name="arguments" direction="in">
+        <annotation name="org.gtk.GDBus.C.ForceGVariant" value="true" />
+      </arg>
+    </method>
+    
+    <signal name="ChildExited">
+      <arg type="i" name="exit_code" direction="in" />
+    </signal>
+  </interface>
+</node>

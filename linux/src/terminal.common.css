@@ -1,0 +1,152 @@
+/* Generic theme-independent CSS file */
+
+terminal-window scrolledwindow undershoot.top,
+terminal-window scrolledwindow undershoot.bottom,
+terminal-window scrolledwindow overshoot.top,
+terminal-window scrolledwindow overshoot.bottom
+{
+  background: none;
+}
+
+popover button.model
+{
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.disclosure-button
+{
+  padding-left: 4px;
+  padding-right: 4px;
+  min-width: 0;
+}
+
+/* ============================================================== */
+/* axan sidebar: collapsed + minimized states                      */
+/* Terminology: expanded = full row list (~320px); collapsed =     */
+/* narrow column of initial-tab cells (~26px); minimized = thin    */
+/* strip showing only the expand chevron (~14px).                  */
+/* ============================================================== */
+
+/* Cycle chevron in the expanded toolbar — flat, neutral, doesn't
+ * compete with the count pill. */
+button.axan-sidebar-cycle
+{
+  padding: 0 4px;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Collapsed-view container. Defers background to the active theme
+ * so light/dark variants both feel native. The 26px width is
+ * enforced by gtk_paned position + the children below all opting
+ * out of GTK's default button padding. */
+box.axan-sidebar-collapsed
+{
+  padding: 0;
+}
+
+/* Cycle chevron at the top of the collapsed column. Tight padding
+ * so the icon doesn't blow out the 26px column width. */
+button.axan-collapsed-head
+{
+  padding: 2px 0;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 0;
+  border-bottom: 1px solid alpha(@borders, 0.5);
+}
+
+/* Per-shell initial-tab cell (22x32). Active cell gets a tinted
+ * background and two top/bottom hairlines matching the active-row
+ * treatment in the expanded list — see v3 wireframe artboards 03/05b.
+ * Padding zeroed out so the cell's natural width can collapse below
+ * GTK's stock button padding floor — without this, the cell inflates
+ * the column past 30px even when set_size_request asks for 22. */
+button.axan-collapsed-cell
+{
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 3px;
+}
+
+button.axan-collapsed-cell.active
+{
+  background-color: alpha(@theme_selected_bg_color, 0.18);
+  border-radius: 0;
+  border-top: 1px solid alpha(@theme_fg_color, 0.5);
+  border-bottom: 1px solid alpha(@theme_fg_color, 0.5);
+}
+
+/* Nested cell — dashed elbow connector on the left edge. Approximated
+ * with a 4px dashed border so we don't need a custom drawn shape; the
+ * v3 mock draws an L-shape but a short vertical dash reads correctly
+ * at this width. */
+button.axan-collapsed-cell.nested
+{
+  border-left: 1px dashed alpha(@theme_fg_color, 0.35);
+  margin-left: 4px;
+}
+
+/* Status glyph and 2-letter initials inside a cell. Font sizes are
+ * keyed to the cell's size class (small/medium/large) — the cell
+ * container alone growing wasn't visually readable; the eye latches
+ * onto the glyph and abbreviation, so both have to scale too. Defaults
+ * (when no size class is present) match the small step. */
+label.axan-collapsed-glyph
+{
+  color: alpha(@theme_fg_color, 0.7);
+  font-size: 11px;
+}
+
+label.axan-collapsed-ini
+{
+  font-family: monospace;
+  color: alpha(@theme_fg_color, 0.7);
+  letter-spacing: 0.5px;
+  font-size: 9px;
+}
+
+button.axan-collapsed-cell.size-small  label.axan-collapsed-glyph { font-size: 11px; }
+button.axan-collapsed-cell.size-medium label.axan-collapsed-glyph { font-size: 16px; }
+button.axan-collapsed-cell.size-large  label.axan-collapsed-glyph { font-size: 24px; }
+
+button.axan-collapsed-cell.size-small  label.axan-collapsed-ini   { font-size: 9px; }
+button.axan-collapsed-cell.size-medium label.axan-collapsed-ini   { font-size: 12px; }
+button.axan-collapsed-cell.size-large  label.axan-collapsed-ini   { font-size: 16px; }
+
+/* Divider between top-level subtrees in the collapsed column. */
+separator.axan-collapsed-divider
+{
+  background-color: alpha(@theme_fg_color, 0.15);
+  min-height: 1px;
+}
+
+/* Minimized strip. The button fills the 14px-wide paned pane; an
+ * inner icon (pan-end-symbolic) is the click target. Padding zeroed
+ * so GTK's default button padding doesn't inflate the strip past its
+ * requested size. */
+button.axan-sidebar-minimized
+{
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 0;
+  background-color: alpha(@theme_fg_color, 0.04);
+  border-right: 1px solid alpha(@borders, 0.5);
+}
+
+button.axan-sidebar-minimized:hover
+{
+  background-color: alpha(@theme_selected_bg_color, 0.18);
+}
+
+button.axan-sidebar-minimized image
+{
+  /* The pan-end icon defaults to 16x16 via GTK_ICON_SIZE_MENU. We
+   * don't add extra padding — the surrounding button width already
+   * determines how the icon centers. */
+  min-width: 0;
+  min-height: 0;
+}

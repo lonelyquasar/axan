@@ -1,0 +1,22 @@
+[Desktop Entry]
+Name=Axan
+Comment=Use the command line
+Keywords=shell;prompt;command;commandline;cmd;
+TryExec=axan
+Exec=axan
+Icon=sh.axan.Axan
+Type=Application
+Categories=GNOME;GTK;System;TerminalEmulator;
+StartupNotify=true
+StartupWMClass=Axan
+SingleMainWindow=false
+Actions=new-window;preferences;
+X-ExecArg=--
+
+[Desktop Action new-window]
+Name=New Window
+Exec=axan --window
+
+[Desktop Action preferences]
+Name=Preferences
+Exec=axan --preferences

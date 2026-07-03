@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{506fd703-baa7-4f6e-9361-64f550ec8fca}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>wt</RootNamespace>
+    <ProjectName>wt</ProjectName>
+    <!-- axan: the console launcher stub ships as axan-cli.exe. The execution alias the
+         user types ("axan", i.e. axan.exe) is a separate reparse point registered by the
+         manifest and backed by this stub. ProjectName/GUID stay 'wt' so references hold;
+         only the output filename changes, so the wapproj's wt->alias rename no longer
+         matches (it keyed on filename 'wt') and the stub keeps its axan-cli.exe name. -->
+    <TargetName>axan-cli</TargetName>
+    <ConfigurationType>Application</ConfigurationType>
+    <VersionInfoFileDescription>axan launcher shim</VersionInfoFileDescription>
+  </PropertyGroup>
+
+  <Import Project="..\..\..\common.openconsole.props" Condition="'$(OpenConsoleDir)'==''" />
+  <Import Project="$(OpenConsoleDir)src\common.build.pre.props" />
+  <Import Project="$(OpenConsoleDir)src\common.nugetversions.props" />
+
+  <!-- Source Files -->
+  <ItemGroup>
+    <ClCompile Include="shim.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ResourceCompile Include="wt.rc" />
+  </ItemGroup>
+
+  <Import Project="$(OpenConsoleDir)src\common.build.post.props" />
+  <Import Project="$(OpenConsoleDir)src\common.nugetversions.targets" />
+
+  <ItemDefinitionGroup>
+    <Link>
+      <!-- Remove all non-onecore dependencies -->
+      <AdditionalDependencies>onecore.lib</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

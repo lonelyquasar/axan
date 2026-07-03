@@ -1,0 +1,13 @@
+// Copyright (c) Lonely Quasar.
+// Licensed under the MIT license.
+
+import "StartupSessionsViewModel.idl";
+
+namespace Microsoft.Terminal.Settings.Editor
+{
+    [default_interface] runtimeclass StartupSessions : Windows.UI.Xaml.Controls.Page, Windows.UI.Xaml.Data.INotifyPropertyChanged
+    {
+        StartupSessions();
+        StartupSessionsViewModel ViewModel { get; };
+    }
+}

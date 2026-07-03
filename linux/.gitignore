@@ -1,0 +1,36 @@
+# Meson / build artifacts
+/build/
+/builddir/
+/_build/
+*.o
+*.a
+*.so
+*.so.*
+*.lo
+*.la
+
+# Local install prefix (when meson installs to a user prefix)
+/install-root/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local agent state
+.agent/
+.claude/
+.test-remediation/
+.planning/
+
+# Local-only docs scratch
+*.local.md
+
+# Beads issue tracker
+.beads/

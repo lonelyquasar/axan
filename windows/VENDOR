@@ -1,0 +1,38 @@
+axan/windows — vendored Windows Terminal (fork-and-freeze)
+==========================================================
+
+This directory is a SNAPSHOT of Microsoft's Windows Terminal, vendored as the
+substrate axan's Windows frontend is forked from. It is frozen: pinned to the tag
+below, with only security fixes cherry-picked as manual patches. Feature churn from
+upstream is deliberately ignored. Rationale: decisions D1 (fork-and-freeze), D8 (why
+fork Windows Terminal — Windows has no embeddable native VT widget), and D12
+(snapshot-vendor, not subtree/submodule); see also the root README's Architecture
+section.
+
+Upstream:      https://github.com/microsoft/terminal
+Channel:       Stable
+Tag:           v1.24.11321.0
+Commit (SHA):  b4e69c68620a822407d45bfbba6ee10feebc70a3
+Tag date:      2026-05-12
+Vendored on:   2026-05-30
+Method:        git archive <tag> | tar -x   (clean source export, no upstream .git)
+
+Stack (verified at this tag):
+  UI:        WinUI 2.8 (Microsoft.UI.Xaml 2.8.4), system/UWP XAML via XAML Islands
+             — NOT WinUI 3 / Windows App SDK
+  Toolchain: VS 2022 (PlatformToolset v143; v141 for legacy conhost bits),
+             Windows SDK 10.0.22621, C++/WinRT + C#, MSBuild
+  Deps:      NuGet (no git submodules) — pin versions to freeze the build
+  Build:     OpenConsole.sln  (present at this tag; upstream main has since
+             dropped it in favor of .slnf solution filters)
+  VS setup:  import windows/.vsconfig into the Visual Studio Installer to get the
+             exact required component/workload set
+
+Updating the pin (security only):
+  1. Identify the upstream security fix commit(s).
+  2. Apply as a patch against this tree; record the cherry-picked SHA(s) below.
+  3. Do NOT rebase onto a newer feature release. Re-pin the tag here only if the
+     whole Stable line is advanced deliberately (a maintainer decision, not routine).
+
+Cherry-picked security fixes since the pin:
+  (none yet)

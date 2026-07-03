@@ -1,0 +1,44 @@
+// Copyright (c) Lonely Quasar.
+// Licensed under the MIT license.
+
+namespace Microsoft.Terminal.Settings.Model
+{
+    // axan M14/D19: one curated startup session, an element of the GLOBAL
+    // GlobalAppSettings.StartupSessions tree. This is the Windows superset of the Linux
+    // default-launch-entries tuple (id, parent_id, name, directory, command, icon)
+    // from sh.axan.Axan.gschema.xml — a curated set of shells that spawn at launch,
+    // each under its own referenced profile. See decision D19.
+    [default_interface] runtimeclass LaunchEntry
+    {
+        LaunchEntry();
+
+        // Stable GUID string so the editor can reorder/reparent without breaking
+        // ParentId references.
+        String Id;
+        // GUID of another (earlier) entry, or "" for a root entry. Forward-reference
+        // only — this is the tree.
+        String ParentId;
+        // axan D19: GUID of the WT profile this entry spawns (which shell). "" -> the global
+        // default profile. The tree is global (GlobalAppSettings.StartupSessions); each entry
+        // picks its own shell via this reference.
+        String Profile;
+        // Optional sidebar display-name template (substituted at label-render time).
+        // Empty -> the OSC-title fallback chain.
+        String Name;
+        // Working directory; leading "~" -> %USERPROFILE%; empty -> the launch cwd.
+        String Directory;
+        // Program to run in the shell; empty -> the active profile's login shell.
+        String Command;
+        // Sidebar icon id, in the M13 icon language (Segoe glyph / emoji / image path;
+        // empty -> inherit the profile icon).
+        String Icon;
+        // axan #422: per-node recolor token — a semantic palette name ("blue") that
+        // re-resolves to a theme-appropriate hex at render time, or a literal "#RRGGBB"
+        // escape hatch (theme-static); empty -> no recolor (theme foreground). Mirrors the
+        // Linux launch-entries `color` field so the stored value is portable across OSes.
+        String Color;
+        // axan #422: which surfaces the recolor paints — "icon", "text", or "both" (the
+        // default). Empty -> "both". Mirrors the Linux `color_target` field.
+        String ColorTarget;
+    }
+}

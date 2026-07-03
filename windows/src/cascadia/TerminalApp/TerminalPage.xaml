@@ -1,0 +1,772 @@
+<!--
+    Copyright (c) Microsoft Corporation. All rights reserved. Licensed under
+    the MIT License. See LICENSE in the project root for license information.
+-->
+<Page x:Class="TerminalApp.TerminalPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:local="using:TerminalApp"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:mtu="using:Microsoft.Terminal.UI"
+      xmlns:mux="using:Microsoft.UI.Xaml.Controls"
+      xmlns:prim="using:Windows.UI.Xaml.Controls.Primitives"
+      Background="Transparent"
+      mc:Ignorable="d">
+
+    <Page.Resources>
+        <!--
+            axan M7/M8: the expanded-state node row — the M7 icon + label. The icon is a
+            fresh IconElement minted per get on the view-model (never a cached UIElement),
+            hosted in a plain ContentPresenter (the muxc IconSourceElement markup tag isn't
+            in this project's XAML-compiler WinUI-2 type set). The minimized state does NOT
+            reuse this via the tree (TreeView indentation pushes icons out of a narrow
+            column); it uses the separate MinimizedList below.
+        -->
+        <DataTemplate x:Key="ExpandedNodeTemplate"
+                      x:DataType="mux:TreeViewNode">
+            <!--
+                axan M12 (cluster 10 polish): a Grid (not a Horizontal StackPanel) so the
+                label column is width-bounded and TextTrimming can ellipsize a long label
+                instead of overflowing the column. The full label is surfaced as a tooltip.
+                Relies on the TreeView's ItemContainerStyle stretching the row content to the
+                column width (below); without that the row would size to content and never
+                trim.
+            -->
+            <Grid VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ContentPresenter Grid.Column="0"
+                                  Width="16"
+                                  Height="16"
+                                  Margin="0,0,8,0"
+                                  VerticalAlignment="Center"
+                                  Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
+                <TextBlock Grid.Column="1"
+                           Text="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}"
+                           Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           TextWrapping="NoWrap"
+                           ToolTipService.ToolTip="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}" />
+            </Grid>
+        </DataTemplate>
+
+        <!--
+            axan: tighten the session tree's left gutter. The stock WinUI 2 TreeViewItem
+            template reserves an ExpandCollapseChevron column with Padding="14,0" (~28px) on
+            EVERY row, including leaf nodes that show no chevron — so root sessions read as
+            indented "for no reason." This is the default template (MUX_TreeViewItemStyle,
+            WinUI 2.8.4 Generic.xaml) copied verbatim EXCEPT the chevron padding is reduced to
+            "4,0". The per-depth Indentation binding is preserved so nested children still
+            indent, and HorizontalContentAlignment stays Stretch so the label can ellipsize.
+
+            NB: this style deliberately has NO BasedOn. The upstream style is BasedOn the
+            internal key "MUX_TreeViewItemStyle", which is not exposed for StaticResource lookup
+            from app code — referencing it aborts the process at XAML load (debug). Instead the
+            handful of base setters that key carries are declared explicitly below, all via
+            public ThemeResource keys the stock template already uses. If WinUI is upgraded,
+            re-diff this against the new Generic.xaml.
+        -->
+        <Style x:Key="SessionTreeItemStyle"
+               TargetType="mux:TreeViewItem">
+            <Setter Property="Background" Value="{ThemeResource TreeViewItemBackground}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource TreeViewItemBorderBrush}" />
+            <Setter Property="BorderThickness" Value="{ThemeResource TreeViewItemBorderThemeThickness}" />
+            <Setter Property="GlyphBrush" Value="{ThemeResource TreeViewItemForeground}" />
+            <Setter Property="MinHeight" Value="{ThemeResource TreeViewItemMinHeight}" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FocusVisualMargin" Value="0,-1,0,-1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="mux:TreeViewItem">
+                        <!--
+                            axan: zero the stock TreeViewItemPresenterMargin / *Padding here
+                            (they carry a fixed left inset that re-indents every row regardless
+                            of the chevron). Row height comes from MinHeight, so dropping them
+                            doesn't cramp the rows. A root leaf now sits at just the small
+                            chevron gutter below.
+                        -->
+                        <Grid x:Name="ContentPresenterGrid"
+                              Background="{TemplateBinding Background}"
+                              BorderBrush="{TemplateBinding BorderBrush}"
+                              BorderThickness="{TemplateBinding BorderThickness}"
+                              Margin="0"
+                              Padding="0"
+                              CornerRadius="{ThemeResource ControlCornerRadius}">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="ContentPresenterGrid.Background" Value="{ThemeResource TreeViewItemBackgroundPointerOver}" />
+                                            <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TreeViewItemForegroundPointerOver}" />
+                                            <Setter Target="SelectionIndicator.Fill" Value="{ThemeResource TreeViewItemSelectionIndicatorForegroundPointerOver}" />
+                                            <Setter Target="CollapsedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundPointerOver}" />
+                                            <Setter Target="ExpandedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundPointerOver}" />
+                                            <Setter Target="ContentPresenterGrid.BorderBrush" Value="{ThemeResource TreeViewItemBorderBrushPointerOver}" />
+                                            <Setter Target="SelectionIndicator.Opacity" Value="0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="ContentPresenterGrid.Background" Value="{ThemeResource TreeViewItemBackgroundPressed}" />
+                                            <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TreeViewItemForegroundPressed}" />
+                                            <Setter Target="SelectionIndicator.Fill" Value="{ThemeResource TreeViewItemSelectionIndicatorForegroundPressed}" />
+                                            <Setter Target="CollapsedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundPressed}" />
+                                            <Setter Target="ExpandedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundPressed}" />
+                                            <Setter Target="ContentPresenterGrid.BorderBrush" Value="{ThemeResource TreeViewItemBorderBrushPressed}" />
+                                            <Setter Target="SelectionIndicator.Opacity" Value="0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Selected">
+                                        <VisualState.Setters>
+                                            <Setter Target="ContentPresenterGrid.Background" Value="{ThemeResource TreeViewItemBackgroundSelected}" />
+                                            <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TreeViewItemForegroundSelected}" />
+                                            <Setter Target="SelectionIndicator.Fill" Value="{ThemeResource TreeViewItemSelectionIndicatorForeground}" />
+                                            <Setter Target="CollapsedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundSelected}" />
+                                            <Setter Target="ExpandedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundSelected}" />
+                                            <Setter Target="ContentPresenterGrid.BorderBrush" Value="{ThemeResource TreeViewItemBorderBrushSelected}" />
+                                            <Setter Target="SelectionIndicator.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="ContentPresenterGrid.Background" Value="{ThemeResource TreeViewItemBackgroundDisabled}" />
+                                            <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TreeViewItemForegroundDisabled}" />
+                                            <Setter Target="SelectionIndicator.Fill" Value="{ThemeResource TreeViewItemSelectionIndicatorForegroundDisabled}" />
+                                            <Setter Target="CollapsedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundDisabled}" />
+                                            <Setter Target="ExpandedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundDisabled}" />
+                                            <Setter Target="ContentPresenterGrid.BorderBrush" Value="{ThemeResource TreeViewItemBorderBrushDisabled}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="PointerOverSelected">
+                                        <VisualState.Setters>
+                                            <Setter Target="ContentPresenterGrid.Background" Value="{ThemeResource TreeViewItemBackgroundSelectedPointerOver}" />
+                                            <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedPointerOver}" />
+                                            <Setter Target="SelectionIndicator.Fill" Value="{ThemeResource TreeViewItemSelectionIndicatorForegroundPointerOver}" />
+                                            <Setter Target="CollapsedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedPointerOver}" />
+                                            <Setter Target="ExpandedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedPointerOver}" />
+                                            <Setter Target="ContentPresenterGrid.BorderBrush" Value="{ThemeResource TreeViewItemBorderBrushSelectedPointerOver}" />
+                                            <Setter Target="SelectionIndicator.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="PressedSelected">
+                                        <VisualState.Setters>
+                                            <Setter Target="ContentPresenterGrid.Background" Value="{ThemeResource TreeViewItemBackgroundSelectedPressed}" />
+                                            <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedPressed}" />
+                                            <Setter Target="SelectionIndicator.Fill" Value="{ThemeResource TreeViewItemSelectionIndicatorForegroundPressed}" />
+                                            <Setter Target="CollapsedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedPressed}" />
+                                            <Setter Target="ExpandedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedPressed}" />
+                                            <Setter Target="ContentPresenterGrid.BorderBrush" Value="{ThemeResource TreeViewItemBorderBrushSelectedPressed}" />
+                                            <Setter Target="SelectionIndicator.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="SelectedDisabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="ContentPresenterGrid.Background" Value="{ThemeResource TreeViewItemBackgroundSelectedDisabled}" />
+                                            <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedDisabled}" />
+                                            <Setter Target="SelectionIndicator.Fill" Value="{ThemeResource TreeViewItemSelectionIndicatorForegroundDisabled}" />
+                                            <Setter Target="CollapsedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedDisabled}" />
+                                            <Setter Target="ExpandedGlyph.Foreground" Value="{ThemeResource TreeViewItemForegroundSelectedDisabled}" />
+                                            <Setter Target="ContentPresenterGrid.BorderBrush" Value="{ThemeResource TreeViewItemBorderBrushSelectedDisabled}" />
+                                            <Setter Target="SelectionIndicator.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="ReorderedPlaceholder">
+                                        <Storyboard>
+                                            <FadeOutThemeAnimation TargetName="MultiSelectGrid" />
+                                        </Storyboard>
+                                    </VisualState>
+                                </VisualStateGroup>
+                                <VisualStateGroup x:Name="TreeViewMultiSelectStates">
+                                    <VisualState x:Name="TreeViewMultiSelectDisabled" />
+                                    <VisualState x:Name="TreeViewMultiSelectEnabledUnselected">
+                                        <VisualState.Setters>
+                                            <Setter Target="MultiSelectCheckBox.Visibility" Value="Visible" />
+                                            <Setter Target="ExpandCollapseChevron.Padding" Value="0,0,4,0" />
+                                            <Setter Target="ContentPresenterGrid.Padding" Value="0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="TreeViewMultiSelectEnabledSelected">
+                                        <VisualState.Setters>
+                                            <Setter Target="MultiSelectCheckBox.Visibility" Value="Visible" />
+                                            <Setter Target="MultiSelectGrid.Background" Value="{ThemeResource TreeViewItemBackgroundSelected}" />
+                                            <Setter Target="MultiSelectGrid.BorderBrush" Value="{ThemeResource TreeViewItemMultiSelectBorderBrushSelected}" />
+                                            <Setter Target="ExpandCollapseChevron.Padding" Value="0,0,4,0" />
+                                            <Setter Target="ContentPresenterGrid.Padding" Value="0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                                <VisualStateGroup x:Name="DragStates">
+                                    <VisualState x:Name="NotDragging" />
+                                    <VisualState x:Name="MultipleDraggingPrimary">
+                                        <VisualState.Setters>
+                                            <Setter Target="MultiSelectCheckBox.Opacity" Value="0" />
+                                            <Setter Target="MultiArrangeOverlayTextBorder.Visibility" Value="Visible" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <Rectangle x:Name="SelectionIndicator" Width="3" Height="16" Fill="{ThemeResource TreeViewItemSelectionIndicatorForeground}" Opacity="0" HorizontalAlignment="Left" VerticalAlignment="Center" />
+                            <Grid x:Name="MultiSelectGrid" Margin="0" Padding="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=TreeViewItemTemplateSettings.Indentation}" BorderBrush="Transparent" BorderThickness="{ThemeResource TreeViewItemBorderThemeThickness}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition />
+                                </Grid.ColumnDefinitions>
+                                <Grid Grid.Column="0">
+                                    <CheckBox x:Name="MultiSelectCheckBox" Width="32" MinWidth="32" MinHeight="{ThemeResource TreeViewItemMultiSelectCheckBoxMinHeight}" Margin="10,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" IsTabStop="False" AutomationProperties.AccessibilityView="Raw" />
+                                    <Border x:Name="MultiArrangeOverlayTextBorder" Visibility="Collapsed" IsHitTestVisible="False" MinWidth="20" Height="20" VerticalAlignment="Center" HorizontalAlignment="Center" Background="{ThemeResource SystemControlBackgroundAccentBrush}" BorderThickness="1" BorderBrush="{ThemeResource SystemControlBackgroundChromeWhiteBrush}" CornerRadius="{ThemeResource ControlCornerRadius}">
+                                        <TextBlock x:Name="MultiArrangeOverlayText" Text="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=TreeViewItemTemplateSettings.DragItemsCount}" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource SystemControlForegroundChromeWhiteBrush}" IsHitTestVisible="False" VerticalAlignment="Center" HorizontalAlignment="Center" AutomationProperties.AccessibilityView="Raw" />
+                                    </Border>
+                                </Grid>
+                                <Grid x:Name="ExpandCollapseChevron" Grid.Column="1" Padding="4,0" Width="Auto" Opacity="{TemplateBinding GlyphOpacity}" Background="Transparent">
+                                    <TextBlock x:Name="CollapsedGlyph" Foreground="{TemplateBinding GlyphBrush}" Width="12" Height="12" Visibility="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=TreeViewItemTemplateSettings.CollapsedGlyphVisibility}" FontSize="{TemplateBinding GlyphSize}" Text="{TemplateBinding CollapsedGlyph}" FontFamily="{StaticResource SymbolThemeFontFamily}" Padding="2" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" IsTextScaleFactorEnabled="False" IsHitTestVisible="False" />
+                                    <TextBlock x:Name="ExpandedGlyph" Foreground="{TemplateBinding GlyphBrush}" Width="12" Height="12" Visibility="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=TreeViewItemTemplateSettings.ExpandedGlyphVisibility}" FontSize="{TemplateBinding GlyphSize}" Text="{TemplateBinding ExpandedGlyph}" FontFamily="{StaticResource SymbolThemeFontFamily}" Padding="2" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" IsTextScaleFactorEnabled="False" IsHitTestVisible="False" />
+                                </Grid>
+                                <ContentPresenter x:Name="ContentPresenter" Grid.Column="2" ContentTransitions="{TemplateBinding ContentTransitions}" ContentTemplate="{TemplateBinding ContentTemplate}" Content="{TemplateBinding Content}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" MinHeight="{ThemeResource TreeViewItemContentHeight}" Margin="{TemplateBinding Padding}" />
+                            </Grid>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Page.Resources>
+
+    <Grid x:Name="Root"
+          Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <local:TabRowControl x:Name="TabRow"
+                             Grid.Row="0"
+                             KeyUp="_KeyDownHandler" />
+
+        <StackPanel Grid.Row="1"
+                    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+            <mux:InfoBar x:Name="KeyboardServiceWarningInfoBar"
+                         x:Load="False"
+                         CornerRadius="0"
+                         IsClosable="True"
+                         IsIconVisible="True"
+                         IsOpen="False"
+                         Message="{x:Bind KeyboardServiceDisabledText, Mode=OneWay}"
+                         Severity="Warning">
+                <mux:InfoBar.ActionButton>
+                    <Button x:Uid="InfoBarDismissButton"
+                            Click="_KeyboardServiceWarningInfoDismissHandler" />
+                </mux:InfoBar.ActionButton>
+            </mux:InfoBar>
+
+            <mux:InfoBar x:Name="CloseOnExitInfoBar"
+                         x:Uid="CloseOnExitInfoBar"
+                         x:Load="False"
+                         CornerRadius="0"
+                         IsClosable="True"
+                         IsIconVisible="True"
+                         IsOpen="False"
+                         Severity="Informational">
+                <mux:InfoBar.ActionButton>
+                    <Button x:Uid="InfoBarDismissButton"
+                            Click="_CloseOnExitInfoDismissHandler" />
+                </mux:InfoBar.ActionButton>
+            </mux:InfoBar>
+        </StackPanel>
+
+        <!--
+            axan M2: the content row is split into [ session sidebar | terminal content ].
+            SessionTree is the tree-of-shells sidebar that replaces the tab strip; nodes
+            are populated/selected from C++ (TerminalPage). TabContent keeps its x:Name so
+            the existing content-host plumbing (_tabContent) is unchanged. The TabRow above
+            remains in the markup, but post-D20 its TabView is permanently collapsed: the
+            row survives only as the hidden tab-selection model and the titlebar row
+            (min/max/close caption buttons); the sidebar is the sole visible navigator.
+        -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SessionSidebarColumn"
+                                  Width="260" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!--
+                axan M4b/D19: column 0 holds the session sidebar — header (collapse chevron)
+                over the session tree. The original M4b "save sessions as startup" header
+                button is gone: the curated startup tree is edited in the Settings "Startup
+                sessions" page (GlobalSettings.StartupSessions) since D19. Header wiring and
+                collapse-state application live in C++ (TerminalPage::Create / _ApplySidebarState).
+            -->
+            <Grid x:Name="SessionSidebar"
+                  Grid.Column="0"
+                  Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!--
+                    axan M8: the sidebar header. The save button stretches; the chevron at
+                    its right cycles the collapse state (expanded -> minimized -> collapsed
+                    -> expanded). In the minimized icon-column the save button is hidden
+                    (its text doesn't fit) and only the chevron remains; the whole header is
+                    hidden in the collapsed strip state. Wiring + state application is in C++
+                    (TerminalPage::Create / _ApplySidebarState).
+                -->
+                <Grid x:Name="SidebarHeader"
+                      Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <!--
+                        axan D19: the curated startup tree is now edited in the global Settings
+                        "Startup sessions" page (GlobalSettings.StartupSessions), so the old
+                        sidebar "Save sessions as startup" + "Import from TOML" actions are
+                        retired. The header is just the collapse chevron.
+                    -->
+                    <!--
+                        axan #429: icon-only button — Narrator doesn't read ToolTips as names,
+                        so it needs an explicit AutomationProperties.Name.
+                    -->
+                    <Button x:Name="SidebarCollapseButton"
+                            Grid.Column="0"
+                            Margin="0,4,4,2"
+                            Padding="6"
+                            HorizontalAlignment="Right"
+                            AutomationProperties.Name="Collapse sidebar"
+                            ToolTipService.ToolTip="Cycle sidebar (expanded / minimized / collapsed). Right-click to set the minimized width.">
+                        <Button.ContextFlyout>
+                            <!--
+                                axan M8: right-click the chevron to set the minimized-column
+                                width step (small / medium / large). Persisted via
+                                ApplicationState.SidebarMinimizedSize; re-applies live if the
+                                sidebar is currently minimized. Toggle items (not muxc
+                                RadioMenuFlyoutItem, which isn't in this project's XAML-compiler
+                                WinUI-2 type set) — mutual exclusivity is handled in the Opening
+                                handler, which also ticks the current step. A proper Settings-UI
+                                home for this rides M14.
+                            -->
+                            <MenuFlyout Opening="_OnSidebarSizeFlyoutOpening">
+                                <MenuFlyoutItem Text="Minimized width"
+                                                IsEnabled="False" />
+                                <MenuFlyoutSeparator />
+                                <ToggleMenuFlyoutItem x:Name="SidebarSizeSmall"
+                                                      Text="Small"
+                                                      Tag="small"
+                                                      Click="_OnSidebarSizeClick" />
+                                <ToggleMenuFlyoutItem x:Name="SidebarSizeMedium"
+                                                      Text="Medium"
+                                                      Tag="medium"
+                                                      Click="_OnSidebarSizeClick" />
+                                <ToggleMenuFlyoutItem x:Name="SidebarSizeLarge"
+                                                      Text="Large"
+                                                      Tag="large"
+                                                      Click="_OnSidebarSizeClick" />
+                            </MenuFlyout>
+                        </Button.ContextFlyout>
+                        <FontIcon FontFamily="Segoe MDL2 Assets"
+                                  FontSize="12"
+                                  Glyph="&#xE76B;" />
+                    </Button>
+                </Grid>
+
+                <!--
+                    axan M6: native WinUI TreeView drag-and-drop. CanDragItems +
+                    CanReorderItems + AllowDrop turn on the built-in reorder (drop between
+                    siblings) and reparent (drop onto a node) in unbound mode, including the
+                    descendant-drop rejection we'd otherwise hand-roll. The ItemTemplate
+                    renders each node from its SessionNodeViewModel (Content): in unbound
+                    mode the template's data context is the TreeViewNode, so we reach the
+                    view-model's observable Label through Content. OneWay so the M5 templated-
+                    label recompute (which sets VM.Label) refreshes the realized item.
+                -->
+                <!--
+                    axan M7: each node shows its resolved icon (override -> profile icon ->
+                    auto-assigned glyph) left of the label. The icon is a fresh IconElement
+                    minted per get on the view-model. axan M8: the ItemTemplate starts as the
+                    expanded (icon + label) template and is swapped to MinimizedNodeTemplate
+                    in the minimized state from C++ (_ApplySidebarState). Auto-assigned glyphs
+                    are FontIcons, so they paint with the row foreground and recolor with the
+                    theme; colored profile icons keep their color.
+                -->
+                <!--
+                    axan M12: the ItemContainerStyle stretches each row's content to the
+                    column width so the ExpandedNodeTemplate's label column is bounded and can
+                    ellipsize. axan: SessionTreeItemStyle (above) also tightens the chevron
+                    gutter so root leaf nodes aren't needlessly indented.
+                -->
+                <!--
+                    axan: the inner TreeViewList (a ListView) pads its content area, and that
+                    padding isn't reachable via TreeView's own properties — it shifts every row
+                    right uniformly, on top of the per-item chevron gutter. A small negative
+                    left margin on the whole control claws that back so root sessions sit near
+                    the sidebar edge. Source-agnostic (just repositions the control) and doesn't
+                    touch the chevron-to-content layout, so nested indentation is unaffected.
+                -->
+                <!--
+                    axan #429: name the tree for UIA so Narrator announces "Sessions" when
+                    focus enters it. Row names come from each node's SessionNodeViewModel:
+                    the unbound TreeViewItem peer's name falls back to the node Content's
+                    IStringable::ToString, which returns the computed label.
+                -->
+                <mux:TreeView x:Name="SessionTree"
+                              Grid.Row="1"
+                              Margin="-16,0,0,0"
+                              AutomationProperties.Name="Sessions"
+                              ItemTemplate="{StaticResource ExpandedNodeTemplate}"
+                              ItemContainerStyle="{StaticResource SessionTreeItemStyle}"
+                              SelectionMode="Single"
+                              CanDragItems="True"
+                              CanReorderItems="True"
+                              AllowDrop="True" />
+
+                <!--
+                    axan M8: the minimized-state surface — a flat, centred column of node
+                    icons (the tree flattened, one icon per node). Separate from the TreeView
+                    because the tree's per-depth indentation pushes icons out of a narrow
+                    column; this mirrors the Linux design's dedicated minimized cells.
+                    Populated from C++ (_RebuildMinimizedItems) with the same node view-models
+                    the tree uses, so each icon is the M7 fresh-per-get IconElement. Clicking
+                    a cell activates that session. Hidden unless the sidebar is minimized.
+                -->
+                <!--  axan #429: UIA name; row names come from the VM's IStringable (the label).  -->
+                <ListView x:Name="MinimizedList"
+                          Grid.Row="1"
+                          Padding="0"
+                          AutomationProperties.Name="Sessions (minimized)"
+                          Visibility="Collapsed"
+                          SelectionMode="Single"
+                          IsItemClickEnabled="True"
+                          ItemClick="_OnMinimizedItemClick">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment"
+                                    Value="Stretch" />
+                            <Setter Property="MinWidth"
+                                    Value="0" />
+                            <Setter Property="Padding"
+                                    Value="2,4" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <!--
+                            axan M8: a minimized cell — the node icon above a short initials
+                            label (mirrors the Linux minimized cells). The whole cell sits in a
+                            Viewbox that stretches to the column width, so picking a larger
+                            width step scales the icon AND the label together (the Linux 1043cac
+                            intent). The inner stack's fixed 40px design width gives the Viewbox
+                            a stable aspect to scale from. Initials re-derive from Label via the
+                            static binding whenever the M5 templated label changes.
+                        -->
+                        <DataTemplate x:DataType="local:SessionNodeViewModel">
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="Both"
+                                     HorizontalAlignment="Stretch"
+                                     Margin="2,0">
+                                <StackPanel Width="40"
+                                            Orientation="Vertical"
+                                            HorizontalAlignment="Center"
+                                            Spacing="1">
+                                    <ContentPresenter Width="16"
+                                                      Height="16"
+                                                      HorizontalAlignment="Center"
+                                                      Content="{x:Bind Icon, Mode=OneWay}" />
+                                    <TextBlock Text="{x:Bind local:SessionNodeViewModel.Initials(Label), Mode=OneWay}"
+                                               FontSize="11"
+                                               TextAlignment="Center"
+                                               HorizontalAlignment="Center"
+                                               MaxLines="1" />
+                                </StackPanel>
+                            </Viewbox>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <!--
+                    axan M8: the collapsed-state hint strip. Hidden until the sidebar is
+                    collapsed; then it's the only thing in the ~12px column and clicking it
+                    jumps straight back to expanded (mirrors the Linux 05c click-to-expand
+                    strip). Spans both rows so it fills the whole narrow column.
+                -->
+                <Button x:Name="SidebarExpandStrip"
+                        Grid.Row="0"
+                        Grid.RowSpan="2"
+                        Padding="0"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        Visibility="Collapsed"
+                        AutomationProperties.Name="Expand sidebar"
+                        ToolTipService.ToolTip="Expand sidebar">
+                    <FontIcon FontFamily="Segoe MDL2 Assets"
+                              FontSize="12"
+                              Glyph="&#xE76C;" />
+                </Button>
+
+                <!--
+                    axan M12 (cluster 10 parity — the Linux draggable divider): a thin grab
+                    strip on the sidebar's right edge. Dragging resizes the expanded sidebar
+                    column; the width is clamped and persisted to state.json (SidebarExpandedWidth)
+                    on drag-complete. Only shown in the Expanded state (resize is meaningless in
+                    the minimized icon column or the collapsed strip). The Thumb is templated to
+                    a transparent border with a 1px right divider line so it reads as the seam
+                    between sidebar and content without a heavyweight control chrome.
+                -->
+                <prim:Thumb x:Name="SidebarResizeThumb"
+                            Grid.Row="0"
+                            Grid.RowSpan="2"
+                            Width="6"
+                            HorizontalAlignment="Right"
+                            Visibility="Collapsed">
+                    <prim:Thumb.Template>
+                        <ControlTemplate TargetType="prim:Thumb">
+                            <Border Background="Transparent"
+                                    BorderThickness="0,0,1,0"
+                                    BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+                        </ControlTemplate>
+                    </prim:Thumb.Template>
+                </prim:Thumb>
+            </Grid>
+
+            <!--
+                axan: an opaque backdrop behind the terminal content. Profiles with reduced
+                opacity / acrylic stay see-through, but they now composite over this solid
+                surface instead of the live desktop, so text is readable without anyone
+                touching per-profile opacity. Full window see-through stays available as a
+                future per-profile/theme option (the profile-management UI; cf. sidebar
+                transparency). It sits BEHIND TabContent (earlier in markup = lower z-order);
+                TabContent's own Background is reserved by WT for the per-profile background
+                image. The sidebar (column 0) is intentionally left transparent.
+            -->
+            <Border x:Name="ContentBackdrop"
+                    Grid.Column="1"
+                    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
+
+            <Grid x:Name="TabContent"
+                  Grid.Column="1"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch">
+                <Grid.Background>
+                    <ImageBrush />
+                </Grid.Background>
+            </Grid>
+        </Grid>
+
+        <!--
+            GH#12775 et. al: After switching to ControlsV2, it seems that
+            delay-loading a dialog causes the ContentDialog to be assigned a
+            Height equal to its content size. If we DON'T assign the
+            ContentDialog a Row, I believe it's assigned Row 0 by default. So,
+            when the dialog gets opened, the dialog seemingly causes a giant
+            hole to appear in the body of the app.
+            
+            Assigning all the dialogs to Row 2 (where the rest of the content
+            is) makes the "hole" appear in the same space as the rest of the
+            TabContent, fixing the issue.
+            
+            Note that the actual content in a content dialog gets parented to
+            the PopupRoot, so it actually always appeared in the correct place, it's
+            just this weird hole that appeared in Row 0.
+        -->
+
+        <local:AboutDialog x:Name="AboutDialog"
+                           Grid.Row="2"
+                           x:Load="False" />
+
+        <ContentDialog x:Name="QuitDialog"
+                       x:Uid="QuitDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Primary" />
+
+        <ContentDialog x:Name="CloseAllDialog"
+                       x:Uid="CloseAllDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Primary" />
+
+        <ContentDialog x:Name="CloseReadOnlyDialog"
+                       x:Uid="CloseReadOnlyDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Close" />
+
+        <ContentDialog x:Name="MultiLinePasteDialog"
+                       x:Uid="MultiLinePasteDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Primary">
+            <StackPanel>
+                <TextBlock x:Uid="MultiLineWarningText"
+                           TextWrapping="Wrap" />
+                <TextBlock x:Uid="ClipboardTextHeader"
+                           Margin="0,16,0,0" />
+                <ScrollViewer x:Name="ClipboardContentScrollViewer"
+                              MaxHeight="100"
+                              Margin="0,8,0,0">
+                    <TextBlock x:Name="ClipboardText"
+                               FontFamily="Cascadia Mono"
+                               TextWrapping="Wrap" />
+                </ScrollViewer>
+            </StackPanel>
+        </ContentDialog>
+
+        <ContentDialog x:Name="LargePasteDialog"
+                       x:Uid="LargePasteDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Primary" />
+
+        <ContentDialog x:Name="ControlNoticeDialog"
+                       x:Uid="ControlNoticeDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Primary">
+            <TextBlock IsTextSelectionEnabled="True"
+                       TextWrapping="WrapWholeWords">
+                <TextBlock.ContextFlyout>
+                    <mtu:TextMenuFlyout />
+                </TextBlock.ContextFlyout>
+                <Run x:Name="NoticeMessage" />
+            </TextBlock>
+        </ContentDialog>
+
+        <ContentDialog x:Name="UriErrorDialog"
+                       x:Uid="UriErrorDialog"
+                       Grid.Row="2"
+                       x:Load="False"
+                       DefaultButton="Close">
+            <TextBlock IsTextSelectionEnabled="True"
+                       TextWrapping="WrapWholeWords">
+                <TextBlock.ContextFlyout>
+                    <mtu:TextMenuFlyout />
+                </TextBlock.ContextFlyout>
+                <Run x:Name="CouldNotOpenUriReason" /> <LineBreak /> <LineBreak />
+                <Run x:Name="UnopenedUri"
+                     FontFamily="Cascadia Mono" />
+            </TextBlock>
+        </ContentDialog>
+
+        <local:CommandPalette x:Name="CommandPaletteElement"
+                              Grid.Row="2"
+                              VerticalAlignment="Stretch"
+                              x:Load="False"
+                              PreviewKeyDown="_KeyDownHandler"
+                              Visibility="Collapsed" />
+
+        <local:SuggestionsControl x:Name="SuggestionsElement"
+                                  Grid.Row="2"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Top"
+                                  x:Load="False"
+                                  PreviewKeyDown="_KeyDownHandler"
+                                  Visibility="Collapsed" />
+
+        <!--
+            A TeachingTip with IsLightDismissEnabled="True" will immediately
+            dismiss itself if the window is unfocused (In Xaml Islands). This is
+            tracked by MUX#4382
+        -->
+        <mux:TeachingTip x:Name="WindowIdToast"
+                         Title="{x:Bind WindowProperties.WindowIdForDisplay}"
+                         x:Load="False"
+                         IsLightDismissEnabled="True"
+                         Subtitle="{x:Bind WindowProperties.WindowNameForDisplay, Mode=OneWay}" />
+
+        <mux:TeachingTip x:Name="WindowRenamer"
+                         x:Uid="WindowRenamer"
+                         Title="{x:Bind WindowProperties.WindowIdForDisplay}"
+                         x:Load="False"
+                         ActionButtonClick="_WindowRenamerActionClick"
+                         ActionButtonStyle="{ThemeResource AccentButtonStyle}"
+                         IsLightDismissEnabled="True">
+            <mux:TeachingTip.Content>
+                <TextBox x:Name="WindowRenamerTextBox"
+                         KeyDown="_WindowRenamerKeyDown"
+                         KeyUp="_WindowRenamerKeyUp"
+                         Text="{x:Bind WindowProperties.WindowName, Mode=OneWay}">
+                    <TextBox.ContextFlyout>
+                        <mtu:TextMenuFlyout />
+                    </TextBox.ContextFlyout>
+                </TextBox>
+            </mux:TeachingTip.Content>
+        </mux:TeachingTip>
+
+        <mux:TeachingTip x:Name="WindowCwdToast"
+                         x:Uid="WindowCwdToast"
+                         Title="{x:Bind WindowProperties.VirtualWorkingDirectory, Mode=OneWay}"
+                         x:Load="False"
+                         IsLightDismissEnabled="True" />
+
+        <!--
+            axan M13: the combined "Edit session node" editor as an IN-TREE overlay — NOT a
+            ContentDialog and NOT a TeachingTip. In Xaml Islands a TextBox inside a popup
+            (ContentDialog) doesn't receive typed *characters* (only editing keys like Backspace
+            route through — they go to the terminal's text-input path instead); and a TeachingTip
+            modal can get orphaned/lost when the window is minimized. An in-tree overlay is the
+            shape CommandPalette/SearchBox use: its TextBoxes get keyboard input reliably and it
+            can never be lost because it's part of the visual tree (just Collapsed when idle).
+            The scrim blocks the terminal behind; the card's content (label field, icon picker,
+            color, Save/Cancel) is built in C++ (_ShowNodeEditPanel). Esc or Cancel dismisses.
+        -->
+        <Grid x:Name="NodeEditOverlay"
+              Grid.Row="2"
+              Background="#99000000"
+              Visibility="Collapsed">
+            <Border x:Name="NodeEditCard"
+                    MaxWidth="470"
+                    Margin="24"
+                    Padding="22"
+                    CornerRadius="8"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource ContentDialogBackground}"
+                    BorderBrush="{ThemeResource ContentDialogBorderBrush}"
+                    BorderThickness="1" />
+        </Grid>
+
+        <mux:TeachingTip x:Name="ActionSavedToast"
+                         x:Uid="ActionSavedToast"
+                         Title="Action Saved"
+                         HorizontalAlignment="Stretch"
+                         x:Load="False"
+                         IsLightDismissEnabled="True">
+            <mux:TeachingTip.Content>
+                <StackPanel HorizontalAlignment="Stretch"
+                            Orientation="Vertical">
+                    <TextBlock x:Name="ActionSavedNameText"
+                               Visibility="{x:Bind mtu:Converters.StringNotEmptyToVisibility(SavedActionName), Mode=OneWay}">
+                        <Run Text="Name: " />
+                        <Run Text="{x:Bind SavedActionName, Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock x:Name="ActionSavedKeyChordText"
+                               Visibility="{x:Bind mtu:Converters.StringNotEmptyToVisibility(SavedActionKeyChord), Mode=OneWay}">
+                        <Run Text="Key Chord: " />
+                        <Run Text="{x:Bind SavedActionKeyChord, Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock x:Name="ActionSavedCommandLineText"
+                               Visibility="{x:Bind mtu:Converters.StringNotEmptyToVisibility(SavedActionCommandLine), Mode=OneWay}">
+                        <Run Text="Input: " />
+                        <Run Text="{x:Bind SavedActionCommandLine, Mode=OneWay}" />
+                    </TextBlock>
+                </StackPanel>
+            </mux:TeachingTip.Content>
+        </mux:TeachingTip>
+        <mux:TeachingTip x:Name="ActionSaveFailedToast"
+                         x:Uid="ActionSaveFailedToast"
+                         Title="Action Save Failed"
+                         x:Load="False"
+                         IsLightDismissEnabled="True">
+            <mux:TeachingTip.Content>
+                <TextBlock x:Name="ActionSaveFailedMessage"
+                           Text="" />
+            </mux:TeachingTip.Content>
+        </mux:TeachingTip>
+    </Grid>
+</Page>

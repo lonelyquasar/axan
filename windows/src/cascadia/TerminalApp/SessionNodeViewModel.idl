@@ -1,0 +1,44 @@
+// Copyright (c) Lonely Quasar.
+// Licensed under the MIT license.
+//
+// SessionNodeViewModel — axan M6: the per-node identity carried as a session-tree node's
+// Content. Once nodes can be dragged to reorder/reparent, the old flat "RootNodes index ==
+// _tabs index" mapping is dead, so each node needs a stable handle to its session that
+// travels with the node through any move. The view-model is that handle: the displayed
+// Label (observable, so the M5 templated-label recompute just sets it and the bound
+// TreeViewItem refreshes — no ContainerFromNode poke needed), plus the owning Tab and its
+// label template (impl-only; see SessionNodeViewModel.h — not projected because only the
+// C++ tree plumbing reads them).
+
+namespace TerminalApp
+{
+    [default_interface] runtimeclass SessionNodeViewModel : Windows.UI.Xaml.Data.INotifyPropertyChanged
+    {
+        SessionNodeViewModel();
+
+        // The text shown for this node. Bound OneWay by the TreeView ItemTemplate; the M6
+        // recompute path sets it and INotifyPropertyChanged refreshes the realized item.
+        String Label { get; set; };
+
+        // axan M7: the icon shown left of the label, hosted in the ItemTemplate's
+        // ContentPresenter — the WT-proven pattern (BasePaletteItem/CommandPalette); the muxc
+        // IconSourceElement markup tag isn't in the XAML compiler's WinUI-2 type universe
+        // here. Read-only and built FRESH on every get (the impl resolves the path —
+        // override -> profile icon -> auto-assigned glyph — and IconWUX mints a new element):
+        // a cached IconElement is a UIElement, and binding one instance into the node's
+        // TreeViewItem as it's recycled during a drag reparent throws "element already has a
+        // parent" and crashes. INotifyPropertyChanged("Icon") re-pulls a fresh element.
+        Windows.UI.Xaml.Controls.IconElement Icon { get; };
+
+        // axan M13 (design handoff): the brush for the node's label text. When the node's
+        // recolor targets the text (Apply color to = Text or Both), this is the chosen color;
+        // otherwise it's the default theme text brush. Bound OneWay by the tree ItemTemplate's
+        // TextBlock Foreground so a recolor repaints the label without a container poke.
+        Windows.UI.Xaml.Media.Brush LabelBrush { get; };
+
+        // axan M8: a short (<=4 char) abbreviation of a display name, shown beneath the icon
+        // in the minimized sidebar's cells (mirrors the Linux minimized initials). Static so
+        // the minimized cell can x:Bind Initials(Label) and re-derive whenever Label changes.
+        static String Initials(String label);
+    }
+}
