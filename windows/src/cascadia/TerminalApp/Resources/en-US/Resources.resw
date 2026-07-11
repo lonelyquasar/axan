@@ -1019,6 +1019,21 @@
   <data name="AxanMenuToggleSidebar" xml:space="preserve">
     <value>Toggle sidebar</value>
   </data>
+  <data name="AxanMenuSaveStartup" xml:space="preserve">
+    <value>Save current as startup</value>
+  </data>
+  <data name="AxanSaveStartupDialog.Title" xml:space="preserve">
+    <value>Save current sessions as startup?</value>
+  </data>
+  <data name="AxanSaveStartupDialog.PrimaryButtonText" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="AxanSaveStartupDialog.CloseButtonText" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="AxanSaveStartupDialogText.Text" xml:space="preserve">
+    <value>This replaces your startup sessions with the sessions open in this window — their layout, shells, folders, names, icons, and colors. The command a session was originally started with can't be captured.</value>
+  </data>
   <data name="AxanMenuCurrentSession" xml:space="preserve">
     <value>Current session:</value>
     <comment>Prefix of the disabled header row in the titlebar app menu; the focused session's name is appended after it.</comment>

@@ -38,6 +38,7 @@
 
 #include <shlobj.h>
 #include <array>
+#include <unordered_set> // axan #14: captured-entry id dedup
 
 using namespace winrt;
 using namespace winrt::Windows::Foundation::Collections;
@@ -1101,6 +1102,20 @@ namespace winrt::TerminalApp::implementation
             flyout.Items().Append(mi);
         }
 
+        // axan #14: snapshot the live session tree into the global startup entries
+        // (Linux "Capture current window" parity). Confirms via dialog — it replaces
+        // the curated list. E74E is Save.
+        {
+            auto mi = makeItem(RS_(L"AxanMenuSaveStartup"), L"");
+            mi.Click([weakThis{ get_weak() }](auto&&, auto&&) {
+                if (auto page{ weakThis.get() })
+                {
+                    page->_SaveCurrentSessionsAsStartup();
+                }
+            });
+            flyout.Items().Append(mi);
+        }
+
         flyout.Items().Append(MenuFlyoutSeparator{});
 
         // Settings / command palette / about — the exact items the new-tab flyout shows.
@@ -1286,6 +1301,99 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Info("TerminalPage", "persisted node edit to global startup entry", { { "entryId", winrt::to_string(entryId) } });
     }
 
+    // axan #14: "Save current as startup" — snapshot the live session tree into the global
+    // startup entries (GlobalSettings.StartupSessions), REPLACING the curated list, so a
+    // relaunch reproduces this window (the Linux "Capture current window" parity; the
+    // M4b-era sidebar save button retired in D19 reintroduced as an app-menu action).
+    // Confirmed through a dialog first, since the replace discards the existing curated
+    // tree. Captured per node: hierarchy (pre-order, so ParentId keeps the forward-
+    // reference-only invariant LoadStartupTree expects), the focused pane's profile, the
+    // live cwd, and the label/icon/color overrides off the node VM. The command a session
+    // was originally launched with is NOT recoverable from a live session, so captured
+    // entries carry no Command — the accepted #14 limitation (matches Linux). Every
+    // captured node is adopted into the curated set (EntryId assigned), so a later node
+    // edit persists to its captured entry via _PersistNodeToEntry.
+    safe_void_coroutine TerminalPage::_SaveCurrentSessionsAsStartup()
+    {
+        auto strongThis{ get_strong() };
+        if (!_settings)
+        {
+            co_return;
+        }
+        const auto result = co_await _ShowDialogHelper(L"AxanSaveStartupDialog");
+        if (result != ContentDialogResult::Primary)
+        {
+            co_return;
+        }
+
+        std::vector<LaunchEntry> captured;
+        // Reuse a node's existing EntryId when it has one (stable identity across repeated
+        // captures); collisions or runtime-only nodes get a fresh GUID.
+        std::unordered_set<winrt::hstring> usedIds;
+        const std::function<void(const MUX::Controls::TreeViewNode&, const winrt::hstring&)> visit =
+            [&](const MUX::Controls::TreeViewNode& node, const winrt::hstring& parentId) {
+                const auto vm = _nodeVM(node);
+                const auto tab = _nodeTab(node);
+                if (!vm || !tab)
+                {
+                    // A row with no live session (mid-prune) contributes no entry; any
+                    // children hang from the nearest captured ancestor instead.
+                    for (const auto& child : node.Children())
+                    {
+                        visit(child, parentId);
+                    }
+                    return;
+                }
+                auto id = vm->EntryId;
+                if (id.empty() || usedIds.count(id) > 0)
+                {
+                    id = winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
+                }
+                usedIds.insert(id);
+
+                LaunchEntry entry{};
+                entry.Id(id);
+                entry.ParentId(parentId);
+                const auto tabImpl = winrt::get_self<Tab>(tab);
+                if (const auto profile = tabImpl->GetFocusedProfile())
+                {
+                    entry.Profile(winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(profile.Guid()) });
+                }
+                if (const auto control = tabImpl->GetActiveTerminalControl())
+                {
+                    // Empty when the shell never reported OSC 9;9 — the entry then opens
+                    // in the launch cwd, same as a hand-authored entry with no directory.
+                    entry.Directory(control.CurrentWorkingDirectory());
+                }
+                entry.Name(vm->LabelTemplate);
+                entry.Icon(vm->IconOverride);
+                entry.Color(vm->IconColor());
+                entry.ColorTarget(vm->ColorTarget);
+                captured.push_back(entry);
+                vm->EntryId = id;
+                for (const auto& child : node.Children())
+                {
+                    visit(child, id);
+                }
+            };
+        for (const auto& root : SessionTree().RootNodes())
+        {
+            visit(root, winrt::hstring{});
+        }
+
+        const auto count = captured.size();
+        // Same commit shape as _PersistNodeToEntry: reassign a fresh vector so the setter
+        // marks its layer dirty, then flush. The settings reload this triggers also
+        // refreshes the portable TOML mirror (startup-sessions.toml).
+        _settings.GlobalSettings().StartupSessions(winrt::single_threaded_vector(std::move(captured)));
+        if (!_settings.WriteSettingsToDisk())
+        {
+            Axan::Log::Error("TerminalPage", "save current as startup: WriteSettingsToDisk failed; startup sessions unchanged on disk");
+            co_return;
+        }
+        Axan::Log::Info("TerminalPage", "saved current session tree as startup", { { "entryCount", std::to_string(count) } });
+    }
+
     // ===================== axan M13: the "Edit session node" editor =====================
     //
     // The editor card is built programmatically (the XAML hosts only the NodeEditOverlay
@@ -1448,15 +1556,20 @@ namespace winrt::TerminalApp::implementation
                 b.BorderThickness(sel ? WUX::Thickness{ 2, 2, 2, 2 } : WUX::Thickness{ 1, 1, 1, 1 });
             }
         };
-        StackPanel iconBtnRow{};
+        // axan #10: a horizontal StackPanel clipped everything past ~6 buttons at the card's
+        // width. Wrap into a fixed 6-per-row grid instead (the same shape as the startup
+        // page's picker), led by a "No icon" cell that clears the override back to the
+        // session's own resolved icon.
+        VariableSizedWrapGrid iconBtnRow{};
         iconBtnRow.Orientation(Orientation::Horizontal);
-        iconBtnRow.Spacing(6);
+        iconBtnRow.MaximumRowsOrColumns(6);
+        iconBtnRow.ItemWidth(42);
+        iconBtnRow.ItemHeight(42);
         // axan #436 item 1: the picker offers exactly AxanIconRegistry's builtins (all 11),
         // so every pickable glyph round-trips to a portable `builtin:NAME` token on TOML
         // export. (The old hardcoded 8-glyph row had five glyphs outside the registry, which
         // exported as raw PUA chars that Linux renders as nothing.)
-        for (const auto& builtin : Axan::IconRegistry::Builtins())
-        {
+        const auto addIconCell = [&](const winrt::hstring& glyph, const winrt::hstring& name, const winrt::hstring& storedValue) {
             Button b{};
             b.Width(36);
             b.Height(36);
@@ -1466,29 +1579,33 @@ namespace winrt::TerminalApp::implementation
             // axan #429/#436: the picker buttons are icon-only (a bare Segoe glyph reads as
             // nothing or as a codepoint); the registry's portable name names them for
             // Narrator (and a tooltip) — better than the old positional "Icon option N".
-            const winrt::hstring name{ builtin.name };
-            Automation::AutomationProperties::SetName(b, winrt::hstring{ L"Icon: " + std::wstring{ builtin.name } });
+            Automation::AutomationProperties::SetName(b, winrt::hstring{ L"Icon: " + std::wstring{ name } });
             WUX::Controls::ToolTipService::SetToolTip(b, winrt::box_value(name));
             FontIcon fi{};
             fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-            const winrt::hstring glyph{ std::wstring(1, builtin.glyph) };
             fi.Glyph(glyph);
             b.Content(fi);
             iconBtns->push_back(b);
-            b.Click([weakThis{ get_weak() }, glyph, b, selectIconButton](auto&&, auto&&) {
+            b.Click([weakThis{ get_weak() }, storedValue, b, selectIconButton](auto&&, auto&&) {
                 if (auto p{ weakThis.get() })
                 {
-                    p->_nodeEditIconOverride = glyph;
+                    p->_nodeEditIconOverride = storedValue;
                     selectIconButton(b);
                     p->_UpdateNodeEditPreview();
                 }
             });
-            if (_nodeEditIconOverride == glyph)
+            if (_nodeEditIconOverride == storedValue)
             {
                 b.BorderBrush(accentBrush);
                 b.BorderThickness(WUX::Thickness{ 2, 2, 2, 2 });
             }
             iconBtnRow.Children().Append(b);
+        };
+        addIconCell(L"", L"No icon", L"" /* clear -> the session's own icon */);
+        for (const auto& builtin : Axan::IconRegistry::Builtins())
+        {
+            const winrt::hstring glyph{ std::wstring(1, builtin.glyph) };
+            addIconCell(glyph, winrt::hstring{ builtin.name }, glyph);
         }
         Button browseBtn{};
         {
