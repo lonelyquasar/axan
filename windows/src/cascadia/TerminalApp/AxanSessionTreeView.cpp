@@ -38,6 +38,7 @@
 
 #include <shlobj.h>
 #include <array>
+#include <unordered_set> // axan #14: captured-entry id dedup
 
 using namespace winrt;
 using namespace winrt::Windows::Foundation::Collections;
@@ -780,7 +781,11 @@ namespace winrt::TerminalApp::implementation
         const auto node = _NodeUnderPointer(args.OriginalSource());
         if (!node)
         {
-            Axan::Log::Debug("TerminalPage", "sidebar right-tap: no node under pointer (empty space or unrealized row)");
+            // axan #12: the empty sidebar space below the last row is still a valid
+            // "create a session here" surface — offer the New session split row.
+            Axan::Log::Debug("TerminalPage", "sidebar right-tap: no node under pointer; showing background menu");
+            _ShowSidebarBackgroundContextMenu(args.GetPosition(SessionTree()));
+            args.Handled(true);
             return;
         }
         const auto item = SessionTree().ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>();
@@ -870,6 +875,10 @@ namespace winrt::TerminalApp::implementation
             flyout.Items().Append(mi);
         }
         flyout.Items().Append(MenuFlyoutSeparator{});
+        // axan #12: root-level session creation from the sidebar — the New session split
+        // row (activate = default profile, submenu = pick a type), above the node-scoped
+        // Add child / Duplicate.
+        _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
         {
             auto mi = makeItem(RS_(L"AxanMenuAddChildSession"), L"");
             mi.Click([node, weakThis{ get_weak() }](auto&&, auto&&) { if (auto p{ weakThis.get() }) p->_AddChildSession(node); });
@@ -904,6 +913,85 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Debug("TerminalPage", "showed session-node context menu");
     }
 
+    // axan #12: the menu for a right-tap on empty sidebar space (below the last row) —
+    // no target node, so just the New session split row, anchored at the pointer.
+    // Reuses _sessionNodeMenu's double-open guard: a gesture that raises both RightTapped
+    // and ContextRequested can't stack two menus.
+    void TerminalPage::_ShowSidebarBackgroundContextMenu(const winrt::Windows::Foundation::Point& position)
+    {
+        if (_sessionNodeMenu && _sessionNodeMenu.IsOpen())
+        {
+            return;
+        }
+        MenuFlyout flyout{};
+        _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
+        _sessionNodeMenu = flyout;
+        flyout.ShowAt(SessionTree(), position);
+        Axan::Log::Debug("TerminalPage", "showed sidebar background context menu");
+    }
+
+    // axan #12: append the "New session" split row to a menu — one row that both creates
+    // and picks. Activating the row itself opens a session of the DEFAULT profile — via
+    // _OpenNewTab(nullptr), NOT a dispatched ActionAndArgs{NewTab, nullptr}, which
+    // _HandleNewTab silently no-ops on (the keybinding works because defaults.json
+    // materializes real NewTabArgs). Hovering (or keyboard-expanding) the row opens a
+    // submenu of the active profiles, one entry per type. A MenuFlyoutSubItem exposes no
+    // Click, so the default-profile activation rides a Tapped handler registered with
+    // handledEventsToo; the submenu children live in their own popup, so their clicks
+    // don't bubble here. The titlebar app menu and both sidebar menus (node + background)
+    // append through this helper so they can't drift; iconFontFamily matches the caller's
+    // other items.
+    void TerminalPage::_AppendNewSessionSplitItem(const MenuFlyout& flyout, const wchar_t* iconFontFamily)
+    {
+        MenuFlyoutSubItem sub{};
+        sub.Text(RS_(L"AxanMenuNewSession"));
+        FontIcon fi{};
+        fi.FontFamily(WUX::Media::FontFamily{ iconFontFamily });
+        fi.Glyph(L""); // Add — same glyph the plain "New session" item carried
+        sub.Icon(fi);
+
+        sub.AddHandler(WUX::UIElement::TappedEvent(),
+                       winrt::box_value(WUX::Input::TappedEventHandler{ [weakThis{ get_weak() }, weakFlyout{ winrt::make_weak(flyout) }](auto&&, auto&&) {
+                           if (const auto f = weakFlyout.get())
+                           {
+                               f.Hide();
+                           }
+                           if (auto page{ weakThis.get() })
+                           {
+                               LOG_IF_FAILED(page->_OpenNewTab(nullptr));
+                           }
+                       } }),
+                       true /* handledEventsToo */);
+
+        const auto activeProfiles = _settings.ActiveProfiles();
+        const auto defaultProfileGuid = _settings.GlobalSettings().DefaultProfile();
+        const auto profileCount = gsl::narrow_cast<int32_t>(activeProfiles.Size());
+        for (int32_t index = 0; index < profileCount; ++index)
+        {
+            const auto profile = activeProfiles.GetAt(static_cast<uint32_t>(index));
+            MenuFlyoutItem mi{};
+            mi.Text(profile.Name());
+            // Mirror the upstream new-tab flyout (_CreateNewTabFlyoutProfile): the
+            // profile's own icon, and the default profile contrasted in bold.
+            if (const auto iconPath = profile.Icon().Resolved(); !iconPath.empty())
+            {
+                mi.Icon(_CreateNewTabFlyoutIcon(iconPath));
+            }
+            if (profile.Guid() == defaultProfileGuid)
+            {
+                mi.FontWeight(winrt::Windows::UI::Text::FontWeights::Bold());
+            }
+            mi.Click([weakThis{ get_weak() }, index](auto&&, auto&&) {
+                if (auto page{ weakThis.get() })
+                {
+                    LOG_IF_FAILED(page->_OpenNewTab(NewTerminalArgs{ index }));
+                }
+            });
+            sub.Items().Append(mi);
+        }
+        flyout.Items().Append(sub);
+    }
+
     // axan: build the titlebar app-menu flyout and attach it to the "axan" button in
     // the TabRowControl (the otherwise-empty upper-left of the titlebar). The menu
     // mirrors the per-node context menu above, but targets the ACTIVE session — every
@@ -930,24 +1018,10 @@ namespace winrt::TerminalApp::implementation
 
         const auto actionMap = _settings.ActionMap();
 
-        // New session — same behavior as the bare newTab action (default profile).
-        // NOT dispatched as ActionAndArgs{NewTab, nullptr}: _HandleNewTab requires
-        // ActionArgs to cast to NewTabArgs and silently no-ops on a null one (the
-        // keybinding works because defaults.json materializes real NewTabArgs).
-        {
-            auto mi = makeItem(RS_(L"AxanMenuNewSession"), L"");
-            mi.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-                if (auto page{ weakThis.get() })
-                {
-                    LOG_IF_FAILED(page->_OpenNewTab(nullptr));
-                }
-            });
-            if (const auto keyChord{ actionMap.GetKeyBindingForAction(L"Terminal.OpenNewTab") })
-            {
-                _SetAcceleratorForMenuItem(mi, keyChord);
-            }
-            flyout.Items().Append(mi);
-        }
+        // axan #12: the New session split row — activating it opens a default-profile
+        // session, its submenu picks a type. (The old plain item's Ctrl+Shift+T hint is
+        // gone with it: a MenuFlyoutSubItem has no accelerator-text slot.)
+        _AppendNewSessionSplitItem(flyout, L"Segoe Fluent Icons, Segoe MDL2 Assets");
 
         flyout.Items().Append(MenuFlyoutSeparator{});
 
@@ -1213,6 +1287,82 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Info("TerminalPage", "persisted node edit to global startup entry", { { "entryId", winrt::to_string(entryId) } });
     }
 
+    // axan #14: "Save current as startup" — snapshot the live session tree as launch
+    // entries (the Linux "Capture current window" parity; the M4b-era sidebar save button
+    // retired in D19, reintroduced as a settings-page action). This is the app-side half:
+    // the settings editor edits a settings CLONE and can't see live sessions, so its
+    // Startup sessions page pulls the snapshot through this provider (registered on the
+    // settings UI in _makeSettingsContent) and commits it through its own list, where the
+    // user confirmed the replace. Captured per node: hierarchy (pre-order, so ParentId
+    // keeps the forward-reference-only invariant LoadStartupTree expects), the focused
+    // pane's profile, the live cwd, and the label/icon/color overrides off the node VM.
+    // The command a session was originally launched with is NOT recoverable from a live
+    // session, so captured entries carry no Command — the accepted #14 limitation (matches
+    // Linux; the page's confirm prompt warns about it). Every captured node is adopted
+    // into the curated set (EntryId assigned), so a later node edit persists to its
+    // captured entry via _PersistNodeToEntry once the settings save lands.
+    IVector<LaunchEntry> TerminalPage::_CaptureLiveSessionEntries()
+    {
+        std::vector<LaunchEntry> captured;
+        // Reuse a node's existing EntryId when it has one (stable identity across repeated
+        // captures); collisions or runtime-only nodes get a fresh GUID.
+        std::unordered_set<winrt::hstring> usedIds;
+        const std::function<void(const MUX::Controls::TreeViewNode&, const winrt::hstring&)> visit =
+            [&](const MUX::Controls::TreeViewNode& node, const winrt::hstring& parentId) {
+                const auto vm = _nodeVM(node);
+                const auto tab = _nodeTab(node);
+                const auto tabImpl = tab ? winrt::get_self<Tab>(tab) : nullptr;
+                const auto profile = tabImpl ? tabImpl->GetFocusedProfile() : Profile{ nullptr };
+                if (!vm || !profile)
+                {
+                    // Not a capturable session — a mid-prune row, or a profile-less tab
+                    // like the Settings tab (a live tab with a sidebar node, but nothing
+                    // meaningful to relaunch — and the Settings tab is ALWAYS open when
+                    // this runs, since the capture button lives on a settings page). Any
+                    // children hang from the nearest captured ancestor instead.
+                    for (const auto& child : node.Children())
+                    {
+                        visit(child, parentId);
+                    }
+                    return;
+                }
+                auto id = vm->EntryId;
+                if (id.empty() || usedIds.count(id) > 0)
+                {
+                    id = winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
+                }
+                usedIds.insert(id);
+
+                LaunchEntry entry{};
+                entry.Id(id);
+                entry.ParentId(parentId);
+                entry.Profile(winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(profile.Guid()) });
+                if (const auto control = tabImpl->GetActiveTerminalControl())
+                {
+                    // Empty when the shell never reported OSC 9;9 — the entry then opens
+                    // in the launch cwd, same as a hand-authored entry with no directory.
+                    entry.Directory(control.CurrentWorkingDirectory());
+                }
+                entry.Name(vm->LabelTemplate);
+                entry.Icon(vm->IconOverride);
+                entry.Color(vm->IconColor());
+                entry.ColorTarget(vm->ColorTarget);
+                captured.push_back(entry);
+                vm->EntryId = id;
+                for (const auto& child : node.Children())
+                {
+                    visit(child, id);
+                }
+            };
+        for (const auto& root : SessionTree().RootNodes())
+        {
+            visit(root, winrt::hstring{});
+        }
+
+        Axan::Log::Info("TerminalPage", "captured live session tree as launch entries", { { "entryCount", std::to_string(captured.size()) } });
+        return winrt::single_threaded_vector(std::move(captured));
+    }
+
     // ===================== axan M13: the "Edit session node" editor =====================
     //
     // The editor card is built programmatically (the XAML hosts only the NodeEditOverlay
@@ -1375,15 +1525,20 @@ namespace winrt::TerminalApp::implementation
                 b.BorderThickness(sel ? WUX::Thickness{ 2, 2, 2, 2 } : WUX::Thickness{ 1, 1, 1, 1 });
             }
         };
-        StackPanel iconBtnRow{};
+        // axan #10: a horizontal StackPanel clipped everything past ~6 buttons at the card's
+        // width. Wrap into a fixed 6-per-row grid instead (the same shape as the startup
+        // page's picker), led by a "No icon" cell that clears the override back to the
+        // session's own resolved icon.
+        VariableSizedWrapGrid iconBtnRow{};
         iconBtnRow.Orientation(Orientation::Horizontal);
-        iconBtnRow.Spacing(6);
+        iconBtnRow.MaximumRowsOrColumns(6);
+        iconBtnRow.ItemWidth(42);
+        iconBtnRow.ItemHeight(42);
         // axan #436 item 1: the picker offers exactly AxanIconRegistry's builtins (all 11),
         // so every pickable glyph round-trips to a portable `builtin:NAME` token on TOML
         // export. (The old hardcoded 8-glyph row had five glyphs outside the registry, which
         // exported as raw PUA chars that Linux renders as nothing.)
-        for (const auto& builtin : Axan::IconRegistry::Builtins())
-        {
+        const auto addIconCell = [&](const winrt::hstring& glyph, const winrt::hstring& name, const winrt::hstring& storedValue) {
             Button b{};
             b.Width(36);
             b.Height(36);
@@ -1393,29 +1548,33 @@ namespace winrt::TerminalApp::implementation
             // axan #429/#436: the picker buttons are icon-only (a bare Segoe glyph reads as
             // nothing or as a codepoint); the registry's portable name names them for
             // Narrator (and a tooltip) — better than the old positional "Icon option N".
-            const winrt::hstring name{ builtin.name };
-            Automation::AutomationProperties::SetName(b, winrt::hstring{ L"Icon: " + std::wstring{ builtin.name } });
+            Automation::AutomationProperties::SetName(b, winrt::hstring{ L"Icon: " + std::wstring{ name } });
             WUX::Controls::ToolTipService::SetToolTip(b, winrt::box_value(name));
             FontIcon fi{};
             fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-            const winrt::hstring glyph{ std::wstring(1, builtin.glyph) };
             fi.Glyph(glyph);
             b.Content(fi);
             iconBtns->push_back(b);
-            b.Click([weakThis{ get_weak() }, glyph, b, selectIconButton](auto&&, auto&&) {
+            b.Click([weakThis{ get_weak() }, storedValue, b, selectIconButton](auto&&, auto&&) {
                 if (auto p{ weakThis.get() })
                 {
-                    p->_nodeEditIconOverride = glyph;
+                    p->_nodeEditIconOverride = storedValue;
                     selectIconButton(b);
                     p->_UpdateNodeEditPreview();
                 }
             });
-            if (_nodeEditIconOverride == glyph)
+            if (_nodeEditIconOverride == storedValue)
             {
                 b.BorderBrush(accentBrush);
                 b.BorderThickness(WUX::Thickness{ 2, 2, 2, 2 });
             }
             iconBtnRow.Children().Append(b);
+        };
+        addIconCell(L"", L"No icon", L"" /* clear -> the session's own icon */);
+        for (const auto& builtin : Axan::IconRegistry::Builtins())
+        {
+            const winrt::hstring glyph{ std::wstring(1, builtin.glyph) };
+            addIconCell(glyph, winrt::hstring{ builtin.name }, glyph);
         }
         Button browseBtn{};
         {

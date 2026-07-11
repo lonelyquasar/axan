@@ -475,7 +475,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         else if (clickedItemTag == startupSessionsTag)
         {
             // axan D19: the global startup-sessions tree (its own VM over the clone's globals).
-            contentFrame().Navigate(xaml_typename<Editor::StartupSessions>(), winrt::make<StartupSessionsViewModel>(_settingsClone));
+            // #14: hand it the app's live-tree snapshot provider for "Save current as startup".
+            auto startupVM = winrt::make_self<StartupSessionsViewModel>(_settingsClone);
+            startupVM->LiveEntriesProvider(_liveStartupEntriesProvider);
+            contentFrame().Navigate(xaml_typename<Editor::StartupSessions>(), *startupVM);
             const auto crumb = winrt::make<Breadcrumb>(box_value(clickedItemTag), RS_(L"Nav_StartupSessions/Content"), BreadcrumbSubPage::None);
             _breadcrumbs.Append(crumb);
         }

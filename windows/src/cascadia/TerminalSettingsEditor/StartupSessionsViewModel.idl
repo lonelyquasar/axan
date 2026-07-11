@@ -10,6 +10,11 @@ import "ProfileViewModel.idl";
 
 namespace Microsoft.Terminal.Settings.Editor
 {
+    // axan #14: TerminalApp registers this on MainPage; it snapshots the LIVE session tree
+    // as launch entries. The editor edits a settings clone and can't see live sessions,
+    // so "Save current as startup" pulls the snapshot from the app through this.
+    delegate Windows.Foundation.Collections.IVector<Microsoft.Terminal.Settings.Model.LaunchEntry> LiveStartupEntriesProvider();
+
     runtimeclass StartupSessionsViewModel : Windows.UI.Xaml.Data.INotifyPropertyChanged
     {
         // MainPage constructs a fresh view-model on every navigation to the page, so the
@@ -28,7 +33,16 @@ namespace Microsoft.Terminal.Settings.Editor
         void DuplicateEntry(LaunchEntryViewModel vm);
         void IndentEntry(LaunchEntryViewModel vm);
         void OutdentEntry(LaunchEntryViewModel vm);
+        // axan #13: reorder a row among its SIBLINGS, carrying its whole subtree with it —
+        // launch order is list order, so this is the only way to rearrange without
+        // delete-and-re-add. No-op when the row is already first/last among its siblings.
+        void MoveEntryUp(LaunchEntryViewModel vm);
+        void MoveEntryDown(LaunchEntryViewModel vm);
         // Replace the tree with the startup sessions parsed from a portable profile TOML.
         Boolean ImportFromToml(String path);
+        // axan #14: replace the tree with a snapshot of the live session tree (pulled
+        // through the registered LiveStartupEntriesProvider). Returns the number of
+        // sessions captured; 0 (no provider / no live sessions) leaves the list untouched.
+        UInt32 CaptureLiveStartup();
     }
 }

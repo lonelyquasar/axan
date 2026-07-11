@@ -59,6 +59,9 @@ namespace Microsoft.Terminal.Settings.Editor
         Int32 Depth;
         Windows.UI.Xaml.Thickness IndentMargin { get; };
         Windows.UI.Xaml.Controls.IconElement IconPreview { get; };
+        // axan #13: Color resolved against the app theme for the row's color-button
+        // preview; null (theme foreground) when no color is set. Backed by Color.
+        Windows.UI.Xaml.Media.Brush ColorPreviewBrush { get; };
     }
 
     enum ProfileSubPage

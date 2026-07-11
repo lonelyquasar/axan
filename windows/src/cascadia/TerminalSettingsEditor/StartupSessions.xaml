@@ -53,6 +53,26 @@
                             axan #429: the per-row buttons are icon-only and Narrator doesn't
                             read ToolTips as names, so each carries an AutomationProperties.Name.
                         -->
+                        <!--
+                            axan #13: launch order is list order, so rows reorder in place.
+                            A move carries the row's whole subtree and swaps it with the
+                            previous/next SIBLING (same nesting level); the glyphs match the
+                            NewTabMenu page's reorder buttons.
+                        -->
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Move entry up"
+                                Click="MoveEntryUp_Click"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Move up (with its children)">
+                            <FontIcon FontSize="12" Glyph="&#xF0AD;" />
+                        </Button>
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Move entry down"
+                                Click="MoveEntryDown_Click"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Move down (with its children)">
+                            <FontIcon FontSize="12" Glyph="&#xF0AE;" />
+                        </Button>
                         <Button VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Outdent entry"
                                 Click="OutdentEntry_Click"
@@ -107,6 +127,26 @@
                                 <Flyout Opening="IconFlyout_Opening" />
                             </Button.Flyout>
                         </Button>
+                        <!--
+                            axan #13: the session color — the same swatch vocabulary the
+                            sidebar's node editor offers. The ellipse previews the row's
+                            color (hollow = none); the flyout (content built in code-behind
+                            on Opening, same classic-Binding limitation as the icon picker)
+                            offers the palette swatches and the icon/text/both target.
+                        -->
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Choose color"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Session color: recolor the sidebar icon and/or label text">
+                            <Ellipse Width="14"
+                                     Height="14"
+                                     Fill="{x:Bind ColorPreviewBrush, Mode=OneWay}"
+                                     Stroke="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                                     StrokeThickness="1" />
+                            <Button.Flyout>
+                                <Flyout Opening="ColorFlyout_Opening" />
+                            </Button.Flyout>
+                        </Button>
                         <TextBox Width="130"
                                  PlaceholderText="Name"
                                  Text="{x:Bind Name, Mode=TwoWay}"
@@ -156,6 +196,28 @@
                     <TextBlock Margin="8,0,0,0" Text="Import from TOML…" />
                 </StackPanel>
             </Button>
+            <!--  axan #14: snapshot the live session tree into this list (Linux "Capture
+                  current window" parity). Clicking opens the confirm flyout — the replace
+                  is destructive and captured entries carry no command.  -->
+            <Button x:Name="CaptureButton"
+                    AutomationProperties.Name="Save current as startup"
+                    ToolTipService.ToolTip="Replace the list above with a snapshot of the sessions currently open in the window.">
+                <StackPanel Orientation="Horizontal">
+                    <FontIcon FontSize="14" Glyph="&#xE74E;" />
+                    <TextBlock Margin="8,0,0,0" Text="Save current as startup" />
+                </StackPanel>
+                <Button.Flyout>
+                    <Flyout x:Name="CaptureConfirmFlyout">
+                        <StackPanel MaxWidth="320" Spacing="10">
+                            <TextBlock TextWrapping="Wrap"
+                                       Text="Replace the startup sessions above with the sessions currently open in the window? Existing entries will be lost. Commands won't be carried over — you'll need to re-add any." />
+                            <Button HorizontalAlignment="Right"
+                                    Click="CaptureConfirm_Click"
+                                    Content="Replace" />
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
         </StackPanel>
 
         <!--  axan #435: a failed TOML import was previously silent end to end. Opened by
@@ -168,6 +230,16 @@
                       IsOpen="False"
                       Message="Couldn't load startup sessions from that file; the list above was left unchanged. See logs\axan.log in the app's LocalState folder for the reason."
                       Severity="Error" />
+
+        <!--  axan #14: a zero-session capture (nothing live to save) never wipes the
+              list — surface why nothing happened instead of failing silently.  -->
+        <muxc:InfoBar x:Name="CaptureFailureBar"
+                      Title="Nothing captured"
+                      Margin="0,8,0,0"
+                      IsClosable="True"
+                      IsOpen="False"
+                      Message="No live sessions to capture from the window; the list above was left unchanged."
+                      Severity="Warning" />
 
         <TextBlock Margin="0,10,0,0"
                    Foreground="{ThemeResource SubgroupHeaderBrush}"

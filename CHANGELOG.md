@@ -2,6 +2,43 @@
 
 All notable changes to axan are documented here.
 
+## [0.1.1] — 2026-07-11
+
+Windows-only quality-of-life release for session menus and the startup-session
+tools; the Linux frontend has no functional changes (version kept in
+lockstep).
+
+### Session tree & menus
+
+- "New session" is now a split row everywhere it appears — the titlebar app
+  menu, the sidebar node context menu, and empty-sidebar right-click:
+  activating the row opens a default-profile session, and hovering (or
+  keyboard-expanding) it opens a submenu with one entry per active profile,
+  the default in bold. (#12)
+- Right-clicking the empty sidebar space below the tree now opens a context
+  menu; previously it did nothing. (#12)
+- The Edit session node icon picker no longer clips to the first ~6 glyphs:
+  the builtin glyphs wrap into rows of six, and a leading "No icon" cell
+  clears the override back to the session's own icon. (#10)
+
+### Startup sessions
+
+- Rows on the Startup sessions settings page can be reordered with per-row
+  Move up/down — sibling-scoped, carrying the row's whole subtree — and pick
+  a session color from the shared theme-adaptive palette, with an
+  icon/text/both apply-to choice. (#13)
+- "Save current as startup", beside Import from TOML, replaces the list with
+  a snapshot of the live session tree — hierarchy, profile, working
+  directory, name, icon, and color per session — behind a confirmation
+  prompt. Commands aren't recoverable from a live session and are not
+  carried over (the same limitation as the Linux "Capture current window").
+  (#14)
+
+### Installing (Windows)
+
+Installs over 0.1.0 with no certificate step (same signing certificate). New
+machines: see the 0.1.0 instructions below.
+
 ## [0.1.0] — 2026-07-02
 
 First installable release: the Windows frontend as a signed sideload MSIX

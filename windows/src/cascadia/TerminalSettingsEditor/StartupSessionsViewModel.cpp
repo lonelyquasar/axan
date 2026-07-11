@@ -12,6 +12,7 @@
 #include <sstream>
 #include <filesystem>
 #include <unordered_map>
+#include <unordered_set>
 #include <toml.hpp>
 #include <AxanLaunchEntryWire.h> // shared wire format: TOML keys, icon mapping, version (src/inc)
 #include <AxanLog.h>
@@ -235,6 +236,124 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _NotifyChanges(L"Entries");
     }
 
+    // axan #13: reorder among siblings, carrying the whole subtree. Launch order is list
+    // order (D19), so this is the in-place alternative to delete-and-re-add. The list is
+    // only ordered by the forward-reference rule (a parent precedes its children), NOT
+    // family-contiguous (Duplicate inserts a sibling between a row and its children), so
+    // the move works on id-sets rather than contiguous ranges: lift out the row's subtree,
+    // then reinsert it directly before the previous sibling (up) or after the last row of
+    // the next sibling's subtree (down). Both placements keep every parent ahead of its
+    // children: the moved block stays internally ordered, its parent stays ahead of both
+    // siblings, and no row outside the block moves at all.
+    void StartupSessionsViewModel::_moveEntry(const Editor::LaunchEntryViewModel& vm, bool up)
+    {
+        uint32_t index;
+        if (!_Entries.IndexOf(vm, index))
+        {
+            return;
+        }
+
+        std::vector<Editor::LaunchEntryViewModel> all;
+        all.reserve(_Entries.Size());
+        for (const auto& e : _Entries)
+        {
+            all.push_back(e);
+        }
+
+        // The transitive subtree of a row, as an id set; a single forward pass suffices
+        // because a parent always precedes its children.
+        const auto subtreeIds = [&all](const Editor::LaunchEntryViewModel& root) {
+            std::unordered_set<winrt::hstring> ids{ root.Id() };
+            for (const auto& e : all)
+            {
+                if (const auto p = e.ParentId(); !p.empty() && ids.count(p))
+                {
+                    ids.insert(e.Id());
+                }
+            }
+            return ids;
+        };
+
+        // The sibling to jump over: the nearest row before/after this one with the same
+        // parent. None -> already first/last among its siblings; nothing to do.
+        Editor::LaunchEntryViewModel sibling{ nullptr };
+        if (up)
+        {
+            for (auto i = static_cast<int32_t>(index) - 1; i >= 0; --i)
+            {
+                if (all[static_cast<size_t>(i)].ParentId() == vm.ParentId())
+                {
+                    sibling = all[static_cast<size_t>(i)];
+                    break;
+                }
+            }
+        }
+        else
+        {
+            for (auto i = static_cast<size_t>(index) + 1; i < all.size(); ++i)
+            {
+                if (all[i].ParentId() == vm.ParentId())
+                {
+                    sibling = all[i];
+                    break;
+                }
+            }
+        }
+        if (!sibling)
+        {
+            return;
+        }
+
+        const auto movedIds = subtreeIds(vm);
+        std::vector<Editor::LaunchEntryViewModel> rest;
+        std::vector<Editor::LaunchEntryViewModel> block;
+        rest.reserve(all.size());
+        for (const auto& e : all)
+        {
+            (movedIds.count(e.Id()) ? block : rest).push_back(e);
+        }
+
+        size_t insertAt = 0;
+        if (up)
+        {
+            for (size_t i = 0; i < rest.size(); ++i)
+            {
+                if (rest[i].Id() == sibling.Id())
+                {
+                    insertAt = i;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            const auto siblingIds = subtreeIds(sibling);
+            for (size_t i = 0; i < rest.size(); ++i)
+            {
+                if (siblingIds.count(rest[i].Id()))
+                {
+                    insertAt = i + 1;
+                }
+            }
+        }
+
+        rest.insert(rest.begin() + static_cast<ptrdiff_t>(insertAt), block.begin(), block.end());
+        _Entries = winrt::single_threaded_observable_vector<Editor::LaunchEntryViewModel>(std::move(rest));
+        _recomputeDepths();
+        _commit();
+        _NotifyChanges(L"Entries");
+    }
+
+    void StartupSessionsViewModel::MoveEntryUp(const Editor::LaunchEntryViewModel& vm)
+    {
+        _moveEntry(vm, true);
+    }
+
+    void StartupSessionsViewModel::MoveEntryDown(const Editor::LaunchEntryViewModel& vm)
+    {
+        _moveEntry(vm, false);
+    }
+
     // D19: resolve an imported entry's profile reference against the live profiles —
     // GUID-first, then the portable profile-name fallback (so a hand-created profile
     // re-matches on a machine where its GUID differs). Empty stays empty ("follow the
@@ -392,5 +511,42 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _NotifyChanges(L"Entries");
         Axan::Log::Info("StartupSessionsViewModel", "import: replaced the startup tree from TOML", { { "path", pathU8 }, { "count", std::to_string(rows.Size()) } });
         return true;
+    }
+
+    // axan #14: "Save current as startup" — replace the tree with a snapshot of the LIVE
+    // session tree, pulled through the provider TerminalApp registered on MainPage (the
+    // editor edits a settings clone and can't see live sessions itself). Same replace
+    // semantics as ImportFromToml, including the zero-entry guard: no live sessions must
+    // never wipe the user's curated tree — return 0 and leave the list untouched (the
+    // page surfaces it). Captured rows carry hierarchy/profile/cwd/name/icon/color but an
+    // EMPTY command — the launch command isn't recoverable from a live session, the
+    // accepted limitation the page's confirm prompt warns about.
+    uint32_t StartupSessionsViewModel::CaptureLiveStartup()
+    {
+        if (!_liveEntriesProvider)
+        {
+            Axan::Log::Warn("StartupSessionsViewModel", "capture: no live-entries provider registered; leaving the list untouched");
+            return 0;
+        }
+        const auto entries = _liveEntriesProvider();
+        if (!entries || entries.Size() == 0)
+        {
+            Axan::Log::Warn("StartupSessionsViewModel", "capture: no live sessions to capture; leaving the list untouched");
+            return 0;
+        }
+        auto rows = winrt::single_threaded_observable_vector<Editor::LaunchEntryViewModel>();
+        for (const auto& e : entries)
+        {
+            auto vm = winrt::make<LaunchEntryViewModel>(e.Id(), e.ParentId(), e.Name(), e.Directory(), e.Command(), e.Icon(), e.Color(), e.ColorTarget());
+            vm.Profile(e.Profile());
+            rows.Append(vm);
+            _hookEntry(vm);
+        }
+        _Entries = rows;
+        _recomputeDepths();
+        _commit();
+        _NotifyChanges(L"Entries");
+        Axan::Log::Info("StartupSessionsViewModel", "capture: replaced the startup tree from the live window", { { "count", std::to_string(rows.Size()) } });
+        return rows.Size();
     }
 }

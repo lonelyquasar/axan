@@ -27,7 +27,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void DuplicateEntry_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void IndentEntry_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void OutdentEntry_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
+        void MoveEntryUp_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
+        void MoveEntryDown_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         safe_void_coroutine Import_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
+        // axan #14: the "Save current as startup" confirm-flyout's Replace button.
+        void CaptureConfirm_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
 
         // The per-row profile ComboBox holds Model::Profile objects but the row stores a GUID
         // string; these reconcile the two (select-on-load, write-guid-on-change).
@@ -37,6 +41,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // axan #438: per-row icon picker flyout (builtin glyphs + browse + free text). Content
         // is rebuilt on each Opening so it always reflects the row it's anchored to.
         void IconFlyout_Opening(const Windows::Foundation::IInspectable& sender, const Windows::Foundation::IInspectable& args);
+
+        // axan #13: per-row session color picker flyout (the shared palette swatches +
+        // the icon/text/both apply-to choice). Rebuilt on each Opening, like the icon flyout.
+        void ColorFlyout_Opening(const Windows::Foundation::IInspectable& sender, const Windows::Foundation::IInspectable& args);
 
         til::property_changed_event PropertyChanged;
         WINRT_PROPERTY(Editor::StartupSessionsViewModel, ViewModel, nullptr);
