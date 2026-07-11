@@ -597,6 +597,12 @@ namespace winrt::TerminalApp::implementation
         // disabled by the Opening refresh (_RefreshAppMenuSessionItems).
         void _CreateAppMenuFlyout();
         void _RefreshAppMenuSessionItems();
+        // axan #12: the "New session" split row (activate = default profile, submenu =
+        // one entry per active profile) — appended by the titlebar app menu and both
+        // sidebar menus through this one helper so they can't drift — and the background
+        // menu that hosts it when right-tapping empty sidebar space.
+        void _AppendNewSessionSplitItem(const Windows::UI::Xaml::Controls::MenuFlyout& flyout, const wchar_t* iconFontFamily);
+        void _ShowSidebarBackgroundContextMenu(const Windows::Foundation::Point& position);
         Windows::UI::Xaml::Controls::MenuFlyout _appMenuFlyout{ nullptr };
         std::vector<Windows::UI::Xaml::Controls::MenuFlyoutItem> _appMenuSessionItems;
         // Disabled header row naming the session the items below act on ("Current

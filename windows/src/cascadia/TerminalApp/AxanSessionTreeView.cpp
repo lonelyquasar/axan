@@ -780,7 +780,11 @@ namespace winrt::TerminalApp::implementation
         const auto node = _NodeUnderPointer(args.OriginalSource());
         if (!node)
         {
-            Axan::Log::Debug("TerminalPage", "sidebar right-tap: no node under pointer (empty space or unrealized row)");
+            // axan #12: the empty sidebar space below the last row is still a valid
+            // "create a session here" surface — offer the New session split row.
+            Axan::Log::Debug("TerminalPage", "sidebar right-tap: no node under pointer; showing background menu");
+            _ShowSidebarBackgroundContextMenu(args.GetPosition(SessionTree()));
+            args.Handled(true);
             return;
         }
         const auto item = SessionTree().ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>();
@@ -870,6 +874,10 @@ namespace winrt::TerminalApp::implementation
             flyout.Items().Append(mi);
         }
         flyout.Items().Append(MenuFlyoutSeparator{});
+        // axan #12: root-level session creation from the sidebar — the New session split
+        // row (activate = default profile, submenu = pick a type), above the node-scoped
+        // Add child / Duplicate.
+        _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
         {
             auto mi = makeItem(RS_(L"AxanMenuAddChildSession"), L"");
             mi.Click([node, weakThis{ get_weak() }](auto&&, auto&&) { if (auto p{ weakThis.get() }) p->_AddChildSession(node); });
@@ -904,6 +912,85 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Debug("TerminalPage", "showed session-node context menu");
     }
 
+    // axan #12: the menu for a right-tap on empty sidebar space (below the last row) —
+    // no target node, so just the New session split row, anchored at the pointer.
+    // Reuses _sessionNodeMenu's double-open guard: a gesture that raises both RightTapped
+    // and ContextRequested can't stack two menus.
+    void TerminalPage::_ShowSidebarBackgroundContextMenu(const winrt::Windows::Foundation::Point& position)
+    {
+        if (_sessionNodeMenu && _sessionNodeMenu.IsOpen())
+        {
+            return;
+        }
+        MenuFlyout flyout{};
+        _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
+        _sessionNodeMenu = flyout;
+        flyout.ShowAt(SessionTree(), position);
+        Axan::Log::Debug("TerminalPage", "showed sidebar background context menu");
+    }
+
+    // axan #12: append the "New session" split row to a menu — one row that both creates
+    // and picks. Activating the row itself opens a session of the DEFAULT profile — via
+    // _OpenNewTab(nullptr), NOT a dispatched ActionAndArgs{NewTab, nullptr}, which
+    // _HandleNewTab silently no-ops on (the keybinding works because defaults.json
+    // materializes real NewTabArgs). Hovering (or keyboard-expanding) the row opens a
+    // submenu of the active profiles, one entry per type. A MenuFlyoutSubItem exposes no
+    // Click, so the default-profile activation rides a Tapped handler registered with
+    // handledEventsToo; the submenu children live in their own popup, so their clicks
+    // don't bubble here. The titlebar app menu and both sidebar menus (node + background)
+    // append through this helper so they can't drift; iconFontFamily matches the caller's
+    // other items.
+    void TerminalPage::_AppendNewSessionSplitItem(const MenuFlyout& flyout, const wchar_t* iconFontFamily)
+    {
+        MenuFlyoutSubItem sub{};
+        sub.Text(RS_(L"AxanMenuNewSession"));
+        FontIcon fi{};
+        fi.FontFamily(WUX::Media::FontFamily{ iconFontFamily });
+        fi.Glyph(L""); // Add — same glyph the plain "New session" item carried
+        sub.Icon(fi);
+
+        sub.AddHandler(WUX::UIElement::TappedEvent(),
+                       winrt::box_value(WUX::Input::TappedEventHandler{ [weakThis{ get_weak() }, weakFlyout{ winrt::make_weak(flyout) }](auto&&, auto&&) {
+                           if (const auto f = weakFlyout.get())
+                           {
+                               f.Hide();
+                           }
+                           if (auto page{ weakThis.get() })
+                           {
+                               LOG_IF_FAILED(page->_OpenNewTab(nullptr));
+                           }
+                       } }),
+                       true /* handledEventsToo */);
+
+        const auto activeProfiles = _settings.ActiveProfiles();
+        const auto defaultProfileGuid = _settings.GlobalSettings().DefaultProfile();
+        const auto profileCount = gsl::narrow_cast<int32_t>(activeProfiles.Size());
+        for (int32_t index = 0; index < profileCount; ++index)
+        {
+            const auto profile = activeProfiles.GetAt(static_cast<uint32_t>(index));
+            MenuFlyoutItem mi{};
+            mi.Text(profile.Name());
+            // Mirror the upstream new-tab flyout (_CreateNewTabFlyoutProfile): the
+            // profile's own icon, and the default profile contrasted in bold.
+            if (const auto iconPath = profile.Icon().Resolved(); !iconPath.empty())
+            {
+                mi.Icon(_CreateNewTabFlyoutIcon(iconPath));
+            }
+            if (profile.Guid() == defaultProfileGuid)
+            {
+                mi.FontWeight(winrt::Windows::UI::Text::FontWeights::Bold());
+            }
+            mi.Click([weakThis{ get_weak() }, index](auto&&, auto&&) {
+                if (auto page{ weakThis.get() })
+                {
+                    LOG_IF_FAILED(page->_OpenNewTab(NewTerminalArgs{ index }));
+                }
+            });
+            sub.Items().Append(mi);
+        }
+        flyout.Items().Append(sub);
+    }
+
     // axan: build the titlebar app-menu flyout and attach it to the "axan" button in
     // the TabRowControl (the otherwise-empty upper-left of the titlebar). The menu
     // mirrors the per-node context menu above, but targets the ACTIVE session — every
@@ -930,24 +1017,10 @@ namespace winrt::TerminalApp::implementation
 
         const auto actionMap = _settings.ActionMap();
 
-        // New session — same behavior as the bare newTab action (default profile).
-        // NOT dispatched as ActionAndArgs{NewTab, nullptr}: _HandleNewTab requires
-        // ActionArgs to cast to NewTabArgs and silently no-ops on a null one (the
-        // keybinding works because defaults.json materializes real NewTabArgs).
-        {
-            auto mi = makeItem(RS_(L"AxanMenuNewSession"), L"");
-            mi.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-                if (auto page{ weakThis.get() })
-                {
-                    LOG_IF_FAILED(page->_OpenNewTab(nullptr));
-                }
-            });
-            if (const auto keyChord{ actionMap.GetKeyBindingForAction(L"Terminal.OpenNewTab") })
-            {
-                _SetAcceleratorForMenuItem(mi, keyChord);
-            }
-            flyout.Items().Append(mi);
-        }
+        // axan #12: the New session split row — activating it opens a default-profile
+        // session, its submenu picks a type. (The old plain item's Ctrl+Shift+T hint is
+        // gone with it: a MenuFlyoutSubItem has no accelerator-text slot.)
+        _AppendNewSessionSplitItem(flyout, L"Segoe Fluent Icons, Segoe MDL2 Assets");
 
         flyout.Items().Append(MenuFlyoutSeparator{});
 
