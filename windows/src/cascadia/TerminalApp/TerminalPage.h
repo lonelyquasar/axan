@@ -603,9 +603,10 @@ namespace winrt::TerminalApp::implementation
         // menu that hosts it when right-tapping empty sidebar space.
         void _AppendNewSessionSplitItem(const Windows::UI::Xaml::Controls::MenuFlyout& flyout, const wchar_t* iconFontFamily);
         void _ShowSidebarBackgroundContextMenu(const Windows::Foundation::Point& position);
-        // axan #14: "Save current as startup" — confirm, then snapshot the live session
-        // tree into the global startup entries (replacing the curated list).
-        safe_void_coroutine _SaveCurrentSessionsAsStartup();
+        // axan #14: snapshot the live session tree as launch entries — the provider the
+        // settings editor's "Save current as startup" pulls through (registered on the
+        // settings UI in _makeSettingsContent; the editor itself can't see live sessions).
+        Windows::Foundation::Collections::IVector<Microsoft::Terminal::Settings::Model::LaunchEntry> _CaptureLiveSessionEntries();
         Windows::UI::Xaml::Controls::MenuFlyout _appMenuFlyout{ nullptr };
         std::vector<Windows::UI::Xaml::Controls::MenuFlyoutItem> _appMenuSessionItems;
         // Disabled header row naming the session the items below act on ("Current

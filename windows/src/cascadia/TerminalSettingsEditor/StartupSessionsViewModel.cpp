@@ -512,4 +512,41 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         Axan::Log::Info("StartupSessionsViewModel", "import: replaced the startup tree from TOML", { { "path", pathU8 }, { "count", std::to_string(rows.Size()) } });
         return true;
     }
+
+    // axan #14: "Save current as startup" — replace the tree with a snapshot of the LIVE
+    // session tree, pulled through the provider TerminalApp registered on MainPage (the
+    // editor edits a settings clone and can't see live sessions itself). Same replace
+    // semantics as ImportFromToml, including the zero-entry guard: no live sessions must
+    // never wipe the user's curated tree — return 0 and leave the list untouched (the
+    // page surfaces it). Captured rows carry hierarchy/profile/cwd/name/icon/color but an
+    // EMPTY command — the launch command isn't recoverable from a live session, the
+    // accepted limitation the page's confirm prompt warns about.
+    uint32_t StartupSessionsViewModel::CaptureLiveStartup()
+    {
+        if (!_liveEntriesProvider)
+        {
+            Axan::Log::Warn("StartupSessionsViewModel", "capture: no live-entries provider registered; leaving the list untouched");
+            return 0;
+        }
+        const auto entries = _liveEntriesProvider();
+        if (!entries || entries.Size() == 0)
+        {
+            Axan::Log::Warn("StartupSessionsViewModel", "capture: no live sessions to capture; leaving the list untouched");
+            return 0;
+        }
+        auto rows = winrt::single_threaded_observable_vector<Editor::LaunchEntryViewModel>();
+        for (const auto& e : entries)
+        {
+            auto vm = winrt::make<LaunchEntryViewModel>(e.Id(), e.ParentId(), e.Name(), e.Directory(), e.Command(), e.Icon(), e.Color(), e.ColorTarget());
+            vm.Profile(e.Profile());
+            rows.Append(vm);
+            _hookEntry(vm);
+        }
+        _Entries = rows;
+        _recomputeDepths();
+        _commit();
+        _NotifyChanges(L"Entries");
+        Axan::Log::Info("StartupSessionsViewModel", "capture: replaced the startup tree from the live window", { { "count", std::to_string(rows.Size()) } });
+        return rows.Size();
+    }
 }

@@ -122,6 +122,20 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
     }
 
+    // axan #14: the confirm inside the "Save current as startup" flyout — replace the
+    // list with the live window snapshot the app-side provider captures. 0 sessions
+    // captured (nothing live to save) leaves the list untouched and surfaces the
+    // info bar, mirroring the Import failure path; a success dismisses a stale bar.
+    void StartupSessions::CaptureConfirm_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        CaptureConfirmFlyout().Hide();
+        if (_ViewModel)
+        {
+            const auto count = _ViewModel.CaptureLiveStartup();
+            CaptureFailureBar().IsOpen(count == 0);
+        }
+    }
+
     // axan #438: the icon is picked, not typed. Build the flyout's content fresh on each open
     // (in code — the XAML-side classic-Binding limitation noted on the profile combo applies
     // here too): the builtin-glyph vocabulary from AxanIconRegistry (everything it offers

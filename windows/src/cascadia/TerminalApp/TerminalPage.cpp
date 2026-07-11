@@ -4521,6 +4521,18 @@ namespace winrt::TerminalApp::implementation
             }
         });
 
+        // axan #14: the Startup sessions page's "Save current as startup" pulls a live
+        // session-tree snapshot through this provider — the editor edits a settings clone
+        // and can't see live sessions itself.
+        sui.RegisterLiveStartupEntriesProvider(
+            winrt::Microsoft::Terminal::Settings::Editor::LiveStartupEntriesProvider{ [weakThis{ get_weak() }]() -> Windows::Foundation::Collections::IVector<winrt::Microsoft::Terminal::Settings::Model::LaunchEntry> {
+                if (auto page{ weakThis.get() })
+                {
+                    return page->_CaptureLiveSessionEntries();
+                }
+                return nullptr;
+            } });
+
         return *settingsContent;
     }
 

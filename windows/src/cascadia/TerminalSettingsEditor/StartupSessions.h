@@ -30,6 +30,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void MoveEntryUp_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void MoveEntryDown_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         safe_void_coroutine Import_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
+        // axan #14: the "Save current as startup" confirm-flyout's Replace button.
+        void CaptureConfirm_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
 
         // The per-row profile ComboBox holds Model::Profile objects but the row stores a GUID
         // string; these reconcile the two (select-on-load, write-guid-on-change).

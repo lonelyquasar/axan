@@ -196,6 +196,28 @@
                     <TextBlock Margin="8,0,0,0" Text="Import from TOML…" />
                 </StackPanel>
             </Button>
+            <!--  axan #14: snapshot the live session tree into this list (Linux "Capture
+                  current window" parity). Clicking opens the confirm flyout — the replace
+                  is destructive and captured entries carry no command.  -->
+            <Button x:Name="CaptureButton"
+                    AutomationProperties.Name="Save current as startup"
+                    ToolTipService.ToolTip="Replace the list above with a snapshot of the sessions currently open in the window.">
+                <StackPanel Orientation="Horizontal">
+                    <FontIcon FontSize="14" Glyph="&#xE74E;" />
+                    <TextBlock Margin="8,0,0,0" Text="Save current as startup" />
+                </StackPanel>
+                <Button.Flyout>
+                    <Flyout x:Name="CaptureConfirmFlyout">
+                        <StackPanel MaxWidth="320" Spacing="10">
+                            <TextBlock TextWrapping="Wrap"
+                                       Text="Replace the startup sessions above with the sessions currently open in the window? Existing entries will be lost. Commands won't be carried over — you'll need to re-add any." />
+                            <Button HorizontalAlignment="Right"
+                                    Click="CaptureConfirm_Click"
+                                    Content="Replace" />
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
         </StackPanel>
 
         <!--  axan #435: a failed TOML import was previously silent end to end. Opened by
@@ -208,6 +230,16 @@
                       IsOpen="False"
                       Message="Couldn't load startup sessions from that file; the list above was left unchanged. See logs\axan.log in the app's LocalState folder for the reason."
                       Severity="Error" />
+
+        <!--  axan #14: a zero-session capture (nothing live to save) never wipes the
+              list — surface why nothing happened instead of failing silently.  -->
+        <muxc:InfoBar x:Name="CaptureFailureBar"
+                      Title="Nothing captured"
+                      Margin="0,8,0,0"
+                      IsClosable="True"
+                      IsOpen="False"
+                      Message="No live sessions to capture from the window; the list above was left unchanged."
+                      Severity="Warning" />
 
         <TextBlock Margin="0,10,0,0"
                    Foreground="{ThemeResource SubgroupHeaderBrush}"

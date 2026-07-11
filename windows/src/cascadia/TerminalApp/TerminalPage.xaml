@@ -597,16 +597,6 @@
                        x:Load="False"
                        DefaultButton="Close" />
 
-        <!--  axan #14: confirm before "Save current as startup" replaces the curated startup tree.  -->
-        <ContentDialog x:Name="AxanSaveStartupDialog"
-                       x:Uid="AxanSaveStartupDialog"
-                       Grid.Row="2"
-                       x:Load="False"
-                       DefaultButton="Primary">
-            <TextBlock x:Uid="AxanSaveStartupDialogText"
-                       TextWrapping="Wrap" />
-        </ContentDialog>
-
         <ContentDialog x:Name="MultiLinePasteDialog"
                        x:Uid="MultiLinePasteDialog"
                        Grid.Row="2"

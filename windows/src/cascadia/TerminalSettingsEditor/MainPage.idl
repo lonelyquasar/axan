@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 import "Extensions.idl";
+import "StartupSessionsViewModel.idl"; // axan #14: LiveStartupEntriesProvider
 
 namespace Microsoft.Terminal.Settings.Editor
 {
@@ -44,6 +45,10 @@ namespace Microsoft.Terminal.Settings.Editor
         // Due to the aforementioned bug, we can't use IInitializeWithWindow _here_ either.
         // Let's just smuggle the HWND in as a UInt64 :|
         void SetHostingWindow(UInt64 window);
+
+        // axan #14: TerminalApp hands the settings UI a live session-tree snapshot
+        // provider; the Startup sessions page's "Save current as startup" pulls through it.
+        void RegisterLiveStartupEntriesProvider(LiveStartupEntriesProvider provider);
 
         Windows.Foundation.Collections.IObservableVector<IInspectable> Breadcrumbs { get; };
         ExtensionsViewModel ExtensionsVM { get; };

@@ -40,6 +40,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         bool TryPropagateHostingWindow(IInspectable object) noexcept;
         uint64_t GetHostingWindow() const noexcept;
 
+        // axan #14: TerminalApp's live session-tree snapshot provider, handed to each
+        // StartupSessionsViewModel this page constructs so "Save current as startup" works.
+        void RegisterLiveStartupEntriesProvider(const Editor::LiveStartupEntriesProvider& provider) { _liveStartupEntriesProvider = provider; }
+
         winrt::Windows::UI::Xaml::Media::Brush BackgroundBrush();
 
         Windows::Foundation::Collections::IObservableVector<IInspectable> Breadcrumbs() noexcept;
@@ -57,6 +61,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         Model::CascadiaSettings _settingsClone;
 
         std::optional<HWND> _hostingHwnd;
+
+        // axan #14: see RegisterLiveStartupEntriesProvider.
+        Editor::LiveStartupEntriesProvider _liveStartupEntriesProvider{ nullptr };
 
         void _InitializeProfilesList();
         void _CreateAndNavigateToNewProfile(const uint32_t index, const Model::Profile& profile);

@@ -1102,20 +1102,6 @@ namespace winrt::TerminalApp::implementation
             flyout.Items().Append(mi);
         }
 
-        // axan #14: snapshot the live session tree into the global startup entries
-        // (Linux "Capture current window" parity). Confirms via dialog — it replaces
-        // the curated list. E74E is Save.
-        {
-            auto mi = makeItem(RS_(L"AxanMenuSaveStartup"), L"");
-            mi.Click([weakThis{ get_weak() }](auto&&, auto&&) {
-                if (auto page{ weakThis.get() })
-                {
-                    page->_SaveCurrentSessionsAsStartup();
-                }
-            });
-            flyout.Items().Append(mi);
-        }
-
         flyout.Items().Append(MenuFlyoutSeparator{});
 
         // Settings / command palette / about — the exact items the new-tab flyout shows.
@@ -1301,31 +1287,22 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Info("TerminalPage", "persisted node edit to global startup entry", { { "entryId", winrt::to_string(entryId) } });
     }
 
-    // axan #14: "Save current as startup" — snapshot the live session tree into the global
-    // startup entries (GlobalSettings.StartupSessions), REPLACING the curated list, so a
-    // relaunch reproduces this window (the Linux "Capture current window" parity; the
-    // M4b-era sidebar save button retired in D19 reintroduced as an app-menu action).
-    // Confirmed through a dialog first, since the replace discards the existing curated
-    // tree. Captured per node: hierarchy (pre-order, so ParentId keeps the forward-
-    // reference-only invariant LoadStartupTree expects), the focused pane's profile, the
-    // live cwd, and the label/icon/color overrides off the node VM. The command a session
-    // was originally launched with is NOT recoverable from a live session, so captured
-    // entries carry no Command — the accepted #14 limitation (matches Linux). Every
-    // captured node is adopted into the curated set (EntryId assigned), so a later node
-    // edit persists to its captured entry via _PersistNodeToEntry.
-    safe_void_coroutine TerminalPage::_SaveCurrentSessionsAsStartup()
+    // axan #14: "Save current as startup" — snapshot the live session tree as launch
+    // entries (the Linux "Capture current window" parity; the M4b-era sidebar save button
+    // retired in D19, reintroduced as a settings-page action). This is the app-side half:
+    // the settings editor edits a settings CLONE and can't see live sessions, so its
+    // Startup sessions page pulls the snapshot through this provider (registered on the
+    // settings UI in _makeSettingsContent) and commits it through its own list, where the
+    // user confirmed the replace. Captured per node: hierarchy (pre-order, so ParentId
+    // keeps the forward-reference-only invariant LoadStartupTree expects), the focused
+    // pane's profile, the live cwd, and the label/icon/color overrides off the node VM.
+    // The command a session was originally launched with is NOT recoverable from a live
+    // session, so captured entries carry no Command — the accepted #14 limitation (matches
+    // Linux; the page's confirm prompt warns about it). Every captured node is adopted
+    // into the curated set (EntryId assigned), so a later node edit persists to its
+    // captured entry via _PersistNodeToEntry once the settings save lands.
+    IVector<LaunchEntry> TerminalPage::_CaptureLiveSessionEntries()
     {
-        auto strongThis{ get_strong() };
-        if (!_settings)
-        {
-            co_return;
-        }
-        const auto result = co_await _ShowDialogHelper(L"AxanSaveStartupDialog");
-        if (result != ContentDialogResult::Primary)
-        {
-            co_return;
-        }
-
         std::vector<LaunchEntry> captured;
         // Reuse a node's existing EntryId when it has one (stable identity across repeated
         // captures); collisions or runtime-only nodes get a fresh GUID.
@@ -1334,9 +1311,14 @@ namespace winrt::TerminalApp::implementation
             [&](const MUX::Controls::TreeViewNode& node, const winrt::hstring& parentId) {
                 const auto vm = _nodeVM(node);
                 const auto tab = _nodeTab(node);
-                if (!vm || !tab)
+                const auto tabImpl = tab ? winrt::get_self<Tab>(tab) : nullptr;
+                const auto profile = tabImpl ? tabImpl->GetFocusedProfile() : Profile{ nullptr };
+                if (!vm || !profile)
                 {
-                    // A row with no live session (mid-prune) contributes no entry; any
+                    // Not a capturable session — a mid-prune row, or a profile-less tab
+                    // like the Settings tab (a live tab with a sidebar node, but nothing
+                    // meaningful to relaunch — and the Settings tab is ALWAYS open when
+                    // this runs, since the capture button lives on a settings page). Any
                     // children hang from the nearest captured ancestor instead.
                     for (const auto& child : node.Children())
                     {
@@ -1354,11 +1336,7 @@ namespace winrt::TerminalApp::implementation
                 LaunchEntry entry{};
                 entry.Id(id);
                 entry.ParentId(parentId);
-                const auto tabImpl = winrt::get_self<Tab>(tab);
-                if (const auto profile = tabImpl->GetFocusedProfile())
-                {
-                    entry.Profile(winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(profile.Guid()) });
-                }
+                entry.Profile(winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(profile.Guid()) });
                 if (const auto control = tabImpl->GetActiveTerminalControl())
                 {
                     // Empty when the shell never reported OSC 9;9 — the entry then opens
@@ -1381,17 +1359,8 @@ namespace winrt::TerminalApp::implementation
             visit(root, winrt::hstring{});
         }
 
-        const auto count = captured.size();
-        // Same commit shape as _PersistNodeToEntry: reassign a fresh vector so the setter
-        // marks its layer dirty, then flush. The settings reload this triggers also
-        // refreshes the portable TOML mirror (startup-sessions.toml).
-        _settings.GlobalSettings().StartupSessions(winrt::single_threaded_vector(std::move(captured)));
-        if (!_settings.WriteSettingsToDisk())
-        {
-            Axan::Log::Error("TerminalPage", "save current as startup: WriteSettingsToDisk failed; startup sessions unchanged on disk");
-            co_return;
-        }
-        Axan::Log::Info("TerminalPage", "saved current session tree as startup", { { "entryCount", std::to_string(count) } });
+        Axan::Log::Info("TerminalPage", "captured live session tree as launch entries", { { "entryCount", std::to_string(captured.size()) } });
+        return winrt::single_threaded_vector(std::move(captured));
     }
 
     // ===================== axan M13: the "Edit session node" editor =====================
