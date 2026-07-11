@@ -23,6 +23,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void DuplicateEntry(const Editor::LaunchEntryViewModel& vm);
         void IndentEntry(const Editor::LaunchEntryViewModel& vm);
         void OutdentEntry(const Editor::LaunchEntryViewModel& vm);
+        void MoveEntryUp(const Editor::LaunchEntryViewModel& vm);
+        void MoveEntryDown(const Editor::LaunchEntryViewModel& vm);
         bool ImportFromToml(hstring path);
 
         // The startup tree rows. Set wholesale on (re)build; the macro getter feeds the ItemsControl.
@@ -37,6 +39,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void _hookEntry(const Editor::LaunchEntryViewModel& vm);
         void _recomputeDepths();
         void _commit();
+        void _moveEntry(const Editor::LaunchEntryViewModel& vm, bool up);
         hstring _resolveImportedProfile(const std::string& bareGuid, const std::string& name);
     };
 }

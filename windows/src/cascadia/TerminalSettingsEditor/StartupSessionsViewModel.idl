@@ -28,6 +28,11 @@ namespace Microsoft.Terminal.Settings.Editor
         void DuplicateEntry(LaunchEntryViewModel vm);
         void IndentEntry(LaunchEntryViewModel vm);
         void OutdentEntry(LaunchEntryViewModel vm);
+        // axan #13: reorder a row among its SIBLINGS, carrying its whole subtree with it —
+        // launch order is list order, so this is the only way to rearrange without
+        // delete-and-re-add. No-op when the row is already first/last among its siblings.
+        void MoveEntryUp(LaunchEntryViewModel vm);
+        void MoveEntryDown(LaunchEntryViewModel vm);
         // Replace the tree with the startup sessions parsed from a portable profile TOML.
         Boolean ImportFromToml(String path);
     }

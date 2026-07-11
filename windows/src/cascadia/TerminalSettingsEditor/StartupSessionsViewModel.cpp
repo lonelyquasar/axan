@@ -12,6 +12,7 @@
 #include <sstream>
 #include <filesystem>
 #include <unordered_map>
+#include <unordered_set>
 #include <toml.hpp>
 #include <AxanLaunchEntryWire.h> // shared wire format: TOML keys, icon mapping, version (src/inc)
 #include <AxanLog.h>
@@ -233,6 +234,124 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _suspendCommit = false;
         _commit();
         _NotifyChanges(L"Entries");
+    }
+
+    // axan #13: reorder among siblings, carrying the whole subtree. Launch order is list
+    // order (D19), so this is the in-place alternative to delete-and-re-add. The list is
+    // only ordered by the forward-reference rule (a parent precedes its children), NOT
+    // family-contiguous (Duplicate inserts a sibling between a row and its children), so
+    // the move works on id-sets rather than contiguous ranges: lift out the row's subtree,
+    // then reinsert it directly before the previous sibling (up) or after the last row of
+    // the next sibling's subtree (down). Both placements keep every parent ahead of its
+    // children: the moved block stays internally ordered, its parent stays ahead of both
+    // siblings, and no row outside the block moves at all.
+    void StartupSessionsViewModel::_moveEntry(const Editor::LaunchEntryViewModel& vm, bool up)
+    {
+        uint32_t index;
+        if (!_Entries.IndexOf(vm, index))
+        {
+            return;
+        }
+
+        std::vector<Editor::LaunchEntryViewModel> all;
+        all.reserve(_Entries.Size());
+        for (const auto& e : _Entries)
+        {
+            all.push_back(e);
+        }
+
+        // The transitive subtree of a row, as an id set; a single forward pass suffices
+        // because a parent always precedes its children.
+        const auto subtreeIds = [&all](const Editor::LaunchEntryViewModel& root) {
+            std::unordered_set<winrt::hstring> ids{ root.Id() };
+            for (const auto& e : all)
+            {
+                if (const auto p = e.ParentId(); !p.empty() && ids.count(p))
+                {
+                    ids.insert(e.Id());
+                }
+            }
+            return ids;
+        };
+
+        // The sibling to jump over: the nearest row before/after this one with the same
+        // parent. None -> already first/last among its siblings; nothing to do.
+        Editor::LaunchEntryViewModel sibling{ nullptr };
+        if (up)
+        {
+            for (auto i = static_cast<int32_t>(index) - 1; i >= 0; --i)
+            {
+                if (all[static_cast<size_t>(i)].ParentId() == vm.ParentId())
+                {
+                    sibling = all[static_cast<size_t>(i)];
+                    break;
+                }
+            }
+        }
+        else
+        {
+            for (auto i = static_cast<size_t>(index) + 1; i < all.size(); ++i)
+            {
+                if (all[i].ParentId() == vm.ParentId())
+                {
+                    sibling = all[i];
+                    break;
+                }
+            }
+        }
+        if (!sibling)
+        {
+            return;
+        }
+
+        const auto movedIds = subtreeIds(vm);
+        std::vector<Editor::LaunchEntryViewModel> rest;
+        std::vector<Editor::LaunchEntryViewModel> block;
+        rest.reserve(all.size());
+        for (const auto& e : all)
+        {
+            (movedIds.count(e.Id()) ? block : rest).push_back(e);
+        }
+
+        size_t insertAt = 0;
+        if (up)
+        {
+            for (size_t i = 0; i < rest.size(); ++i)
+            {
+                if (rest[i].Id() == sibling.Id())
+                {
+                    insertAt = i;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            const auto siblingIds = subtreeIds(sibling);
+            for (size_t i = 0; i < rest.size(); ++i)
+            {
+                if (siblingIds.count(rest[i].Id()))
+                {
+                    insertAt = i + 1;
+                }
+            }
+        }
+
+        rest.insert(rest.begin() + static_cast<ptrdiff_t>(insertAt), block.begin(), block.end());
+        _Entries = winrt::single_threaded_observable_vector<Editor::LaunchEntryViewModel>(std::move(rest));
+        _recomputeDepths();
+        _commit();
+        _NotifyChanges(L"Entries");
+    }
+
+    void StartupSessionsViewModel::MoveEntryUp(const Editor::LaunchEntryViewModel& vm)
+    {
+        _moveEntry(vm, true);
+    }
+
+    void StartupSessionsViewModel::MoveEntryDown(const Editor::LaunchEntryViewModel& vm)
+    {
+        _moveEntry(vm, false);
     }
 
     // D19: resolve an imported entry's profile reference against the live profiles —

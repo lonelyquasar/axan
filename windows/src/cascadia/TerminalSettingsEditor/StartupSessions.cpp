@@ -9,6 +9,7 @@
 #include "..\WinRTUtils\inc\Utils.h"
 #include "../../types/inc/utils.hpp" // GuidToString
 #include <AxanIconRegistry.h> // builtin glyph vocabulary for the icon picker flyout (#438)
+#include <AxanSessionPalette.h> // shared session color palette for the color picker flyout (#13)
 
 using namespace winrt::Windows::UI::Xaml;
 using namespace winrt::Windows::UI::Xaml::Controls;
@@ -73,6 +74,22 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
         {
             _ViewModel.OutdentEntry(vm);
+        }
+    }
+
+    void StartupSessions::MoveEntryUp_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
+    {
+        if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
+        {
+            _ViewModel.MoveEntryUp(vm);
+        }
+    }
+
+    void StartupSessions::MoveEntryDown_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
+    {
+        if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
+        {
+            _ViewModel.MoveEntryDown(vm);
         }
     }
 
@@ -216,6 +233,117 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         {
             f.Hide();
         }
+    }
+
+    // axan #13: the session color picker — the same swatch vocabulary the sidebar's node
+    // editor offers (the shared src/inc/AxanSessionPalette.h names + a "no color" cell),
+    // plus the icon/text/both apply-to choice. Content is rebuilt on each Opening (the
+    // classic-Binding limitation noted on the profile combo applies here too). A swatch
+    // click applies and dismisses; the apply-to radios commit immediately and leave the
+    // flyout up so color and target can be set in one visit.
+    void StartupSessions::ColorFlyout_Opening(const IInspectable& sender, const IInspectable& /*args*/)
+    {
+        const auto flyout = sender.try_as<Controls::Flyout>();
+        if (!flyout)
+        {
+            return;
+        }
+        const auto anchor = flyout.Target() ? flyout.Target().try_as<FrameworkElement>() : nullptr;
+        const auto vm = anchor ? anchor.Tag().try_as<Editor::LaunchEntryViewModel>() : nullptr;
+        if (!vm)
+        {
+            return;
+        }
+        auto weakFlyout = winrt::make_weak(flyout);
+        const auto hide = [weakFlyout]() {
+            if (const auto f = weakFlyout.get())
+            {
+                f.Hide();
+            }
+        };
+
+        const auto dark = ActualTheme() == ElementTheme::Dark;
+
+        Controls::StackPanel root;
+        root.Spacing(8);
+
+        // Row 1: the swatches — a "no color" cell, then the six palette names, each
+        // filled with the name resolved against the page's actual theme (WYSIWYG). The
+        // row's current color gets an accent border.
+        Controls::StackPanel swatchRow;
+        swatchRow.Orientation(Controls::Orientation::Horizontal);
+        swatchRow.Spacing(6);
+
+        const Media::SolidColorBrush accentBrush{ winrt::unbox_value<Windows::UI::Color>(
+            Application::Current().Resources().Lookup(winrt::box_value(L"SystemAccentColor"))) };
+
+        const auto addSwatch = [&](const winrt::hstring& token, const winrt::hstring& label) {
+            Controls::Button cell;
+            cell.Width(34);
+            cell.Height(34);
+            cell.Padding(Thickness{ 0, 0, 0, 0 });
+            Automation::AutomationProperties::SetName(cell, label);
+            Controls::ToolTipService::SetToolTip(cell, winrt::box_value(label));
+            if (token.empty())
+            {
+                Controls::FontIcon fi;
+                fi.FontSize(14);
+                fi.Glyph(L""); // Cancel — clear back to the theme foreground
+                cell.Content(fi);
+            }
+            else if (const auto c = Axan::SessionPalette::ParseHexColor(Axan::SessionPalette::ResolveToken(token, dark)))
+            {
+                Shapes::Ellipse el;
+                el.Width(18);
+                el.Height(18);
+                el.Fill(Media::SolidColorBrush{ Windows::UI::Color{ c->a, c->r, c->g, c->b } });
+                cell.Content(el);
+            }
+            if (vm.Color() == token)
+            {
+                cell.BorderBrush(accentBrush);
+                cell.BorderThickness(Thickness{ 2, 2, 2, 2 });
+            }
+            cell.Click([vm, token, hide](auto&&, auto&&) {
+                vm.Color(token);
+                hide();
+            });
+            swatchRow.Children().Append(cell);
+        };
+
+        addSwatch({}, L"No color");
+        for (const auto& sw : Axan::SessionPalette::kLight)
+        {
+            addSwatch(winrt::hstring{ sw.name }, winrt::hstring{ sw.name });
+        }
+        root.Children().Append(swatchRow);
+
+        // Row 2: what the color paints — the sidebar icon, the label text, or both
+        // ("" in the model means both; show that).
+        Controls::TextBlock applyLabel;
+        applyLabel.Text(L"Apply color to");
+        applyLabel.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
+        root.Children().Append(applyLabel);
+
+        Controls::StackPanel applyRow;
+        applyRow.Orientation(Controls::Orientation::Horizontal);
+        applyRow.Spacing(12);
+        const auto currentTarget = vm.ColorTarget().empty() ? winrt::hstring{ L"both" } : vm.ColorTarget();
+        const auto addRadio = [&](const wchar_t* text, const wchar_t* value) {
+            Controls::RadioButton rb;
+            rb.Content(winrt::box_value(winrt::hstring{ text }));
+            rb.GroupName(L"axanStartupApplyColorTo");
+            const winrt::hstring v{ value };
+            rb.IsChecked(currentTarget == v);
+            rb.Checked([vm, v](auto&&, auto&&) { vm.ColorTarget(v); });
+            applyRow.Children().Append(rb);
+        };
+        addRadio(L"Icon", L"icon");
+        addRadio(L"Text", L"text");
+        addRadio(L"Both", L"both");
+        root.Children().Append(applyRow);
+
+        flyout.Content(root);
     }
 
     // The ComboBox shows Model::Profile objects; the row stores a GUID string. On load, select the

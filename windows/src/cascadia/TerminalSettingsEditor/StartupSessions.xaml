@@ -53,6 +53,26 @@
                             axan #429: the per-row buttons are icon-only and Narrator doesn't
                             read ToolTips as names, so each carries an AutomationProperties.Name.
                         -->
+                        <!--
+                            axan #13: launch order is list order, so rows reorder in place.
+                            A move carries the row's whole subtree and swaps it with the
+                            previous/next SIBLING (same nesting level); the glyphs match the
+                            NewTabMenu page's reorder buttons.
+                        -->
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Move entry up"
+                                Click="MoveEntryUp_Click"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Move up (with its children)">
+                            <FontIcon FontSize="12" Glyph="&#xF0AD;" />
+                        </Button>
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Move entry down"
+                                Click="MoveEntryDown_Click"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Move down (with its children)">
+                            <FontIcon FontSize="12" Glyph="&#xF0AE;" />
+                        </Button>
                         <Button VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Outdent entry"
                                 Click="OutdentEntry_Click"
@@ -105,6 +125,26 @@
                                             IsTabStop="False" />
                             <Button.Flyout>
                                 <Flyout Opening="IconFlyout_Opening" />
+                            </Button.Flyout>
+                        </Button>
+                        <!--
+                            axan #13: the session color — the same swatch vocabulary the
+                            sidebar's node editor offers. The ellipse previews the row's
+                            color (hollow = none); the flyout (content built in code-behind
+                            on Opening, same classic-Binding limitation as the icon picker)
+                            offers the palette swatches and the icon/text/both target.
+                        -->
+                        <Button VerticalAlignment="Stretch"
+                                AutomationProperties.Name="Choose color"
+                                Tag="{x:Bind}"
+                                ToolTipService.ToolTip="Session color: recolor the sidebar icon and/or label text">
+                            <Ellipse Width="14"
+                                     Height="14"
+                                     Fill="{x:Bind ColorPreviewBrush, Mode=OneWay}"
+                                     Stroke="{ThemeResource SystemControlForegroundBaseMediumBrush}"
+                                     StrokeThickness="1" />
+                            <Button.Flyout>
+                                <Flyout Opening="ColorFlyout_Opening" />
                             </Button.Flyout>
                         </Button>
                         <TextBox Width="130"

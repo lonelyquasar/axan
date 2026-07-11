@@ -13,6 +13,7 @@
 #include "SegoeFluentIconList.h"
 #include "../../types/inc/utils.hpp"
 #include <AxanIconRegistry.h> // builtin:NAME <-> glyph mapping for LaunchEntryViewModel::IconPortable
+#include <AxanSessionPalette.h> // shared session color palette for LaunchEntryViewModel::ColorPreviewBrush (#13)
 
 #include <filesystem>
 
@@ -882,6 +883,27 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     {
         bool mapped = false;
         Icon(hstring{ Axan::IconRegistry::PortableToNative(value, mapped) });
+    }
+
+    void LaunchEntryViewModel::Color(const hstring& value)
+    {
+        if (_Color != value)
+        {
+            _Color = value;
+            _NotifyChanges(L"Color", L"ColorPreviewBrush");
+        }
+    }
+
+    Windows::UI::Xaml::Media::Brush LaunchEntryViewModel::ColorPreviewBrush() const
+    {
+        // Resolve the token against the app theme — the settings UI renders in it. (The
+        // sidebar re-resolves against ITS theme at render time; this is only the preview.)
+        const auto dark = Windows::UI::Xaml::Application::Current().RequestedTheme() == Windows::UI::Xaml::ApplicationTheme::Dark;
+        if (const auto c = Axan::SessionPalette::ParseHexColor(Axan::SessionPalette::ResolveToken(_Color, dark)))
+        {
+            return Windows::UI::Xaml::Media::SolidColorBrush{ Windows::UI::Color{ c->a, c->r, c->g, c->b } };
+        }
+        return nullptr;
     }
 
     void LaunchEntryViewModel::Depth(int32_t value)

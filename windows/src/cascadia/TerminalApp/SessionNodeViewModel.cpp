@@ -10,6 +10,8 @@
 #include <optional>
 #include <string_view>
 
+#include <AxanSessionPalette.h> // the shared six-name session color palette (#422, #13)
+
 namespace winrt::TerminalApp::implementation
 {
     // axan #427 item 3: tear down the recompute subscriptions _CreateSessionNode
@@ -88,50 +90,12 @@ namespace winrt::TerminalApp::implementation
         return color;
     }
 
-    // axan #422: the per-node color palette, ported from the Linux "Axan Session Colors" sets
-    // (terminal-sidebar.cc node_edit_swatches_light/_dark). What is STORED on a node is the
-    // semantic NAME ("blue"), not a hex — so the same stored value resolves to a theme-legible
-    // hex here at render time and stays portable across OSes. Adwaita doesn't auto-adapt, so
-    // Linux ships two hue sets pushed for contrast against the worst-case surface per theme
-    // (#353535 dark / #f6f5f4 light); Windows reuses those exact values, picking by the
-    // sidebar's ActualTheme. Every hue clears AA (4.5:1) on its surface.
-    struct _PaletteSwatch
-    {
-        std::wstring_view name;
-        std::wstring_view hex;
-    };
-    static constexpr std::array<_PaletteSwatch, 6> s_paletteLight{ {
-        { L"red", L"#df0025" },
-        { L"orange", L"#a35c00" },
-        { L"yellow", L"#787101" },
-        { L"green", L"#007f39" },
-        { L"blue", L"#0277a4" },
-        { L"purple", L"#7d04ff" } } };
-    static constexpr std::array<_PaletteSwatch, 6> s_paletteDark{ {
-        { L"red", L"#ff6f69" },
-        { L"orange", L"#ff9405" },
-        { L"yellow", L"#f8ea09" },
-        { L"green", L"#09ff79" },
-        { L"blue", L"#12bbff" },
-        { L"purple", L"#b5a1ff" } } };
+    // axan #422/#13: the per-node color palette (name -> per-theme hex, Linux rationale and
+    // the tables themselves) now lives in the shared src/inc/AxanSessionPalette.h so the
+    // Startup sessions settings page paints the identical swatches. Windows picks the set
+    // by the sidebar's ActualTheme.
 
-    static bool _asciiIEquals(std::wstring_view a, std::wstring_view b)
-    {
-        if (a.size() != b.size())
-        {
-            return false;
-        }
-        for (size_t i = 0; i < a.size(); ++i)
-        {
-            if (std::towlower(a[i]) != std::towlower(b[i]))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // axan M8: a short (<=4 char) abbreviation of a display name for the minimized sidebar
+// axan M8: a short (<=4 char) abbreviation of a display name for the minimized sidebar
     // cells. Multi-word names -> the leading letters of up to four words, uppercased
     // ("Windows PowerShell" -> "WP", "child pwsh.exe" -> "CPE"); a single word -> its first
     // up-to-4 characters as-is ("PowerShell" -> "Powe"). Tokens with no letter/digit (e.g. a
@@ -244,25 +208,7 @@ namespace winrt::TerminalApp::implementation
     // hex; an unknown name -> "" (no recolor). Mirrors Linux sidebar_resolve_color_token.
     winrt::hstring SessionNodeViewModel::ResolveColorToken(const winrt::hstring& token, bool isDarkTheme)
     {
-        const std::wstring_view s{ token };
-        if (s.empty())
-        {
-            return {};
-        }
-        if (s.front() == L'#')
-        {
-            return token; // literal hex — used verbatim, no theme adaptation
-        }
-        const auto& pal = isDarkTheme ? s_paletteDark : s_paletteLight;
-        for (const auto& sw : pal)
-        {
-            if (_asciiIEquals(s, sw.name))
-            {
-                return winrt::hstring{ sw.hex };
-            }
-        }
-        // Unknown name -> no recolor (paint with the theme foreground), matching Linux.
-        return {};
+        return winrt::hstring{ Axan::SessionPalette::ResolveToken(token, isDarkTheme) };
     }
 
     winrt::Windows::UI::Xaml::Media::Brush SessionNodeViewModel::ResolveColorBrush(const winrt::hstring& token, bool isDarkTheme)

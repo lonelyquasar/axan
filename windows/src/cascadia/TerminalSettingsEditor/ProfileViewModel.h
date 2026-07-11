@@ -70,6 +70,16 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void IconPortable(const hstring& value);
         int32_t Depth() const { return _Depth; }
         void Depth(int32_t value);
+        // axan #422/#13: the per-node recolor token (palette name / "#hex" / ""), round-
+        // tripped through the model so a sidebar-set color survives an editor open + commit;
+        // edited by the Startup page's per-row color picker. Custom setter (placed here,
+        // above the macros — those leave the access specifier private) so the dependent
+        // ColorPreviewBrush re-notifies.
+        hstring Color() const { return _Color; }
+        void Color(const hstring& value);
+        // The row's color-button preview: the stored token resolved against the app theme;
+        // nullptr (theme foreground) when no color is set.
+        Windows::UI::Xaml::Media::Brush ColorPreviewBrush() const;
 
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, ParentId);
         // axan D19: GUID of the WT profile this row spawns. Set when the row is built from the
@@ -78,15 +88,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, Name);
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, Directory);
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, Command);
-        // axan #422: the per-node recolor token (palette name / "#hex" / "") and its target
-        // ("icon"/"text"/"both"/""). Round-tripped through the model so a sidebar-set color
-        // survives an editor open + commit; editable here once the Startup page grows a control.
-        VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, Color);
+        // The color's target ("icon"/"text"/"both"/""), #422; the color itself is the
+        // custom-setter property above.
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, ColorTarget);
 
     private:
         hstring _Id;
         hstring _Icon;
+        hstring _Color;
         int32_t _Depth{ 0 };
     };
 
