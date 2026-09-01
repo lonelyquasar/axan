@@ -2,6 +2,33 @@
 
 All notable changes to axan are documented here.
 
+## [Unreleased]
+
+### Session tree & menus
+
+- Dragging a session onto a session that had no children no longer makes the
+  dragged session vanish: the drop target is expanded (and its expander
+  refreshed) as soon as the drop lands, instead of only once something else
+  gave it a child. Windows only. (#16)
+
+### Startup sessions
+
+- Move up/down on the Startup sessions settings page no longer rebuilds every
+  row on each click; only the moved rows are re-rendered, which removes the
+  visible pause on longer lists and slower machines. Windows only.
+- The Startup sessions page uses the available width: the Name, Directory and
+  Command boxes grow with the window (up to a wider page cap) instead of
+  clipping long paths and commands at a fixed width, and shrink first on a
+  narrow window so the row's trailing buttons stay in view. Windows only.
+
+### Build
+
+- Every exe and dll in the Windows build now carries a Win32 version resource:
+  FileDescription (e.g. "axan Console and PTY Host"), ProductName "axan", and
+  FileVersion/ProductVersion read from the package manifest, so Task Manager
+  and file properties can identify axan's binaries and which build they are.
+  The remaining "Windows Terminal …" descriptions were rebranded to axan. (#9)
+
 ## [0.1.1] — 2026-07-11
 
 Windows-only quality-of-life release for session menus and the startup-session

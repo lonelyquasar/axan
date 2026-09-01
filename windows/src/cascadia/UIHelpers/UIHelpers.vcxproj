@@ -7,7 +7,7 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <SubSystem>Console</SubSystem>
     <OpenConsoleUniversalApp>true</OpenConsoleUniversalApp>
-    <VersionInfoFileDescription>Windows Terminal UI Support Library</VersionInfoFileDescription>
+    <VersionInfoFileDescription>axan UI Support Library</VersionInfoFileDescription>
   </PropertyGroup>
   <PropertyGroup Label="NuGet Dependencies">
     <TerminalCppWinrt>true</TerminalCppWinrt>
