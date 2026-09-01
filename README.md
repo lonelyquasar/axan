@@ -203,14 +203,14 @@ An entry with no icon of its own inherits one: node override → the profile's i
 
 ### Sidebar and backdrop transparency (Windows)
 
-By default the sidebar and the surface behind the terminal panes are opaque, so a profile with reduced opacity or acrylic composites over a solid app-colored backdrop rather than the live desktop. A theme in `settings.json` can change both with two axan-only keys, `sidebar.background` and `content.background`, which take the same values as Windows Terminal's `tabRow.background`: `"#RRGGBB"`, `"#RRGGBBAA"`, `"accent"`, or `"terminalBackground"`. Alpha is honored: `"#000000CC"` is 80% black, which keeps sidebar labels readable over a busy desktop and is the recommended starting point; `"#00000080"` is a half-transparent scrim; `"#00000000"` is fully see-through; and `"terminalBackground"` follows the focused terminal's background. Leave a key unset and that surface keeps today's opaque look. The terminal panes themselves only show the backdrop once a profile has `"opacity"` below 100 (80 pairs well) or `"useAcrylic"`. For example:
+By default the sidebar and the surface behind the terminal panes are opaque, so a profile with reduced opacity or acrylic composites over a solid app-colored backdrop rather than the live desktop. A theme in `settings.json` can change both with two axan-only keys, `sidebar.background` and `content.background`, which take the same values as Windows Terminal's `tabRow.background`: `"#RRGGBB"`, `"#RRGGBBAA"`, `"accent"`, or `"terminalBackground"`. Alpha is honored: `"#000000CC"` is 80% black, which keeps sidebar labels readable over a busy desktop and is the recommended sidebar value; `"#00000080"` is a half-transparent scrim; `"#00000000"` is fully see-through; and `"terminalBackground"` follows the focused terminal's background. Leave a key unset and that surface keeps today's opaque look. The content backdrop sits *behind* the terminal panes, so it only shows once a profile has `"opacity"` below 100 (80 pairs well) or `"useAcrylic"`, and its alpha then stacks with the profile's: a 90% pane over a 90% black backdrop is nearly opaque. Let the profile opacity do the work and keep `content.background` fully clear. For example:
 
 ```json
 "themes": [
     {
         "name": "glass",
         "sidebar": { "background": "#000000CC" },
-        "content": { "background": "#000000CC" }
+        "content": { "background": "#00000000" }
     }
 ],
 "theme": "glass"

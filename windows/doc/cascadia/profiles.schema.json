@@ -2023,7 +2023,7 @@
       "description": "A set of properties for customizing the backdrop behind the terminal content (axan)",
       "properties": {
         "background": {
-          "description": "The backdrop behind the terminal panes, which profiles with reduced opacity composite over. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\") to let the desktop show through; \"#000000CC\" (80% black) is the recommended starting point, and only shows once a profile's opacity is below 100 or useAcrylic is on. Unset keeps the opaque application background.",
+          "description": "The backdrop behind the terminal panes, which profiles with reduced opacity composite over. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\"). It only shows once a profile's opacity is below 100 or useAcrylic is on, and its alpha then stacks with the profile's (a 90% pane over a 90% black backdrop is nearly opaque), so the recommended value is fully clear (\"#00000000\") with the profile opacity doing the work. Unset keeps the opaque application background.",
           "$ref": "#/$defs/ThemeColor"
         }
       }
