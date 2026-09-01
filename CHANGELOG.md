@@ -27,6 +27,13 @@ All notable changes to axan are documented here.
   clipping long paths and commands at a fixed width, and shrink first on a
   narrow window so the row's trailing buttons stay in view. Windows only.
 
+### Appearance
+
+- Themes can now set `sidebar.background` and `content.background` (the same
+  value forms as `tabRow.background`, including alpha and `terminalBackground`)
+  to make the sidebar and the terminal backdrop translucent or see-through;
+  unset keeps today's opaque surfaces. Windows only. (#2)
+
 ### Build
 
 - Every exe and dll in the Windows build now carries a Win32 version resource:

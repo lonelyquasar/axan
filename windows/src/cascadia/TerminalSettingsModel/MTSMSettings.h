@@ -148,11 +148,17 @@ Author(s):
 // * ForegroundKey, BackgroundKey, SelectionBackgroundKey, CursorColorKey: all optional colors
 // * Opacity: needs special parsing
 
+// axan #2: `sidebar` and `content` are axan-only theme namespaces. Each carries a single
+// `background` ThemeColor (same value forms as tabRow.background, alpha included) for the
+// session-tree sidebar and the backdrop behind the terminal content. Both default to
+// null, which keeps today's opaque surfaces.
 #define MTSM_THEME_SETTINGS(X)                                                                   \
     X(winrt::Microsoft::Terminal::Settings::Model::WindowTheme, Window, "window", nullptr)       \
     X(winrt::Microsoft::Terminal::Settings::Model::SettingsTheme, Settings, "settings", nullptr) \
     X(winrt::Microsoft::Terminal::Settings::Model::TabRowTheme, TabRow, "tabRow", nullptr)       \
-    X(winrt::Microsoft::Terminal::Settings::Model::TabTheme, Tab, "tab", nullptr)
+    X(winrt::Microsoft::Terminal::Settings::Model::TabTheme, Tab, "tab", nullptr)                \
+    X(winrt::Microsoft::Terminal::Settings::Model::SidebarTheme, Sidebar, "sidebar", nullptr)    \
+    X(winrt::Microsoft::Terminal::Settings::Model::ContentTheme, Content, "content", nullptr)
 
 #define MTSM_THEME_WINDOW_SETTINGS(X)                                                                                              \
     X(winrt::Windows::UI::Xaml::ElementTheme, RequestedTheme, "applicationTheme", winrt::Windows::UI::Xaml::ElementTheme::Default) \
@@ -168,7 +174,13 @@ Author(s):
     X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, Background, "background", nullptr) \
     X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, UnfocusedBackground, "unfocusedBackground", nullptr)
 
-#define MTSM_THEME_TAB_SETTINGS(X)                                                                                                                     \
+#define MTSM_THEME_SIDEBAR_SETTINGS(X) \
+    X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, Background, "background", nullptr)
+
+#define MTSM_THEME_CONTENT_SETTINGS(X) \
+    X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, Background, "background", nullptr)
+
+#define MTSM_THEME_TAB_SETTINGS(X)                                                                                                                   \
     X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, Background, "background", nullptr)                                                      \
     X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, UnfocusedBackground, "unfocusedBackground", nullptr)                                    \
     X(winrt::Microsoft::Terminal::Settings::Model::IconStyle, IconStyle, "iconStyle", winrt::Microsoft::Terminal::Settings::Model::IconStyle::Default) \
