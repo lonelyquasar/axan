@@ -2013,7 +2013,7 @@
       "description": "A set of properties for customizing the appearance of the session-tree sidebar (axan)",
       "properties": {
         "background": {
-          "description": "The backdrop of the session-tree sidebar. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\") for a translucent or see-through sidebar. Unset keeps the opaque chrome color.",
+          "description": "The backdrop of the session-tree sidebar. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\") for a translucent or see-through sidebar; \"#000000CC\" (80% black) is the recommended starting point. Unset keeps the opaque chrome color.",
           "$ref": "#/$defs/ThemeColor"
         }
       }
@@ -2023,7 +2023,7 @@
       "description": "A set of properties for customizing the backdrop behind the terminal content (axan)",
       "properties": {
         "background": {
-          "description": "The backdrop behind the terminal panes, which profiles with reduced opacity composite over. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\") to let the desktop show through. Unset keeps the opaque application background.",
+          "description": "The backdrop behind the terminal panes, which profiles with reduced opacity composite over. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\") to let the desktop show through; \"#000000CC\" (80% black) is the recommended starting point, and only shows once a profile's opacity is below 100 or useAcrylic is on. Unset keeps the opaque application background.",
           "$ref": "#/$defs/ThemeColor"
         }
       }
