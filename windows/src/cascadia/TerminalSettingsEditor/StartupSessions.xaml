@@ -26,7 +26,12 @@
         </ResourceDictionary>
     </Page.Resources>
 
-    <StackPanel Style="{StaticResource SettingsStackStyle}">
+    <!--
+        Wider than the standard settings column: each row is a full toolbar of controls,
+        and the directory/command boxes deserve the room on a wide window.
+    -->
+    <StackPanel MaxWidth="2200"
+                Style="{StaticResource SettingsStackStyle}">
 
         <TextBlock Margin="0,0,0,4"
                    Style="{StaticResource TextBlockSubHeaderStyle}"
@@ -45,10 +50,31 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="local:LaunchEntryViewModel">
-                    <StackPanel Margin="{x:Bind IndentMargin, Mode=OneWay}"
-                                Orientation="Horizontal"
-                                Spacing="4"
-                                TabFocusNavigation="Local">
+                    <!--
+                        A Grid, not a horizontal StackPanel: the Name / Directory / Command
+                        boxes are star-sized so they grow with the page instead of clipping
+                        a long path or command at a fixed width on a wide window (the page's
+                        MaxWidth is raised above for the same reason), and shrink first when
+                        the window is narrow so the trailing Duplicate/Delete buttons stay in
+                        view instead of the row being cropped. Everything else stays Auto-sized.
+                    -->
+                    <Grid Margin="{x:Bind IndentMargin, Mode=OneWay}"
+                          ColumnSpacing="4"
+                          TabFocusNavigation="Local">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" MinWidth="70" MaxWidth="400" />
+                            <ColumnDefinition Width="2*" MinWidth="100" MaxWidth="900" />
+                            <ColumnDefinition Width="2*" MinWidth="100" MaxWidth="900" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
                         <!--
                             axan #429: the per-row buttons are icon-only and Narrator doesn't
                             read ToolTips as names, so each carries an AutomationProperties.Name.
@@ -59,28 +85,32 @@
                             previous/next SIBLING (same nesting level); the glyphs match the
                             NewTabMenu page's reorder buttons.
                         -->
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="0"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Move entry up"
                                 Click="MoveEntryUp_Click"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Move up (with its children)">
                             <FontIcon FontSize="12" Glyph="&#xF0AD;" />
                         </Button>
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="1"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Move entry down"
                                 Click="MoveEntryDown_Click"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Move down (with its children)">
                             <FontIcon FontSize="12" Glyph="&#xF0AE;" />
                         </Button>
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="2"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Outdent entry"
                                 Click="OutdentEntry_Click"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Outdent (move out one level)">
                             <FontIcon FontSize="12" Glyph="&#xE76B;" />
                         </Button>
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="3"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Indent entry"
                                 Click="IndentEntry_Click"
                                 Tag="{x:Bind}"
@@ -95,7 +125,8 @@
                             row's LaunchEntryViewModel. DisplayMemberPath has the same disease
                             (it reflects on Model.Profile), hence the explicit item template.
                         -->
-                        <ComboBox Width="150"
+                        <ComboBox Grid.Column="4"
+                                  Width="150"
                                   AutomationProperties.Name="Profile"
                                   Loaded="ProfileCombo_Loaded"
                                   SelectionChanged="ProfileCombo_SelectionChanged"
@@ -114,7 +145,8 @@
                             builtin-glyph vocabulary, an image-file browse, and a free-text row
                             for emoji / tokens.
                         -->
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="5"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Choose icon"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Icon: pick a builtin glyph, browse for an image, or type an emoji">
@@ -134,7 +166,8 @@
                             on Opening, same classic-Binding limitation as the icon picker)
                             offers the palette swatches and the icon/text/both target.
                         -->
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="6"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Choose color"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Session color: recolor the sidebar icon and/or label text">
@@ -147,33 +180,35 @@
                                 <Flyout Opening="ColorFlyout_Opening" />
                             </Button.Flyout>
                         </Button>
-                        <TextBox Width="130"
+                        <TextBox Grid.Column="7"
                                  PlaceholderText="Name"
                                  Text="{x:Bind Name, Mode=TwoWay}"
                                  ToolTipService.ToolTip="Sidebar label template (optional)" />
-                        <TextBox Width="170"
+                        <TextBox Grid.Column="8"
                                  PlaceholderText="Directory"
                                  Text="{x:Bind Directory, Mode=TwoWay}"
                                  ToolTipService.ToolTip="Working directory; ~ = home (optional)" />
-                        <TextBox Width="170"
+                        <TextBox Grid.Column="9"
                                  PlaceholderText="Command"
                                  Text="{x:Bind Command, Mode=TwoWay}"
                                  ToolTipService.ToolTip="Command to run; empty = the profile's shell" />
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="10"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Duplicate entry"
                                 Click="DuplicateEntry_Click"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Duplicate this session">
                             <FontIcon FontSize="12" Glyph="&#xE8C8;" />
                         </Button>
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="11"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Delete entry"
                                 Click="DeleteEntry_Click"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Remove this session">
                             <FontIcon FontSize="12" Glyph="&#xE74D;" />
                         </Button>
-                    </StackPanel>
+                    </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>

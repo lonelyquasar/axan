@@ -337,11 +337,28 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             }
         }
 
-        rest.insert(rest.begin() + static_cast<ptrdiff_t>(insertAt), block.begin(), block.end());
-        _Entries = winrt::single_threaded_observable_vector<Editor::LaunchEntryViewModel>(std::move(rest));
+        // Apply the move to the live observable vector in place rather than swapping in a
+        // fresh vector + re-notifying "Entries": that rebound the whole ItemsControl and
+        // re-realized every row (profile combo populate, icon/color previews, three text
+        // boxes each), which showed up as a visible pause per click on larger lists /
+        // slower machines. Removing then re-inserting only the moved block means the
+        // ItemsControl touches just those rows; the rest keep their containers. After the
+        // removals, _Entries is exactly `rest`, so `insertAt` is the live index too.
+        for (auto i = static_cast<int32_t>(all.size()) - 1; i >= 0; --i)
+        {
+            if (movedIds.count(all[static_cast<size_t>(i)].Id()))
+            {
+                _Entries.RemoveAt(static_cast<uint32_t>(i));
+            }
+        }
+        for (size_t k = 0; k < block.size(); ++k)
+        {
+            _Entries.InsertAt(static_cast<uint32_t>(insertAt + k), block[k]);
+        }
+        // Sibling moves never change depth (the guard in Depth() keeps this silent), and
+        // the observable vector already told the view about the rows it needs to redraw.
         _recomputeDepths();
         _commit();
-        _NotifyChanges(L"Entries");
     }
 
     void StartupSessionsViewModel::MoveEntryUp(const Editor::LaunchEntryViewModel& vm)
