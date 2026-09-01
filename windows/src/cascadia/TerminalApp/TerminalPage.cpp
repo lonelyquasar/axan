@@ -5187,12 +5187,62 @@ namespace winrt::TerminalApp::implementation
         // text sitting on translucency. (A custom tabRow color that fights the app theme can
         // still under-contrast the sidebar text — the same limitation WT's own tabs carry;
         // documented as an M12 divergence.)
+        //
+        // axan #2: that solid chrome color is now only the *default*. A theme's
+        // `sidebar.background` (any ThemeColor form — alpha, "accent", "terminalBackground")
+        // wins when set, so a user can make the sidebar a translucent scrim or fully
+        // see-through. Evaluate() hands back nullptr for "terminalBackground" when no pane
+        // has focus yet; treat that like unset, the same way the tabRow path does above.
+        const auto sidebarBg{ theme.Sidebar() ? theme.Sidebar().Background() : ThemeColor{ nullptr } };
+        Media::Brush sidebarBrush{ nullptr };
+        if (sidebarBg)
+        {
+            sidebarBrush = sidebarBg.Evaluate(res, terminalBrush, false);
+        }
+        const bool sidebarFromTheme{ sidebarBrush != nullptr };
+        if (!sidebarFromTheme)
+        {
+            sidebarBrush = Media::SolidColorBrush{ static_cast<winrt::Windows::UI::Color>(bgColor) };
+        }
         if (const auto sidebar{ SessionSidebar() })
         {
             sidebar.RequestedTheme(requestedTheme);
-            sidebar.Background(Media::SolidColorBrush{ static_cast<winrt::Windows::UI::Color>(bgColor) });
-            Axan::Log::Debug("TerminalPage", "_updateThemeColors: themed session sidebar to chrome color", { { "requestedTheme", std::to_string(static_cast<int32_t>(requestedTheme)) } });
+            sidebar.Background(sidebarBrush);
         }
+
+        // axan #2: the backdrop behind the terminal content (the ContentBackdrop Border in
+        // TerminalPage.xaml). `content.background` set -> apply the evaluated brush as a local
+        // value. Unset -> ClearValue so the Border's Style setter (an opaque
+        // ApplicationPageBackgroundThemeBrush ThemeResource) takes back over. Clearing rather
+        // than re-looking-up the brush from code matters twice: it's what makes a set->unset
+        // settings reload restore today's exact default, and it keeps the default tracking
+        // the requested light/dark theme (ThemeLookup can't see system resources in our own
+        // theme dictionaries and would hand back the OS-theme value instead).
+        const auto contentBg{ theme.Content() ? theme.Content().Background() : ThemeColor{ nullptr } };
+        Media::Brush contentBrush{ nullptr };
+        if (contentBg)
+        {
+            contentBrush = contentBg.Evaluate(res, terminalBrush, false);
+        }
+        const bool contentFromTheme{ contentBrush != nullptr };
+        if (const auto backdrop{ ContentBackdrop() })
+        {
+            if (contentFromTheme)
+            {
+                backdrop.Background(contentBrush);
+            }
+            else
+            {
+                backdrop.ClearValue(WUX::Controls::Border::BackgroundProperty());
+            }
+        }
+
+        Axan::Log::Debug("TerminalPage",
+                         "_updateThemeColors: themed session sidebar and content backdrop",
+                         { { "requestedTheme", std::to_string(static_cast<int32_t>(requestedTheme)) },
+                           { "sidebarBg", sidebarFromTheme ? "theme" : "default" },
+                           { "contentBg", contentFromTheme ? "theme" : "default" } });
+
         // axan M13/#422: repaint node labels with the theme-correct default text color (a node
         // whose recolor doesn't target the text uses white-on-dark / near-black-on-light) and
         // re-resolve per-node color NAMES to the new palette. Pass requestedTheme explicitly: the

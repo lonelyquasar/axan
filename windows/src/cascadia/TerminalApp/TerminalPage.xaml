@@ -16,6 +16,20 @@
 
     <Page.Resources>
         <!--
+            axan #2: the default paint for the ContentBackdrop Border lives in a Style setter
+            rather than a local Background attribute on purpose. _updateThemeColors overrides
+            Background with a local value when the theme sets `content.background`; when the
+            key is unset (or removed again on a settings reload) it ClearValue()s the local
+            value and this setter takes back over, and because it's a ThemeResource it keeps
+            re-resolving with the requested light/dark theme. There is no way to re-attach a
+            {ThemeResource} from code, so this is the only path that round-trips cleanly.
+        -->
+        <Style x:Key="ContentBackdropThemeStyle"
+               TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
+        </Style>
+
+        <!--
             axan M7/M8: the expanded-state node row — the M7 icon + label. The icon is a
             fresh IconElement minted per get on the view-model (never a cached UIElement),
             hosted in a plain ContentPresenter (the muxc IconSourceElement markup tag isn't
@@ -538,15 +552,19 @@
                 axan: an opaque backdrop behind the terminal content. Profiles with reduced
                 opacity / acrylic stay see-through, but they now composite over this solid
                 surface instead of the live desktop, so text is readable without anyone
-                touching per-profile opacity. Full window see-through stays available as a
-                future per-profile/theme option (the profile-management UI; cf. sidebar
-                transparency). It sits BEHIND TabContent (earlier in markup = lower z-order);
-                TabContent's own Background is reserved by WT for the per-profile background
-                image. The sidebar (column 0) is intentionally left transparent.
+                touching per-profile opacity. It sits BEHIND TabContent (earlier in markup =
+                lower z-order); TabContent's own Background is reserved by WT for the
+                per-profile background image. The sidebar (column 0) gets its backdrop from
+                _updateThemeColors, not markup.
+
+                axan #2: the backdrop is themeable. A theme's `content.background` (any
+                ThemeColor form, alpha included) replaces this default from _updateThemeColors;
+                unset keeps the opaque ApplicationPageBackgroundThemeBrush below via the
+                ContentBackdropThemeStyle setter (see Page.Resources for why it's a Style).
             -->
             <Border x:Name="ContentBackdrop"
                     Grid.Column="1"
-                    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
+                    Style="{StaticResource ContentBackdropThemeStyle}" />
 
             <Grid x:Name="TabContent"
                   Grid.Column="1"

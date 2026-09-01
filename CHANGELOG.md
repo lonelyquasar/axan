@@ -2,6 +2,12 @@
 
 All notable changes to axan are documented here.
 
+## [Unreleased]
+
+### Appearance
+
+- Themes can now set `sidebar.background` and `content.background` (same value forms as `tabRow.background`, including alpha and `terminalBackground`) to make the sidebar and the terminal backdrop translucent or see-through; unset keeps today's opaque surfaces. Windows only. (#2)
+
 ## [0.1.1] — 2026-07-11
 
 Windows-only quality-of-life release for session menus and the startup-session
