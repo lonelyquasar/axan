@@ -33,24 +33,50 @@
                 column width (below); without that the row would size to content and never
                 trim.
             -->
-            <Grid VerticalAlignment="Center">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <ContentPresenter Grid.Column="0"
-                                  Width="16"
-                                  Height="16"
-                                  Margin="0,0,8,0"
-                                  VerticalAlignment="Center"
-                                  Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
-                <TextBlock Grid.Column="1"
-                           Text="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}"
-                           Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis"
-                           TextWrapping="NoWrap"
-                           ToolTipService.ToolTip="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}" />
+            <!--
+                axan #3: one template serves both row kinds. The session Grid (icon + label)
+                and the separator Grid sit side by side under one root Grid, and the node's
+                view-model shows exactly one via SessionVisibility / SeparatorVisibility
+                (Collapsed, so the hidden half takes no layout space). The session Grid now
+                carries the TreeViewItemMinHeight floor that used to sit on the item style
+                (whose MinHeight is 0 below), so a session row keeps its height while a
+                separator with Height 0.5 can actually be half a row. The separator Grid's
+                Height is SeparatorHeight x one row (SeparatorPixelHeight); the "line" style
+                draws a 1px hairline centered in it, in the item foreground at low opacity so
+                it reads as a divider rather than a row, and "space" leaves the gap empty.
+            -->
+            <Grid>
+                <Grid MinHeight="{ThemeResource TreeViewItemMinHeight}"
+                      VerticalAlignment="Center"
+                      Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SessionVisibility, Mode=OneWay}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <ContentPresenter Grid.Column="0"
+                                      Width="16"
+                                      Height="16"
+                                      Margin="0,0,8,0"
+                                      VerticalAlignment="Center"
+                                      Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
+                    <TextBlock Grid.Column="1"
+                               Text="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}"
+                               Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               TextWrapping="NoWrap"
+                               ToolTipService.ToolTip="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}" />
+                </Grid>
+                <Grid Height="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorPixelHeight, Mode=OneWay}"
+                      Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorVisibility, Mode=OneWay}">
+                    <Rectangle Height="1"
+                               Margin="4,0,8,0"
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Center"
+                               Fill="{ThemeResource TreeViewItemForeground}"
+                               Opacity="0.35"
+                               Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorLineVisibility, Mode=OneWay}" />
+                </Grid>
             </Grid>
         </DataTemplate>
 
@@ -76,7 +102,12 @@
             <Setter Property="BorderBrush" Value="{ThemeResource TreeViewItemBorderBrush}" />
             <Setter Property="BorderThickness" Value="{ThemeResource TreeViewItemBorderThemeThickness}" />
             <Setter Property="GlyphBrush" Value="{ThemeResource TreeViewItemForeground}" />
-            <Setter Property="MinHeight" Value="{ThemeResource TreeViewItemMinHeight}" />
+            <!--
+                axan #3: the stock TreeViewItemMinHeight floor moved off the item and onto the
+                ItemTemplate's session Grid, so a separator row (Height 0.5 = half a row) can
+                be shorter than a session row. Session rows are unchanged in height.
+            -->
+            <Setter Property="MinHeight" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="FocusVisualMargin" Value="0,-1,0,-1" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -229,7 +260,8 @@
                                     <TextBlock x:Name="CollapsedGlyph" Foreground="{TemplateBinding GlyphBrush}" Width="12" Height="12" Visibility="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=TreeViewItemTemplateSettings.CollapsedGlyphVisibility}" FontSize="{TemplateBinding GlyphSize}" Text="{TemplateBinding CollapsedGlyph}" FontFamily="{StaticResource SymbolThemeFontFamily}" Padding="2" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" IsTextScaleFactorEnabled="False" IsHitTestVisible="False" />
                                     <TextBlock x:Name="ExpandedGlyph" Foreground="{TemplateBinding GlyphBrush}" Width="12" Height="12" Visibility="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=TreeViewItemTemplateSettings.ExpandedGlyphVisibility}" FontSize="{TemplateBinding GlyphSize}" Text="{TemplateBinding ExpandedGlyph}" FontFamily="{StaticResource SymbolThemeFontFamily}" Padding="2" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw" IsTextScaleFactorEnabled="False" IsHitTestVisible="False" />
                                 </Grid>
-                                <ContentPresenter x:Name="ContentPresenter" Grid.Column="2" ContentTransitions="{TemplateBinding ContentTransitions}" ContentTemplate="{TemplateBinding ContentTemplate}" Content="{TemplateBinding Content}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" MinHeight="{ThemeResource TreeViewItemContentHeight}" Margin="{TemplateBinding Padding}" />
+                                <!--  axan #3: MinHeight was {ThemeResource TreeViewItemContentHeight} (24px) — zeroed so a sub-row separator isn't floored here either; the session Grid in the ItemTemplate carries the row height.  -->
+                                <ContentPresenter x:Name="ContentPresenter" Grid.Column="2" ContentTransitions="{TemplateBinding ContentTransitions}" ContentTemplate="{TemplateBinding ContentTemplate}" Content="{TemplateBinding Content}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" MinHeight="0" Margin="{TemplateBinding Padding}" />
                             </Grid>
                         </Grid>
                     </ControlTemplate>

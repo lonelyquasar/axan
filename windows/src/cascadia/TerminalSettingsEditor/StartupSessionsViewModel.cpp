@@ -53,8 +53,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             {
                 for (const auto& e : entries)
                 {
-                    auto vm = winrt::make<LaunchEntryViewModel>(e.Id(), e.ParentId(), e.Name(), e.Directory(), e.Command(), e.Icon(), e.Color(), e.ColorTarget());
-                    vm.Profile(e.Profile());
+                    const auto vm = _rowFromModel(e);
                     rows.Append(vm);
                     _hookEntry(vm);
                 }
@@ -65,8 +64,22 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _NotifyChanges(L"Entries");
     }
 
+    // One row from a model entry. axan #3: the separator fields ride along (Kind decides
+    // which editor the row template shows); on a session row they stay at their defaults.
+    Editor::LaunchEntryViewModel StartupSessionsViewModel::_rowFromModel(const Model::LaunchEntry& e)
+    {
+        auto vm = winrt::make<LaunchEntryViewModel>(e.Id(), e.ParentId(), e.Name(), e.Directory(), e.Command(), e.Icon(), e.Color(), e.ColorTarget());
+        vm.Profile(e.Profile());
+        vm.Kind(e.Kind());
+        vm.SeparatorStyle(e.SeparatorStyle());
+        vm.Height(e.Height());
+        vm.Placement(e.Placement());
+        return vm;
+    }
+
     // Re-commit the global tree whenever a row's field changes (profile/name/dir/cmd/icon/color,
-    // or ParentId via indent/outdent). Weak capture breaks the this->vector->vm->handler cycle.
+    // a separator's style/height/placement, or ParentId via indent/outdent). Weak capture
+    // breaks the this->vector->vm->handler cycle.
     void StartupSessionsViewModel::_hookEntry(const Editor::LaunchEntryViewModel& vm)
     {
         vm.PropertyChanged([weakThis = get_weak()](const auto& /*sender*/, const auto& /*args*/) {
@@ -120,6 +133,12 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             e.Icon(vm.Icon());
             e.Color(vm.Color());
             e.ColorTarget(vm.ColorTarget());
+            // axan #3: separator fields. LaunchEntry::ToJson writes them sparsely and only
+            // on a separator, so a session row's on-disk shape is unchanged.
+            e.Kind(vm.Kind());
+            e.SeparatorStyle(vm.SeparatorStyle());
+            e.Height(vm.Height());
+            e.Placement(vm.Placement());
             entries.push_back(e);
         }
         _settings.GlobalSettings().StartupSessions(winrt::single_threaded_vector(std::move(entries)));
@@ -136,6 +155,25 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _recomputeDepths();
         _commit();
         _NotifyChanges(L"Entries");
+    }
+
+    // axan #3: append a root separator — a line, one session row tall, inline. Mirrors
+    // AddEntry; the row is hooked so edits to its style/height/placement re-commit.
+    void StartupSessionsViewModel::AddSeparator()
+    {
+        namespace Wire = Axan::LaunchEntryWire;
+        const auto id = hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
+        auto vm = winrt::make<LaunchEntryViewModel>(id, hstring{}, hstring{}, hstring{}, hstring{}, hstring{}, hstring{}, hstring{});
+        vm.Kind(hstring{ Wire::KindSeparatorW });
+        vm.SeparatorStyle(hstring{ Wire::StyleLineW });
+        vm.Height(Wire::kSeparatorHeightDefault);
+        vm.Placement(hstring{ Wire::PlacementInlineW });
+        _Entries.Append(vm);
+        _hookEntry(vm);
+        _recomputeDepths();
+        _commit();
+        _NotifyChanges(L"Entries");
+        Axan::Log::Info("StartupSessionsViewModel", "added a separator row", { { "id", winrt::to_string(id) } });
     }
 
     void StartupSessionsViewModel::DeleteEntry(const Editor::LaunchEntryViewModel& vm)
@@ -175,6 +213,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         const auto id = hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
         auto copy = winrt::make<LaunchEntryViewModel>(id, vm.ParentId(), vm.Name(), vm.Directory(), vm.Command(), vm.Icon(), vm.Color(), vm.ColorTarget());
         copy.Profile(vm.Profile());
+        // axan #3: a duplicated separator keeps its kind/style/height/placement.
+        copy.Kind(vm.Kind());
+        copy.SeparatorStyle(vm.SeparatorStyle());
+        copy.Height(vm.Height());
+        copy.Placement(vm.Placement());
         _Entries.InsertAt(index + 1, copy);
         _hookEntry(copy);
         _recomputeDepths();
@@ -190,10 +233,18 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             return; // the first row has no previous sibling to nest under
         }
         // Nest under the nearest preceding row at this row's own depth (its previous sibling).
+        // axan #3: a separator is never a parent — it spawns nothing, so nothing can hang
+        // under it. A separator previous-sibling is skipped past, and the search keeps
+        // walking up for the previous SESSION sibling at this depth (still stopping at
+        // the parent boundary). With none, indent is a no-op.
         const auto myDepth = vm.Depth();
         for (int32_t i = static_cast<int32_t>(index) - 1; i >= 0; --i)
         {
             const auto candidate = _Entries.GetAt(static_cast<uint32_t>(i));
+            if (candidate.Depth() == myDepth && candidate.IsSeparator())
+            {
+                continue;
+            }
             if (candidate.Depth() == myDepth)
             {
                 _suspendCommit = true;
@@ -463,10 +514,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
 
         // [meta] version gate (#431 item 1). Absent is treated as v1; a newer-than-known
-        // version is refused rather than silently half-applied.
-        if (const auto ver = doc["meta"]["axan-toml-version"].value<int64_t>(); ver && *ver > Wire::kTomlVersion)
+        // version is refused rather than silently half-applied. axan #3: version 2 adds
+        // separator rows, so anything up to kTomlVersionMax is accepted.
+        if (const auto ver = doc["meta"]["axan-toml-version"].value<int64_t>(); ver && *ver > Wire::kTomlVersionMax)
         {
-            Axan::Log::Warn("StartupSessionsViewModel", "import: file declares a newer axan-toml-version than this build supports", { { "path", pathU8 }, { "fileVersion", std::to_string(*ver) }, { "supported", std::to_string(Wire::kTomlVersion) } });
+            Axan::Log::Warn("StartupSessionsViewModel", "import: file declares a newer axan-toml-version than this build supports", { { "path", pathU8 }, { "fileVersion", std::to_string(*ver) }, { "supported", std::to_string(Wire::kTomlVersionMax) } });
             return false;
         }
 
@@ -478,6 +530,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
 
         auto rows = winrt::single_threaded_observable_vector<Editor::LaunchEntryViewModel>();
+        uint32_t separators = 0;
         for (const auto& el : *entries)
         {
             const auto* t = el.as_table();
@@ -490,6 +543,21 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             const auto idHstr = e.id.empty() ?
                                     hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) } :
                                     winrt::to_hstring(e.id);
+
+            // axan #3: a separator row has no profile/icon/etc. to resolve — only its own
+            // fields (FromTomlTable already normalized the height).
+            if (e.IsSeparator())
+            {
+                auto sep = winrt::make<LaunchEntryViewModel>(idHstr, winrt::to_hstring(e.parentId), hstring{}, hstring{}, hstring{}, hstring{}, hstring{}, hstring{});
+                sep.Kind(hstring{ Wire::KindSeparatorW });
+                sep.SeparatorStyle(winrt::to_hstring(e.style));
+                sep.Height(e.height);
+                sep.Placement(winrt::to_hstring(e.placement));
+                rows.Append(sep);
+                _hookEntry(sep);
+                ++separators;
+                continue;
+            }
 
             // builtin: -> native glyph; an unknown builtin: name becomes the empty
             // placeholder with a warning instead of storing the raw token (D18, #431 item 7).
@@ -526,7 +594,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _recomputeDepths();
         _commit();
         _NotifyChanges(L"Entries");
-        Axan::Log::Info("StartupSessionsViewModel", "import: replaced the startup tree from TOML", { { "path", pathU8 }, { "count", std::to_string(rows.Size()) } });
+        Axan::Log::Info("StartupSessionsViewModel", "import: replaced the startup tree from TOML", { { "path", pathU8 }, { "count", std::to_string(rows.Size()) }, { "separators", std::to_string(separators) } });
         return true;
     }
 
@@ -554,8 +622,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         auto rows = winrt::single_threaded_observable_vector<Editor::LaunchEntryViewModel>();
         for (const auto& e : entries)
         {
-            auto vm = winrt::make<LaunchEntryViewModel>(e.Id(), e.ParentId(), e.Name(), e.Directory(), e.Command(), e.Icon(), e.Color(), e.ColorTarget());
-            vm.Profile(e.Profile());
+            // axan #3: the live tree may contain separator rows; _rowFromModel carries
+            // Kind/SeparatorStyle/Height/Placement so they survive the capture.
+            const auto vm = _rowFromModel(e);
             rows.Append(vm);
             _hookEntry(vm);
         }

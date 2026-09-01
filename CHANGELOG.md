@@ -6,6 +6,12 @@ All notable changes to axan are documented here.
 
 ### Session tree & menus
 
+- Separator rows in the session tree: non-interactive divider rows, drawn as a
+  line or as open space, with a height in session-row units and an optional
+  pin-to-bottom placement. They are added and edited on the Startup sessions
+  settings page (they also travel through `startup-sessions.toml`, which
+  becomes schema version 2 once it contains one), and holding Ctrl+Alt unlocks
+  them for drag-reordering in the sidebar. Windows only. (#3)
 - Dragging a session onto a session that had no children no longer makes the
   dragged session vanish: the drop target is expanded (and its expander
   refreshed) as soon as the drop lands, instead of only once something else

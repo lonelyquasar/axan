@@ -116,6 +116,10 @@ The curated startup tree — which shells to spawn, in what hierarchy — is a l
 | `icon` | icon id (see the icon grammar below) |
 | `color` | recolor token — `red orange yellow green blue purple` (theme-resolved) or literal `#RRGGBB`; sparse (omitted when empty) |
 | `color-target` | `icon` \| `text` \| `both`; sparse (omitted when empty or `both`) |
+| `kind` | `session` (default, omitted) or `separator` — a divider row in the sidebar tree that spawns nothing; it nests and orders like a session. Windows only for now (Linux support later) |
+| `style` | separators only: `line` (default, omitted) draws a rule; `space` leaves an open gap |
+| `height` | separators only: height in session-row units, tenths, `0.1`–`10`; sparse (omitted when `1.0`) |
+| `placement` | separators only: `inline` (default, omitted) keeps its list position; `bottom` pins it below its siblings so sessions added later land above it |
 
 `command` is stored raw. The per-shell survival wrap that keeps a node alive after its command exits (Linux `$SHELL -c "…; exec $SHELL"`, pwsh `-NoExit -Command`, cmd `/k`, WSL `bash -ic "…; exec bash -i"`) is applied at spawn time, never stored, so the command ports across platforms. Malformed trees self-heal on load: orphans and dangling parents promote to root, missing UUIDs are backfilled. The tree is honored only when the CLI asks for no shells of its own — `--tab`, `--working-directory`, and positional commands take precedence.
 
@@ -134,6 +138,8 @@ axan-toml-version = 1       # interchange schema version; newer versions are rej
 exported-by       = "windows"   # provenance, advisory only
 ```
 
+A file is version `1` unless it contains a separator row, in which case it is version `2` — a tree without separators still round-trips through a reader that only knows version 1 (the Linux build today).
+
 Keys axan designs are **kebab-case, always** (`parent-id`, `color-target`, `axan-toml-version`). Unknown keys are skipped with a logged warning, never an abort.
 
 **The startup tree** exports as `startup-sessions.toml` (Windows writes it to the package `LocalState`; auto-exported on settings change, imported via the Startup sessions page):
@@ -150,6 +156,14 @@ command      = "claude"
 icon         = "builtin:terminal"
 color        = "blue"             # sparse
 color-target = "icon"             # sparse
+
+[[startup-sessions]]              # a separator (Windows only for now); makes the file version 2
+id           = "5f0c2a7e-…"
+parent-id    = ""
+kind         = "separator"
+style        = "space"            # sparse; default "line"
+height       = 0.5                # session-row units; sparse when 1.0
+placement    = "bottom"           # sparse; default "inline"
 ```
 
 **Whole profiles** export as per-profile `<uuid>.toml` mirrors with two layers: a portable core (`[profile]` — `uuid`, `name`, and the entry tree) that round-trips across platforms, and an opaque native passthrough (`[profile.native.linux]` / `[profile.native.windows]`) carrying each platform's remaining settings verbatim in their native casing (gschema kebab / WT camelCase). The importing platform applies the block matching its own OS and ignores the other — a Linux→Windows import drops Linux appearance scalars by design rather than mistranslating them.

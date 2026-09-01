@@ -35,9 +35,11 @@
 #include "AxanLabelTemplate.h"
 #include "SessionNodeViewModel.h"
 #include <AxanIconRegistry.h>
+#include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
 
 #include <shlobj.h>
 #include <array>
+#include <map> // axan #3: startup-separator insert counters
 #include <unordered_set> // axan #14: captured-entry id dedup
 
 using namespace winrt;
@@ -145,6 +147,21 @@ namespace winrt::TerminalApp::implementation
             }
         }
         return nullptr;
+    }
+
+    // axan #3: is this node a separator row (a VM with IsSeparator, no session behind it)?
+    // Every node-level path that assumes a Tab checks this (or _nodeTab's null) first.
+    static bool _nodeIsSeparator(const MUX::Controls::TreeViewNode& node)
+    {
+        const auto vm = _nodeVM(node);
+        return vm && vm->IsSeparator();
+    }
+
+    // axan #3: is this node a separator pinned to the bottom of its sibling scope?
+    static bool _nodeIsBottomSeparator(const MUX::Controls::TreeViewNode& node)
+    {
+        const auto vm = _nodeVM(node);
+        return vm && vm->IsSeparator() && vm->Placement() == Axan::LaunchEntryWire::PlacementBottomW;
     }
 
     // axan M6: depth-first visit of every node in the tree (roots + all descendants). The
@@ -350,6 +367,218 @@ namespace winrt::TerminalApp::implementation
         _startupNodeCursor = 0;
         _startupNodesBySpawnIndex.clear();
         _startupNodesBySpawnIndex.resize(_pendingStartupLabelTemplates.size());
+    }
+
+    // axan #3: receive the startup tree's separator rows (TerminalWindow, next to
+    // SetStartupNodeMetadata). They spawn no tab, so they aren't drained by the spawn cursor;
+    // _RealizeStartupSeparators inserts them in one pass once every startup session node exists.
+    void TerminalPage::SetStartupSeparators(std::vector<Axan::StartupSeparator> separators)
+    {
+        _pendingStartupSeparators = std::move(separators);
+        _startupSeparatorsRealized = false;
+        Axan::Log::Debug("TerminalPage", "startup separators primed", { { "count", std::to_string(_pendingStartupSeparators.size()) } });
+    }
+
+    // axan #3: one session row's height in px — the TreeViewItemMinHeight theme resource the
+    // sidebar's item style used to floor every row at (now carried by the template's session
+    // Grid instead, so a separator can be shorter). A separator's pixel height is its
+    // row-unit Height times this. Falls back to WinUI 2.8's 32 if the lookup fails.
+    double TerminalPage::_SessionRowHeightPx()
+    {
+        constexpr double kFallbackRowHeight = 32.0;
+        try
+        {
+            if (const auto res = Application::Current().Resources().TryLookup(winrt::box_value(winrt::hstring{ L"TreeViewItemMinHeight" })))
+            {
+                if (const auto px = winrt::unbox_value_or<double>(res, 0.0); px > 0.0)
+                {
+                    return px;
+                }
+            }
+        }
+        catch (...)
+        {
+        }
+        Axan::Log::Debug("TerminalPage", "TreeViewItemMinHeight not resolvable; using fallback row height", { { "fallbackPx", std::to_string(kFallbackRowHeight) } });
+        return kFallbackRowHeight;
+    }
+
+    // axan #3: mint a separator node. Its Content is a SessionNodeViewModel like every other
+    // row (one node type, one ItemTemplate), flipped into separator mode: IsSeparator, the
+    // normalized style/height/placement, and no TabRef — so every Tab-resolving path sees
+    // null and skips it. EntryId is kept so "Save current as startup" round-trips the row. The
+    // node isn't parented here; the caller inserts it at its resolved position.
+    MUX::Controls::TreeViewNode TerminalPage::_CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement)
+    {
+        auto vm = winrt::make<winrt::TerminalApp::implementation::SessionNodeViewModel>();
+        const auto vmImpl = winrt::get_self<winrt::TerminalApp::implementation::SessionNodeViewModel>(vm);
+        vmImpl->EntryId = entryId;
+        vmImpl->ConfigureSeparator(style, height, placement, _SessionRowHeightPx());
+
+        MUX::Controls::TreeViewNode node;
+        node.Content(vm);
+        Axan::Log::Debug("TerminalPage", "created separator node", { { "entryId", winrt::to_string(entryId) }, { "style", winrt::to_string(vmImpl->SeparatorStyle()) }, { "height", std::to_string(vmImpl->SeparatorHeight()) }, { "placement", winrt::to_string(vmImpl->Placement()) }, { "pixelHeight", std::to_string(vmImpl->SeparatorPixelHeight()) } });
+        return node;
+    }
+
+    // axan #3: insert the startup tree's separator rows once every startup session node has
+    // been realized (the spawn cursor has reached the end) — or at once when there were no
+    // startup sessions. Each separator resolves its parent container (RootNodes, or the
+    // parent session's Children) and lands right after the sibling session it followed in
+    // the entry list (afterSpawnIndex); -1 means it led its scope, so it goes first. A
+    // referenced node that never spawned (a session that failed to launch) degrades to an
+    // append at the end of the scope. Consecutive separators after the same sibling keep
+    // their list order via a per-(scope, sibling) insert counter. Ends with the bottom-sink
+    // pass so "bottom"-placed separators settle under the sessions that spawned around them.
+    void TerminalPage::_RealizeStartupSeparators()
+    {
+        if (_startupSeparatorsRealized)
+        {
+            return;
+        }
+        if (_startupNodeCursor < _pendingStartupLabelTemplates.size())
+        {
+            return; // startup sessions still spawning — their nodes anchor the separators
+        }
+        _startupSeparatorsRealized = true;
+        if (_pendingStartupSeparators.empty())
+        {
+            return;
+        }
+
+        const auto roots = SessionTree().RootNodes();
+        // (scope spawn index, after spawn index) -> how many separators already inserted there,
+        // so a run of separators after one sibling keeps its authored order.
+        std::map<std::pair<int32_t, int32_t>, uint32_t> insertedAfter;
+        size_t placed = 0;
+        size_t appended = 0;
+        for (const auto& sep : _pendingStartupSeparators)
+        {
+            MUX::Controls::TreeViewNode parentNode{ nullptr };
+            if (sep.parentSpawnIndex >= 0 && static_cast<size_t>(sep.parentSpawnIndex) < _startupNodesBySpawnIndex.size())
+            {
+                parentNode = _startupNodesBySpawnIndex[static_cast<size_t>(sep.parentSpawnIndex)].get();
+            }
+            if (!parentNode && sep.parentSpawnIndex >= 0)
+            {
+                Axan::Log::Warn("TerminalPage", "startup separator: parent session node never spawned; placing at root", { { "entryId", winrt::to_string(sep.id) }, { "parentSpawnIndex", std::to_string(sep.parentSpawnIndex) } });
+            }
+            const auto container = parentNode ? parentNode.Children() : roots;
+            const int32_t scopeKey = parentNode ? sep.parentSpawnIndex : -1;
+
+            uint32_t insertAt = container.Size();
+            bool resolved = false;
+            if (sep.afterSpawnIndex < 0)
+            {
+                insertAt = 0;
+                resolved = true;
+            }
+            else if (static_cast<size_t>(sep.afterSpawnIndex) < _startupNodesBySpawnIndex.size())
+            {
+                if (const auto after = _startupNodesBySpawnIndex[static_cast<size_t>(sep.afterSpawnIndex)].get())
+                {
+                    uint32_t afterIndex = 0;
+                    if (container.IndexOf(after, afterIndex))
+                    {
+                        insertAt = afterIndex + 1;
+                        resolved = true;
+                    }
+                }
+            }
+            if (resolved)
+            {
+                insertAt += insertedAfter[{ scopeKey, sep.afterSpawnIndex }]++;
+                insertAt = std::min(insertAt, container.Size());
+                ++placed;
+            }
+            else
+            {
+                Axan::Log::Warn("TerminalPage", "startup separator: preceding sibling session node not found in scope; appending", { { "entryId", winrt::to_string(sep.id) }, { "afterSpawnIndex", std::to_string(sep.afterSpawnIndex) } });
+                ++appended;
+            }
+
+            const auto node = _CreateSeparatorNode(sep.id, sep.style, sep.height, sep.placement);
+            container.InsertAt(insertAt, node);
+            if (parentNode)
+            {
+                parentNode.IsExpanded(true);
+            }
+        }
+        _pendingStartupSeparators.clear();
+        _SinkBottomSeparators();
+        _ApplySeparatorContainerStates();
+        Axan::Log::Info("TerminalPage", "realized startup separators", { { "placed", std::to_string(placed) }, { "appended", std::to_string(appended) } });
+    }
+
+    // axan #3: the bottom-sink pass for one sibling scope, then recursively every child scope.
+    // Separators with Placement "bottom" move to the end of their container, keeping their
+    // relative order; nothing else moves, and a scope whose bottom separators already form
+    // the trailing run is left untouched (no RemoveAt/Append churn, no container recycling).
+    static void _sinkBottomSeparatorsIn(const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>& container, size_t& moved)
+    {
+        if (!container)
+        {
+            return;
+        }
+        std::vector<MUX::Controls::TreeViewNode> bottoms;
+        std::vector<MUX::Controls::TreeViewNode> snapshot;
+        snapshot.reserve(container.Size());
+        for (const auto& node : container)
+        {
+            snapshot.push_back(node);
+            if (_nodeIsBottomSeparator(node))
+            {
+                bottoms.push_back(node);
+            }
+        }
+        if (!bottoms.empty() && bottoms.size() < snapshot.size())
+        {
+            const auto n = snapshot.size();
+            const auto k = bottoms.size();
+            bool inPlace = true;
+            for (size_t i = 0; i < k; ++i)
+            {
+                if (snapshot[n - k + i] != bottoms[i])
+                {
+                    inPlace = false;
+                    break;
+                }
+            }
+            if (!inPlace)
+            {
+                for (const auto& b : bottoms)
+                {
+                    uint32_t idx = 0;
+                    if (container.IndexOf(b, idx))
+                    {
+                        container.RemoveAt(idx);
+                    }
+                }
+                for (const auto& b : bottoms)
+                {
+                    container.Append(b);
+                }
+                moved += k;
+            }
+        }
+        for (const auto& node : snapshot)
+        {
+            _sinkBottomSeparatorsIn(node.Children(), moved);
+        }
+    }
+
+    // axan #3: pin every "bottom"-placed separator to the end of its sibling scope (RootNodes
+    // and, recursively, each node's Children). Run after every tree mutation that can put a
+    // session below one: startup realization, the _tabs reconcile (new sessions append at the
+    // end of their scope), a drag-and-drop, and Add child session.
+    void TerminalPage::_SinkBottomSeparators()
+    {
+        size_t moved = 0;
+        _sinkBottomSeparatorsIn(SessionTree().RootNodes(), moved);
+        if (moved > 0)
+        {
+            Axan::Log::Debug("TerminalPage", "sank bottom-placed separators", { { "moved", std::to_string(moved) } });
+        }
     }
 
     // axan M6: build a sidebar node for `tab` whose Content is a SessionNodeViewModel (the
@@ -609,9 +838,14 @@ namespace winrt::TerminalApp::implementation
     {
         std::vector<MUX::Controls::TreeViewNode> dead;
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
-            if (!_nodeVM(node))
+            const auto vm = _nodeVM(node);
+            if (!vm)
             {
                 return; // unknown node — don't touch it
+            }
+            if (vm->IsSeparator())
+            {
+                return; // axan #3: a separator has no tab to be dead; it lives until the tree is rebuilt
             }
             const auto tab = _nodeTab(node);
             uint32_t idx = 0;
@@ -694,6 +928,11 @@ namespace winrt::TerminalApp::implementation
         }
         _PruneRemovedSessionNodes();
         _AddMissingSessionNodes();
+        // axan #3: once the spawn cursor has consumed the last startup session, drop the
+        // startup separators in around the nodes that now exist; then re-pin any
+        // "bottom"-placed separator under the session that may just have appended below it.
+        _RealizeStartupSeparators();
+        _SinkBottomSeparators();
         // axan M13: give any newly-added node the theme-correct default label brush.
         _RefreshNodeLabelBrushes();
         // axan M8: keep the minimized icon list in step with the tree while it's showing
@@ -716,6 +955,14 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         const auto vmImpl = winrt::get_self<winrt::TerminalApp::implementation::SessionNodeViewModel>(vm);
+        if (vmImpl->IsSeparator())
+        {
+            // axan #3: a separator stands for no session. Reachable only while Ctrl+Alt has
+            // unlocked the row (it's disabled otherwise); activating it must not move the
+            // selection off the current session.
+            Axan::Log::Debug("TerminalPage", "separator row activated; ignoring");
+            return;
+        }
         if (const auto inspectable = vmImpl->TabRef.get())
         {
             if (const auto tab = inspectable.try_as<winrt::TerminalApp::Tab>())
@@ -741,6 +988,10 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
+        if (_nodeIsSeparator(node))
+        {
+            return; // axan #3: separators activate nothing (and _SelectTabForNodeVM would no-op anyway)
+        }
         _SelectTabForNodeVM(node.Content().try_as<winrt::TerminalApp::SessionNodeViewModel>());
     }
 
@@ -753,34 +1004,279 @@ namespace winrt::TerminalApp::implementation
     // TreeViewList only sets GlyphOpacity from HasChildren when the container is prepared.
     // Drops between siblings at the root leave Parent() as the tree's hidden root node
     // (Depth -1); nothing to expand there.
+    // axan #3: also the drag's epilogue for separators — the drag-active freeze on the
+    // Ctrl+Alt lock ends here, a session that somehow landed UNDER a separator (AllowDrop is
+    // off on separator containers, so this is a guard) is moved out to sit right after it,
+    // bottom-placed separators re-sink, and every realized container's lock state is
+    // re-applied (the drop recycles containers).
     void TerminalPage::_OnSessionTreeDragItemsCompleted(const MUX::Controls::TreeView& /*sender*/,
                                                         const MUX::Controls::TreeViewDragItemsCompletedEventArgs& args)
     {
+        _separatorDragActive = false;
         const auto items = args.Items();
-        if (!items)
+        if (items)
+        {
+            for (const auto& item : items)
+            {
+                const auto node = item.try_as<MUX::Controls::TreeViewNode>();
+                if (!node)
+                {
+                    continue;
+                }
+                auto parent = node.Parent();
+                if (parent && parent.Depth() >= 0 && _nodeIsSeparator(parent) && !_nodeIsSeparator(node))
+                {
+                    // Guard: a separator can't own sessions. Relocate the dropped session to
+                    // the separator's own scope, immediately after it.
+                    Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode> sepContainer{ nullptr };
+                    uint32_t sepIndex = 0;
+                    if (_locateNodeContainer(SessionTree().RootNodes(), parent, sepContainer, sepIndex))
+                    {
+                        uint32_t childIndex = 0;
+                        if (parent.Children().IndexOf(node, childIndex))
+                        {
+                            parent.Children().RemoveAt(childIndex);
+                        }
+                        sepContainer.InsertAt(std::min(sepIndex + 1, sepContainer.Size()), node);
+                        Axan::Log::Warn("TerminalPage", "drag-drop: session dropped under a separator; moved it after the separator instead (#3)");
+                        parent = node.Parent();
+                    }
+                }
+                if (!parent || parent.Depth() < 0)
+                {
+                    continue;
+                }
+                const bool wasExpanded = parent.IsExpanded();
+                parent.IsExpanded(true);
+                if (const auto container = SessionTree().ContainerFromNode(parent).try_as<MUX::Controls::TreeViewItem>())
+                {
+                    container.GlyphOpacity(1.0);
+                }
+                Axan::Log::Info("TerminalPage", "drag-drop reparent: expanded new parent", { { "wasExpanded", wasExpanded ? "1" : "0" }, { "childCount", std::to_string(parent.Children().Size()) }, { "isSeparator", _nodeIsSeparator(node) ? "1" : "0" } });
+            }
+        }
+        _SinkBottomSeparators();
+        _ApplySeparatorContainerStates();
+        _UpdateSeparatorUnlockFromKeyboard("drag completed");
+    }
+
+    // ===================== axan #3: separator lock (Ctrl+Alt unlock) =====================
+    //
+    // Separators are non-interactive by default: their TreeViewItem containers are disabled
+    // (not clickable/selectable/focusable, skipped by arrow-key navigation), no tab stop, no
+    // drop target (a separator can't own sessions), and no drag source. Holding Ctrl+Alt
+    // enables them (and CanDrag) so the native TreeView drag-and-drop can reorder/reparent
+    // them; releasing either key re-locks. The state is pushed onto containers in two ways:
+    // as each container is prepared (the inner TreeViewList's ContainerContentChanging —
+    // WinUI 2's TreeView has no such event of its own) and, on every lock flip, over every
+    // already-realized container.
+
+    // The TreeView's inner TreeViewList (template part "ListControl"), found by walking the
+    // visual tree — it isn't exposed as a property.
+    static MUX::Controls::TreeViewList _findTreeViewList(const WUX::DependencyObject& root)
+    {
+        if (!root)
+        {
+            return nullptr;
+        }
+        if (const auto list = root.try_as<MUX::Controls::TreeViewList>())
+        {
+            return list;
+        }
+        const auto count = WUX::Media::VisualTreeHelper::GetChildrenCount(root);
+        for (int32_t i = 0; i < count; ++i)
+        {
+            if (const auto found = _findTreeViewList(WUX::Media::VisualTreeHelper::GetChild(root, i)))
+            {
+                return found;
+            }
+        }
+        return nullptr;
+    }
+
+    // Hook the inner list's ContainerContentChanging once it exists (the tree's Loaded);
+    // idempotent, and retried from the realize/apply paths in case Loaded ran before the
+    // template was applied.
+    void TerminalPage::_HookSessionTreeList()
+    {
+        if (_sessionTreeList)
         {
             return;
         }
-        for (const auto& item : items)
+        const auto list = _findTreeViewList(SessionTree());
+        if (!list)
         {
-            const auto node = item.try_as<MUX::Controls::TreeViewNode>();
-            if (!node)
-            {
-                continue;
-            }
-            const auto parent = node.Parent();
-            if (!parent || parent.Depth() < 0)
-            {
-                continue;
-            }
-            const bool wasExpanded = parent.IsExpanded();
-            parent.IsExpanded(true);
-            if (const auto container = SessionTree().ContainerFromNode(parent).try_as<MUX::Controls::TreeViewItem>())
-            {
-                container.GlyphOpacity(1.0);
-            }
-            Axan::Log::Info("TerminalPage", "drag-drop reparent: expanded new parent", { { "wasExpanded", wasExpanded ? "1" : "0" }, { "childCount", std::to_string(parent.Children().Size()) } });
+            Axan::Log::Debug("TerminalPage", "session TreeViewList not realized yet; separator container hook deferred");
+            return;
         }
+        _sessionTreeList = list;
+        list.ContainerContentChanging({ get_weak(), &TerminalPage::_OnSessionTreeContainerContentChanging });
+        Axan::Log::Debug("TerminalPage", "hooked session TreeViewList ContainerContentChanging for separator rows");
+        _ApplySeparatorContainerStates();
+    }
+
+    // Per-container preparation. In unbound mode the list's item IS the TreeViewNode; fall
+    // back to NodeFromContainer in case a WinUI update changes that.
+    void TerminalPage::_OnSessionTreeContainerContentChanging(const ListViewBase& /*sender*/,
+                                                              const ContainerContentChangingEventArgs& args)
+    {
+        if (args.InRecycleQueue())
+        {
+            return;
+        }
+        const auto container = args.ItemContainer().try_as<MUX::Controls::TreeViewItem>();
+        if (!container)
+        {
+            return;
+        }
+        auto node = args.Item().try_as<MUX::Controls::TreeViewNode>();
+        if (!node)
+        {
+            node = SessionTree().NodeFromContainer(container);
+        }
+        if (!node)
+        {
+            return;
+        }
+        _ApplySeparatorContainerState(container, _nodeIsSeparator(node));
+    }
+
+    // Push the lock state onto one container. A session container only has its flags
+    // RESTORED (a recycled container may have last hosted a locked separator) — nothing a
+    // session already has is disturbed.
+    void TerminalPage::_ApplySeparatorContainerState(const MUX::Controls::TreeViewItem& container, bool isSeparator)
+    {
+        if (!container)
+        {
+            return;
+        }
+        if (isSeparator)
+        {
+            const bool unlocked = _separatorsUnlocked;
+            container.IsEnabled(unlocked);
+            container.IsTabStop(false);
+            container.AllowDrop(false);
+            container.CanDrag(unlocked);
+            return;
+        }
+        if (!container.IsEnabled())
+        {
+            container.IsEnabled(true);
+        }
+        if (!container.IsTabStop())
+        {
+            container.IsTabStop(true);
+        }
+        if (!container.AllowDrop() && SessionTree().AllowDrop())
+        {
+            container.AllowDrop(true);
+        }
+        if (!container.CanDrag() && SessionTree().CanDragItems())
+        {
+            container.CanDrag(true);
+        }
+    }
+
+    // Re-apply the lock state to every realized container (ContainerFromNode is null for
+    // unrealized rows; those get theirs from ContainerContentChanging when they appear).
+    void TerminalPage::_ApplySeparatorContainerStates()
+    {
+        _HookSessionTreeList();
+        if (!SessionTree())
+        {
+            return;
+        }
+        size_t separators = 0;
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            const bool isSeparator = _nodeIsSeparator(node);
+            if (isSeparator)
+            {
+                ++separators;
+            }
+            if (const auto container = SessionTree().ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>())
+            {
+                _ApplySeparatorContainerState(container, isSeparator);
+            }
+        });
+        if (separators > 0)
+        {
+            Axan::Log::Debug("TerminalPage", "applied separator container states", { { "separators", std::to_string(separators) }, { "unlocked", _separatorsUnlocked ? "1" : "0" } });
+        }
+    }
+
+    // Flip the lock; no-op when unchanged.
+    void TerminalPage::_SetSeparatorsUnlocked(bool unlocked, const char* reason)
+    {
+        if (_separatorsUnlocked == unlocked)
+        {
+            return;
+        }
+        _separatorsUnlocked = unlocked;
+        Axan::Log::Debug("TerminalPage", unlocked ? "separators unlocked (Ctrl+Alt held)" : "separators locked", { { "reason", reason } });
+        _ApplySeparatorContainerStates();
+    }
+
+    // Derive the lock from the live modifier state (Win32 GetKeyState — evaluated inside a
+    // key message it reflects that message, so a Ctrl/Alt key-up reads as up). Frozen while
+    // a drag is in flight so a release mid-drag can't disable the container being dragged.
+    void TerminalPage::_UpdateSeparatorUnlockFromKeyboard(const char* reason)
+    {
+        if (_separatorDragActive)
+        {
+            return;
+        }
+        const bool ctrl = (::GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        const bool alt = (::GetKeyState(VK_MENU) & 0x8000) != 0;
+        _SetSeparatorsUnlocked(ctrl && alt, reason);
+    }
+
+    // PreviewKeyDown/PreviewKeyUp on the page root (tunneling — runs before the focused
+    // terminal control handles the key). Only modifier keys can change the answer, so
+    // anything else is ignored without touching the state; never marks the event handled.
+    void TerminalPage::_OnRootPreviewKey(const winrt::Windows::Foundation::IInspectable& /*sender*/,
+                                         const WUX::Input::KeyRoutedEventArgs& args)
+    {
+        switch (args.Key())
+        {
+        case winrt::Windows::System::VirtualKey::Control:
+        case winrt::Windows::System::VirtualKey::LeftControl:
+        case winrt::Windows::System::VirtualKey::RightControl:
+        case winrt::Windows::System::VirtualKey::Menu:
+        case winrt::Windows::System::VirtualKey::LeftMenu:
+        case winrt::Windows::System::VirtualKey::RightMenu:
+            _UpdateSeparatorUnlockFromKeyboard("modifier key event");
+            break;
+        default:
+            break;
+        }
+    }
+
+    // Belt and braces for the lock: a drag that includes a separator while locked is
+    // cancelled outright (the container should be disabled and CanDrag false already).
+    // Otherwise mark the drag active so the lock state holds until DragItemsCompleted.
+    void TerminalPage::_OnSessionTreeDragItemsStarting(const MUX::Controls::TreeView& /*sender*/,
+                                                       const MUX::Controls::TreeViewDragItemsStartingEventArgs& args)
+    {
+        bool draggingSeparator = false;
+        if (const auto items = args.Items())
+        {
+            for (const auto& item : items)
+            {
+                if (const auto node = item.try_as<MUX::Controls::TreeViewNode>(); node && _nodeIsSeparator(node))
+                {
+                    draggingSeparator = true;
+                    break;
+                }
+            }
+        }
+        if (draggingSeparator && !_separatorsUnlocked)
+        {
+            args.Cancel(true);
+            Axan::Log::Warn("TerminalPage", "drag of a locked separator reached DragItemsStarting; cancelled (#3)");
+            return;
+        }
+        _separatorDragActive = true;
+        Axan::Log::Debug("TerminalPage", "session tree drag starting", { { "draggingSeparator", draggingSeparator ? "1" : "0" }, { "unlocked", _separatorsUnlocked ? "1" : "0" } });
     }
 
     // ===================== axan M13: session-node context menu =====================
@@ -827,6 +1323,15 @@ namespace winrt::TerminalApp::implementation
             args.Handled(true);
             return;
         }
+        if (_nodeIsSeparator(node))
+        {
+            // axan #3: a separator has no session actions (it's edited on the Startup
+            // sessions page); treat the tap like empty sidebar space.
+            Axan::Log::Debug("TerminalPage", "sidebar right-tap: separator row; showing background menu");
+            _ShowSidebarBackgroundContextMenu(args.GetPosition(SessionTree()));
+            args.Handled(true);
+            return;
+        }
         const auto item = SessionTree().ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>();
         if (!item)
         {
@@ -856,6 +1361,12 @@ namespace winrt::TerminalApp::implementation
         if (!node)
         {
             Axan::Log::Debug("TerminalPage", "sidebar context-requested: no node under pointer and no selection");
+            return;
+        }
+        if (_nodeIsSeparator(node))
+        {
+            Axan::Log::Debug("TerminalPage", "sidebar context-requested: separator row; no menu (#3)");
+            args.Handled(true);
             return;
         }
         const auto item = SessionTree().ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>();
@@ -1254,7 +1765,7 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_ApplyNodeIcon(const MUX::Controls::TreeViewNode& node, const winrt::hstring& iconOverride, const winrt::hstring& iconColor, const winrt::hstring& colorTarget)
     {
         const auto vm = _nodeVM(node);
-        if (!vm)
+        if (!vm || vm->IsSeparator()) // axan #3: a separator has no icon/label to restyle
         {
             return;
         }
@@ -1284,6 +1795,12 @@ namespace winrt::TerminalApp::implementation
         const auto vm = _nodeVM(node);
         if (!vm || vm->EntryId.empty() || !_settings)
         {
+            return;
+        }
+        if (vm->IsSeparator())
+        {
+            // axan #3: separators are edited only on the Startup sessions page; the live tree
+            // never writes one back (a capture re-emits it whole instead).
             return;
         }
         const auto entries = _settings.GlobalSettings().StartupSessions();
@@ -1349,6 +1866,33 @@ namespace winrt::TerminalApp::implementation
         const std::function<void(const MUX::Controls::TreeViewNode&, const winrt::hstring&)> visit =
             [&](const MUX::Controls::TreeViewNode& node, const winrt::hstring& parentId) {
                 const auto vm = _nodeVM(node);
+                if (vm && vm->IsSeparator())
+                {
+                    // axan #3: a separator captures as a Kind="separator" entry in tree order,
+                    // under the nearest captured ancestor, carrying its style/height/placement
+                    // off the VM. It never owns sessions, so any children it somehow holds hang
+                    // from ITS parent instead.
+                    auto id = vm->EntryId;
+                    if (id.empty() || usedIds.count(id) > 0)
+                    {
+                        id = winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
+                    }
+                    usedIds.insert(id);
+                    LaunchEntry entry{};
+                    entry.Id(id);
+                    entry.ParentId(parentId);
+                    entry.Kind(winrt::hstring{ Axan::LaunchEntryWire::KindSeparatorW });
+                    entry.SeparatorStyle(vm->SeparatorStyle());
+                    entry.Height(vm->SeparatorHeight());
+                    entry.Placement(vm->Placement());
+                    captured.push_back(entry);
+                    vm->EntryId = id;
+                    for (const auto& child : node.Children())
+                    {
+                        visit(child, parentId);
+                    }
+                    return;
+                }
                 const auto tab = _nodeTab(node);
                 const auto tabImpl = tab ? winrt::get_self<Tab>(tab) : nullptr;
                 const auto profile = tabImpl ? tabImpl->GetFocusedProfile() : Profile{ nullptr };
@@ -1846,7 +2390,7 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_ShowNodeEditPanel(const MUX::Controls::TreeViewNode& node)
     {
         const auto vm = _nodeVM(node);
-        if (!vm)
+        if (!vm || vm->IsSeparator()) // axan #3: separators are edited on the Startup sessions page
         {
             return;
         }
@@ -2030,6 +2574,8 @@ namespace winrt::TerminalApp::implementation
         }
         node.Children().Append(newNode);
         node.IsExpanded(true);
+        // axan #3: the append may have landed the new child below a bottom-placed separator.
+        _SinkBottomSeparators();
         Axan::Log::Info("TerminalPage", "added child session under node");
     }
 
@@ -2262,6 +2808,10 @@ namespace winrt::TerminalApp::implementation
         const auto active = _GetFocusedTab();
         winrt::TerminalApp::SessionNodeViewModel selected{ nullptr };
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            if (_nodeIsSeparator(node))
+            {
+                return; // axan #3: the minimized icon column shows sessions only
+            }
             if (const auto vm = node.Content().try_as<winrt::TerminalApp::SessionNodeViewModel>())
             {
                 _minimizedItems.Append(vm);

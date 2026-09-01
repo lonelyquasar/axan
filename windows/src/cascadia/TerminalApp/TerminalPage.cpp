@@ -345,6 +345,18 @@ namespace winrt::TerminalApp::implementation
         // axan #16: after a drag-and-drop reparent, expand the target so a former leaf shows
         // its new child instead of swallowing it.
         SessionTree().DragItemsCompleted({ get_weak(), &TerminalPage::_OnSessionTreeDragItemsCompleted });
+        // axan #3: separator rows are non-interactive until Ctrl+Alt are held. DragItemsStarting
+        // is the belt-and-braces veto for a locked separator drag; the per-container state
+        // (disabled / no drop / no drag) is applied from the inner TreeViewList's
+        // ContainerContentChanging, which only exists once the tree's template has loaded, so
+        // hook it on Loaded. The Ctrl+Alt unlock is read from tunneling key events on the page
+        // root — they run before the focused terminal control consumes the modifier.
+        SessionTree().DragItemsStarting({ get_weak(), &TerminalPage::_OnSessionTreeDragItemsStarting });
+        SessionTree().Loaded([weak = get_weak()](auto&&, auto&&) {
+            if (auto p{ weak.get() }) { p->_HookSessionTreeList(); }
+        });
+        Root().PreviewKeyDown({ get_weak(), &TerminalPage::_OnRootPreviewKey });
+        Root().PreviewKeyUp({ get_weak(), &TerminalPage::_OnRootPreviewKey });
         // axan M13: right-click a node for its context menu (rename/icon/duplicate/close/etc.).
         SessionTree().RightTapped({ get_weak(), &TerminalPage::_OnSessionTreeRightTapped });
         // axan #429: Shift+F10 / the menu key raise ContextRequested, not RightTapped — wire
@@ -387,6 +399,9 @@ namespace winrt::TerminalApp::implementation
 
         // Mirror any sessions that already exist (normally none this early).
         _AddMissingSessionNodes();
+        // axan #3: with no startup sessions pending this realizes the (empty) separator list
+        // at once; otherwise it waits for the spawn cursor (see _OnSessionsCollectionChanged).
+        _RealizeStartupSeparators();
 
         const auto canDragDrop = CanDragDrop();
 
@@ -5362,6 +5377,14 @@ namespace winrt::TerminalApp::implementation
         // the settings, change active panes, etc.
         _activated = activated;
         _updateThemeColors();
+
+        // axan #3: a deactivated window never sees the Ctrl/Alt key-ups, so re-lock the
+        // separator rows here rather than leave them unlocked until the next modifier event.
+        if (!activated)
+        {
+            _separatorDragActive = false;
+            _SetSeparatorsUnlocked(false, "window deactivated");
+        }
 
         _adjustProcessPriorityThrottled->Run();
 

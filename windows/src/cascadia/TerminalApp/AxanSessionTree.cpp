@@ -5,6 +5,7 @@
 #include "AxanSessionTree.h"
 #include "AxanLog.h"
 #include "AxanShellIntegration.h" // M14: shell-family detection for command-survival wrapping
+#include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary + height clamp (src/inc)
 
 #include <unordered_map>
 
@@ -90,8 +91,9 @@ namespace
 
 namespace Axan
 {
-    std::vector<StartupSession> LoadStartupTree(const CascadiaSettings& settings)
+    std::vector<StartupSession> LoadStartupTree(const CascadiaSettings& settings, std::vector<StartupSeparator>& outSeparators)
     {
+        outSeparators.clear();
         if (!settings)
         {
             Axan::Log::Warn("AxanSessionTree", "LoadStartupTree: null settings; skipping");
@@ -126,9 +128,62 @@ namespace Axan
         // id -> emitted index, so a ParentId (forward-reference-only) resolves to a parentIndex
         // that is always smaller than the child's own — the M6 reparent-on-spawn contract.
         std::unordered_map<winrt::hstring, int32_t> indexById;
+        // axan #3: separator id -> the spawn index of the separator's OWN parent (-1 root). A
+        // separator has no spawn index of its own, so an entry naming one as its parent
+        // resolves through this map to the separator's parent instead.
+        std::unordered_map<winrt::hstring, int32_t> separatorParentById;
+        // axan #3: scope (parent spawn index, -1 root) -> the spawn index of the most recent
+        // SESSION emitted in that scope, so a separator can record which sibling it follows.
+        std::unordered_map<int32_t, int32_t> lastSessionInScope;
+
+        // Resolve an entry's ParentId to a parent spawn index (-1 root). Shared by sessions and
+        // separators; logs the forward-reference violation / separator-parent cases.
+        const auto resolveParent = [&](const LaunchEntry& entry) -> int32_t {
+            const auto parentId = entry.ParentId();
+            if (parentId.empty())
+            {
+                return -1;
+            }
+            if (const auto it = indexById.find(parentId); it != indexById.end())
+            {
+                return it->second;
+            }
+            if (const auto sit = separatorParentById.find(parentId); sit != separatorParentById.end())
+            {
+                Axan::Log::Warn("AxanSessionTree", "LoadStartupTree: entry names a separator as its parent; using the separator's parent instead (#3)", { { "id", winrt::to_string(entry.Id()) }, { "parentId", winrt::to_string(parentId) } });
+                return sit->second;
+            }
+            Axan::Log::Warn("AxanSessionTree", "LoadStartupTree: parentId not seen before its child (forward-reference violated); treating as root", { { "parentId", winrt::to_string(parentId) } });
+            return -1;
+        };
 
         for (const auto& entry : entries)
         {
+            // axan #3: a separator spawns nothing — no action, no spawn index. Record where it
+            // sits (parent scope + the session it follows) so the sidebar can place its node
+            // once the sessions around it exist. Style/height/placement are normalized here so
+            // the view never sees an out-of-range height or an empty style/placement.
+            if (entry.IsSeparator())
+            {
+                StartupSeparator sep{};
+                sep.id = entry.Id();
+                sep.style = entry.SeparatorStyle() == Axan::LaunchEntryWire::StyleSpaceW ? winrt::hstring{ Axan::LaunchEntryWire::StyleSpaceW } : winrt::hstring{ Axan::LaunchEntryWire::StyleLineW };
+                sep.height = Axan::LaunchEntryWire::NormalizeSeparatorHeight(entry.Height());
+                sep.placement = entry.Placement() == Axan::LaunchEntryWire::PlacementBottomW ? winrt::hstring{ Axan::LaunchEntryWire::PlacementBottomW } : winrt::hstring{ Axan::LaunchEntryWire::PlacementInlineW };
+                sep.parentSpawnIndex = resolveParent(entry);
+                if (const auto it = lastSessionInScope.find(sep.parentSpawnIndex); it != lastSessionInScope.end())
+                {
+                    sep.afterSpawnIndex = it->second;
+                }
+                if (const auto id = entry.Id(); !id.empty())
+                {
+                    separatorParentById[id] = sep.parentSpawnIndex;
+                }
+                Axan::Log::Debug("AxanSessionTree", "LoadStartupTree: separator entry", { { "id", winrt::to_string(sep.id) }, { "style", winrt::to_string(sep.style) }, { "height", std::to_string(sep.height) }, { "placement", winrt::to_string(sep.placement) }, { "parentSpawnIndex", std::to_string(sep.parentSpawnIndex) }, { "afterSpawnIndex", std::to_string(sep.afterSpawnIndex) } });
+                outSeparators.push_back(std::move(sep));
+                continue;
+            }
+
             // D19: each entry spawns under ITS OWN referenced profile (which shell); that profile's
             // commandline drives the survival wrap. Empty/unresolved -> the default profile.
             const auto targetProfile = _resolveProfile(settings, entry.Profile(), defaultProfile);
@@ -165,18 +220,7 @@ namespace Axan
             session.iconColor = entry.Color();
             session.colorTarget = entry.ColorTarget();
 
-            int32_t parentIndex = -1;
-            if (const auto parentId = entry.ParentId(); !parentId.empty())
-            {
-                if (const auto it = indexById.find(parentId); it != indexById.end())
-                {
-                    parentIndex = it->second;
-                }
-                else
-                {
-                    Axan::Log::Warn("AxanSessionTree", "LoadStartupTree: parentId not seen before its child (forward-reference violated); treating as root", { { "parentId", winrt::to_string(parentId) } });
-                }
-            }
+            const int32_t parentIndex = resolveParent(entry);
             session.parentIndex = parentIndex;
 
             const auto myIndex = static_cast<int32_t>(result.size());
@@ -184,7 +228,17 @@ namespace Axan
             {
                 indexById[id] = myIndex;
             }
+            lastSessionInScope[parentIndex] = myIndex; // #3: separators after this one follow it
             result.push_back(std::move(session));
+        }
+
+        // axan #3: a tree of only separators has nothing to spawn. Fall back to WT's normal
+        // startup (the caller keys on an empty session vector) and drop the separators — a
+        // divider with no sessions around it has nothing to divide.
+        if (result.empty() && !outSeparators.empty())
+        {
+            Axan::Log::Warn("AxanSessionTree", "LoadStartupTree: startup tree holds only separators; WT startup", { { "separatorCount", std::to_string(outSeparators.size()) } });
+            outSeparators.clear();
         }
 
         TraceLoggingWrite(
@@ -195,7 +249,7 @@ namespace Axan
             TraceLoggingKeyword(MICROSOFT_KEYWORD_MEASURES),
             TelemetryPrivacyDataTag(PDT_ProductAndServiceUsage));
 
-        Axan::Log::Info("AxanSessionTree", "LoadStartupTree: expanded global startup sessions", { { "entryCount", std::to_string(result.size()) } });
+        Axan::Log::Info("AxanSessionTree", "LoadStartupTree: expanded global startup sessions", { { "entryCount", std::to_string(result.size()) }, { "separatorCount", std::to_string(outSeparators.size()) } });
         return result;
     }
 }

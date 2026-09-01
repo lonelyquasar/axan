@@ -4,7 +4,8 @@
 // StartupSessions — axan D19. The global "Startup sessions" page: a row list over the global
 // GlobalAppSettings.StartupSessions tree. Each row picks a WT profile (which shell) and edits its
 // directory/command/name/icon/color; rows reorder, nest (indent/outdent), duplicate, and import
-// from a portable .toml. Replaces the per-profile Startup page (M14/D17).
+// from a portable .toml. Separator rows (axan #3) are edited inline in the same list.
+// Replaces the per-profile Startup page (M14/D17).
 
 #pragma once
 
@@ -23,6 +24,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void OnNavigatedTo(const Windows::UI::Xaml::Navigation::NavigationEventArgs& e);
 
         void AddEntry_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
+        // axan #3: the "Add separator" button — appends a divider row.
+        void AddSeparator_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void DeleteEntry_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void DuplicateEntry_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void IndentEntry_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);

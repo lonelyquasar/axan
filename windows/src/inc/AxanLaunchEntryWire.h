@@ -47,6 +47,20 @@
 //   color        = "blue"            # recolor token; SPARSE — omitted when empty
 //   color-target = "icon"            # "icon"|"text"|"both"; SPARSE — omitted when ""/both
 //
+//   # axan #3 — a separator row (schema version 2). Spawns nothing; nests + orders like
+//   # a session. profile/name/directory/command/icon/color are absent.
+//   [[startup-sessions]]
+//   id           = "..."
+//   parent-id    = ""
+//   kind         = "separator"       # absent = "session"
+//   style        = "space"           # "line" (default; SPARSE) | "space"
+//   height       = 0.5               # in session-row units, tenths; SPARSE when 1.0
+//   placement    = "bottom"          # "inline" (default; SPARSE) | "bottom"
+//
+// Version rule: a file is written as version 1 unless it contains a separator, in which
+// case it is version 2 — so a tree without separators still round-trips with a
+// version-1-only reader (the Linux build, which does not have separators yet).
+//
 // Why not the old `[[profile.default-launch-entries]]` form: that was the per-profile
 // D17/D18 shape; D19 deleted the per-profile setting, and pre-public policy is no compat
 // shims, so the importer reads only this schema. The Linux build is unaffected — it keeps
@@ -55,6 +69,8 @@
 
 #pragma once
 
+#include <cstdint>
+#include <cstdio>
 #include <string>
 #include <string_view>
 
@@ -65,6 +81,42 @@ namespace Axan::LaunchEntryWire
     // The interchange schema version this build writes and accepts
     // (root README, Configuration). Files declaring a newer version are rejected.
     inline constexpr int kTomlVersion = 1;
+    // axan #3: the version a file needs once it contains a separator row. Writers emit
+    // kTomlVersion for a separator-free tree and kTomlVersionSeparators otherwise;
+    // readers accept anything <= kTomlVersionMax.
+    inline constexpr int kTomlVersionSeparators = 2;
+    inline constexpr int kTomlVersionMax = kTomlVersionSeparators;
+
+    // ---- axan #3: row-kind vocabulary (shared by settings.json, TOML, and the projected
+    // LaunchEntry.Kind/SeparatorStyle/Placement strings). ----
+    inline constexpr std::string_view KindSession{ "session" }; // also "" on the wire
+    inline constexpr std::string_view KindSeparator{ "separator" };
+    inline constexpr std::string_view StyleLine{ "line" }; // also "" on the wire
+    inline constexpr std::string_view StyleSpace{ "space" };
+    inline constexpr std::string_view PlacementInline{ "inline" }; // also "" on the wire
+    inline constexpr std::string_view PlacementBottom{ "bottom" };
+    inline constexpr std::wstring_view KindSessionW{ L"session" };
+    inline constexpr std::wstring_view KindSeparatorW{ L"separator" };
+    inline constexpr std::wstring_view StyleLineW{ L"line" };
+    inline constexpr std::wstring_view StyleSpaceW{ L"space" };
+    inline constexpr std::wstring_view PlacementInlineW{ L"inline" };
+    inline constexpr std::wstring_view PlacementBottomW{ L"bottom" };
+
+    // Separator height is in units of one session row, tenths precision, [0.1, 10].
+    // 0 / negative / NaN (unset) -> the 1.0 default.
+    inline constexpr double kSeparatorHeightMin = 0.1;
+    inline constexpr double kSeparatorHeightMax = 10.0;
+    inline constexpr double kSeparatorHeightDefault = 1.0;
+    inline double NormalizeSeparatorHeight(double h)
+    {
+        if (!(h > 0.0)) // also catches NaN
+        {
+            return kSeparatorHeightDefault;
+        }
+        h = h < kSeparatorHeightMin ? kSeparatorHeightMin : (h > kSeparatorHeightMax ? kSeparatorHeightMax : h);
+        // round to tenths
+        return static_cast<double>(static_cast<long long>(h * 10.0 + 0.5)) / 10.0;
+    }
 
     // ---- settings.json keys (native WT camelCase; LaunchEntry::FromJson/ToJson and the
     // raw-JSON exporter agree through these). "parent" (not "parentId") is the historical
@@ -80,6 +132,11 @@ namespace Axan::LaunchEntryWire
         inline constexpr std::string_view Icon{ "icon" };
         inline constexpr std::string_view Color{ "color" };
         inline constexpr std::string_view ColorTarget{ "colorTarget" };
+        // axan #3: separator rows (all sparse; absent on a session row).
+        inline constexpr std::string_view Kind{ "kind" };
+        inline constexpr std::string_view Style{ "style" };
+        inline constexpr std::string_view Height{ "height" };
+        inline constexpr std::string_view Placement{ "placement" };
         // The global tree's key on the settings.json root object (GlobalAppSettings).
         inline constexpr std::string_view StartupSessions{ "startupSessions" };
     }
@@ -98,6 +155,11 @@ namespace Axan::LaunchEntryWire
         inline constexpr std::string_view Icon{ "icon" };
         inline constexpr std::string_view Color{ "color" };
         inline constexpr std::string_view ColorTarget{ "color-target" };
+        // axan #3: separator rows (schema version 2).
+        inline constexpr std::string_view Kind{ "kind" };
+        inline constexpr std::string_view Style{ "style" };
+        inline constexpr std::string_view Height{ "height" };
+        inline constexpr std::string_view Placement{ "placement" };
     }
 
     // One startup-session entry in portable (TOML-side) form: UTF-8 strings, bare profile
@@ -114,7 +176,28 @@ namespace Axan::LaunchEntryWire
         std::string icon; // portable form
         std::string color; // sparse
         std::string colorTarget; // sparse
+        // axan #3: separator rows. kind "" / "session" = session; "separator" = divider.
+        std::string kind;
+        std::string style; // "line" (default) | "space"; sparse
+        double height{ 0.0 }; // session-row units; 0 = unset -> 1.0; sparse when 1.0
+        std::string placement; // "inline" (default) | "bottom"; sparse
+
+        bool IsSeparator() const noexcept { return kind == KindSeparator; }
     };
+
+    // The TOML schema version a tree needs: 2 once any entry is a separator, else 1.
+    template<typename EntryRange>
+    int TomlVersionFor(const EntryRange& entries)
+    {
+        for (const auto& e : entries)
+        {
+            if (e.IsSeparator())
+            {
+                return kTomlVersionSeparators;
+            }
+        }
+        return kTomlVersion;
+    }
 
     // Quote a UTF-8 string as a TOML basic string. Escapes the TOML-mandated set,
     // including \uXXXX for the bare control chars U+0000–U+001F (#431 item 4 — an
@@ -180,6 +263,34 @@ namespace Axan::LaunchEntryWire
         out += "]]\n";
         out += line(TomlKey::Id, e.id);
         out += line(TomlKey::ParentId, e.parentId);
+        // axan #3: a separator carries only its own fields (sparse: defaults omitted).
+        if (e.IsSeparator())
+        {
+            out += line(TomlKey::Kind, std::string{ KindSeparator });
+            if (!e.style.empty() && e.style != StyleLine)
+            {
+                out += line(TomlKey::Style, e.style);
+            }
+            const auto h = NormalizeSeparatorHeight(e.height);
+            if (h != kSeparatorHeightDefault)
+            {
+                // tenths precision -> at most one decimal; TOML float needs the point
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "%.1f", h);
+                std::string kv{ TomlKey::Height };
+                kv.append(12 - TomlKey::Height.size(), ' ');
+                kv += " = ";
+                kv += buf;
+                kv += '\n';
+                out += kv;
+            }
+            if (!e.placement.empty() && e.placement != PlacementInline)
+            {
+                out += line(TomlKey::Placement, e.placement);
+            }
+            out += '\n';
+            return out;
+        }
         if (!e.profile.empty())
         {
             out += line(TomlKey::Profile, e.profile);
@@ -225,6 +336,22 @@ namespace Axan::LaunchEntryWire
         e.icon = field(TomlKey::Icon);
         e.color = field(TomlKey::Color);
         e.colorTarget = field(TomlKey::ColorTarget);
+        // axan #3: separator rows. height may be written as a float or an integer.
+        e.kind = field(TomlKey::Kind);
+        e.style = field(TomlKey::Style);
+        e.placement = field(TomlKey::Placement);
+        if (const auto hd = t[TomlKey::Height].template value<double>())
+        {
+            e.height = *hd;
+        }
+        else if (const auto hi = t[TomlKey::Height].template value<int64_t>())
+        {
+            e.height = static_cast<double>(*hi);
+        }
+        if (e.IsSeparator())
+        {
+            e.height = NormalizeSeparatorHeight(e.height);
+        }
         return e;
     }
 

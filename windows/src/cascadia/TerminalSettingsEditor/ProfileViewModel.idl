@@ -62,6 +62,32 @@ namespace Microsoft.Terminal.Settings.Editor
         // axan #13: Color resolved against the app theme for the row's color-button
         // preview; null (theme foreground) when no color is set. Backed by Color.
         Windows.UI.Xaml.Media.Brush ColorPreviewBrush { get; };
+
+        // axan #3: row kind — "" / "session" = a shell session; "separator" = a divider row
+        // that spawns nothing (Profile/Name/Directory/Command/Icon/Color are ignored). It
+        // nests and orders like a session. Mirrors Model.LaunchEntry.Kind.
+        String Kind;
+        // axan #3 (separators only): "line" (default) draws a rule; "space" is an open gap.
+        String SeparatorStyle;
+        // SeparatorStyle as a picker index (0 = line, 1 = space) for the page's
+        // literal-item ComboBox (SelectedIndex two-way; see the ItemsSource caveat in
+        // StartupSessions.xaml). Backed by SeparatorStyle.
+        Int32 SeparatorStyleIndex;
+        // axan #3 (separators only): height in units of one session row, tenths,
+        // clamped to [0.1, 10]; the setter normalizes (0 / NaN -> 1.0).
+        Double Height;
+        // axan #3 (separators only): "" / "inline" (default) keeps list position;
+        // "bottom" pins the separator to the bottom of its sibling scope.
+        String Placement;
+        // Placement as a picker index (0 = inline, 1 = bottom). Backed by Placement.
+        Int32 PlacementIndex;
+        // Derived from Kind; re-notified when Kind changes. The two Visibility forms let
+        // the row template swap the session editor for the separator editor without a
+        // converter.
+        Boolean IsSeparator { get; };
+        Boolean IsSession { get; };
+        Windows.UI.Xaml.Visibility SessionVisibility { get; };
+        Windows.UI.Xaml.Visibility SeparatorVisibility { get; };
     }
 
     enum ProfileSubPage

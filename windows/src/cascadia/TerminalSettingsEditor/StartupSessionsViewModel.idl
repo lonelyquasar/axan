@@ -29,6 +29,9 @@ namespace Microsoft.Terminal.Settings.Editor
         String DefaultProfileGuid { get; };
 
         void AddEntry();
+        // axan #3: append a root separator row (line style, one row tall, inline). It is
+        // an ordinary row afterwards — move/indent/outdent/duplicate/delete all apply.
+        void AddSeparator();
         void DeleteEntry(LaunchEntryViewModel vm);
         void DuplicateEntry(LaunchEntryViewModel vm);
         void IndentEntry(LaunchEntryViewModel vm);

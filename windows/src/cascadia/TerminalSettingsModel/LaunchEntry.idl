@@ -40,5 +40,24 @@ namespace Microsoft.Terminal.Settings.Model
         // axan #422: which surfaces the recolor paints — "icon", "text", or "both" (the
         // default). Empty -> "both". Mirrors the Linux `color_target` field.
         String ColorTarget;
+
+        // axan #3: row kind. "" or "session" (default) = a shell session as above;
+        // "separator" = a visual divider row in the sidebar tree that spawns nothing.
+        // A separator ignores Profile/Name/Directory/Command/Icon/Color; it nests like a
+        // session (ParentId) and is ordered by list position like a session.
+        String Kind;
+        // axan #3 (separators only): "line" (default) draws a hairline rule; "space" is an
+        // empty gap.
+        String SeparatorStyle;
+        // axan #3 (separators only): the divider's height in units of one session row
+        // (1.0 = one row, 0.5 = half a row, 2.0 = double-space). Tenths precision;
+        // clamped to [0.1, 10]. 0 / unset -> 1.0.
+        Double Height;
+        // axan #3 (separators only): "" or "inline" (default) keeps the list position;
+        // "bottom" pins the separator to the bottom of its sibling scope (its parent's
+        // children, or the root) so sessions added later still land above it.
+        String Placement;
+        // True when Kind is "separator".
+        Boolean IsSeparator { get; };
     }
 }
