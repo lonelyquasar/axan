@@ -538,6 +538,9 @@ namespace winrt::TerminalApp::implementation
         void _RefreshNodeLabelBrushes(Windows::UI::Xaml::ElementTheme themeOverride = Windows::UI::Xaml::ElementTheme::Default);
         void _OnSessionsCollectionChanged(const Windows::Foundation::Collections::IObservableVector<winrt::TerminalApp::Tab>& sender, const Windows::Foundation::Collections::IVectorChangedEventArgs& args);
         void _OnSessionTreeItemInvoked(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewItemInvokedEventArgs& args);
+        // axan #16: expand the drop target after a drag-and-drop reparent so a leaf that just
+        // gained its first child actually shows it.
+        void _OnSessionTreeDragItemsCompleted(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewDragItemsCompletedEventArgs& args);
         // axan #436 item 3: the one resolve-and-select path shared by the expanded tree
         // (ItemInvoked) and the minimized icon list (ItemClick): VM -> weak TabRef -> Tab ->
         // the existing TabView selection path.

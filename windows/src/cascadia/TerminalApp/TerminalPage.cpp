@@ -342,6 +342,9 @@ namespace winrt::TerminalApp::implementation
         // tab-selection path (which drives the content swap + keeps the strip in sync).
         _tabs.VectorChanged({ get_weak(), &TerminalPage::_OnSessionsCollectionChanged });
         SessionTree().ItemInvoked({ get_weak(), &TerminalPage::_OnSessionTreeItemInvoked });
+        // axan #16: after a drag-and-drop reparent, expand the target so a former leaf shows
+        // its new child instead of swallowing it.
+        SessionTree().DragItemsCompleted({ get_weak(), &TerminalPage::_OnSessionTreeDragItemsCompleted });
         // axan M13: right-click a node for its context menu (rename/icon/duplicate/close/etc.).
         SessionTree().RightTapped({ get_weak(), &TerminalPage::_OnSessionTreeRightTapped });
         // axan #429: Shift+F10 / the menu key raise ContextRequested, not RightTapped — wire

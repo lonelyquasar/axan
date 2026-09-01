@@ -744,6 +744,45 @@ namespace winrt::TerminalApp::implementation
         _SelectTabForNodeVM(node.Content().try_as<winrt::TerminalApp::SessionNodeViewModel>());
     }
 
+    // axan #16: after the native TreeView drag-and-drop lands, make the drop target show
+    // its new child. WinUI's unbound-mode "drop onto a node" reparents the dragged node
+    // correctly, but when the target was a leaf it stays collapsed and its container's
+    // expander isn't refreshed for the leaf -> parent transition, so the dragged node
+    // vanishes until something else expands the target (e.g. Add child session). Expand
+    // the new parent explicitly (mirrors _AddChildSession) and force the chevron on —
+    // TreeViewList only sets GlyphOpacity from HasChildren when the container is prepared.
+    // Drops between siblings at the root leave Parent() as the tree's hidden root node
+    // (Depth -1); nothing to expand there.
+    void TerminalPage::_OnSessionTreeDragItemsCompleted(const MUX::Controls::TreeView& /*sender*/,
+                                                        const MUX::Controls::TreeViewDragItemsCompletedEventArgs& args)
+    {
+        const auto items = args.Items();
+        if (!items)
+        {
+            return;
+        }
+        for (const auto& item : items)
+        {
+            const auto node = item.try_as<MUX::Controls::TreeViewNode>();
+            if (!node)
+            {
+                continue;
+            }
+            const auto parent = node.Parent();
+            if (!parent || parent.Depth() < 0)
+            {
+                continue;
+            }
+            const bool wasExpanded = parent.IsExpanded();
+            parent.IsExpanded(true);
+            if (const auto container = SessionTree().ContainerFromNode(parent).try_as<MUX::Controls::TreeViewItem>())
+            {
+                container.GlyphOpacity(1.0);
+            }
+            Axan::Log::Info("TerminalPage", "drag-drop reparent: expanded new parent", { { "wasExpanded", wasExpanded ? "1" : "0" }, { "childCount", std::to_string(parent.Children().Size()) } });
+        }
+    }
+
     // ===================== axan M13: session-node context menu =====================
     //
     // Right-click a session-tree node for its actions. The menu is built in code (not XAML)
