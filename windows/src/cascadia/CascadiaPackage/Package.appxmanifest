@@ -21,7 +21,7 @@
   <Identity
     Name="sh.axan.Axan"
     Publisher="CN=Lonely Quasar"
-    Version="0.1.1.0" />
+    Version="0.1.2.0" />
 
   <Properties>
     <DisplayName>ms-resource:AppStoreName</DisplayName>
