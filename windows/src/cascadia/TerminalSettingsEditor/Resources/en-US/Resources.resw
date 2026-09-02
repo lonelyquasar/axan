@@ -520,6 +520,14 @@
     <value>Use acrylic material in the tab row</value>
     <comment>Header for a control to toggle whether "acrylic material" is used. "Acrylic material" is a Microsoft-specific term: https://docs.microsoft.com/en-us/windows/apps/design/style/acrylic</comment>
   </data>
+  <data name="Globals_SidebarMatchesProfileTransparency.Header" xml:space="preserve">
+    <value>Sidebar matches profile transparency</value>
+    <comment>axan #2: Header for a control to toggle whether the session sidebar is painted with the focused profile's background and opacity.</comment>
+  </data>
+  <data name="Globals_SidebarMatchesProfileTransparency.HelpText" xml:space="preserve">
+    <value>Paint the session sidebar with the focused profile's background and opacity, and leave the backdrop behind the terminal clear, so the whole window shares one transparency. Set the opacity per profile under Appearance &gt; Transparency.</value>
+    <comment>axan #2: A description for what the "sidebar matches profile transparency" setting does. Presented near "Globals_SidebarMatchesProfileTransparency.Header".</comment>
+  </data>
   <data name="Globals_ShowTitleInTitlebar.Header" xml:space="preserve">
     <value>Use active terminal title as application title</value>
     <comment>Header for a control to toggle whether the terminal's title is shown as the application title, or not.</comment>

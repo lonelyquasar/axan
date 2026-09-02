@@ -26,7 +26,12 @@
         </ResourceDictionary>
     </Page.Resources>
 
-    <StackPanel Style="{StaticResource SettingsStackStyle}">
+    <!--
+        Wider than the standard settings column: each row is a full toolbar of controls,
+        and the directory/command boxes deserve the room on a wide window.
+    -->
+    <StackPanel MaxWidth="2200"
+                Style="{StaticResource SettingsStackStyle}">
 
         <TextBlock Margin="0,0,0,4"
                    Style="{StaticResource TextBlockSubHeaderStyle}"
@@ -35,7 +40,7 @@
                    Foreground="{ThemeResource SubgroupHeaderBrush}"
                    Style="{StaticResource CaptionTextBlockStyle}"
                    TextWrapping="Wrap"
-                   Text="The shells axan opens at launch. Each row spawns a profile (the shell) in an optional directory, optionally running a command; indent a row to nest it under the one above. Honored on a plain launch — command-line shells take precedence." />
+                   Text="The shells axan opens at launch. Each row spawns a profile (the shell) in an optional directory, optionally running a command; indent a row to nest it under the one above. A separator row is a divider in the sidebar tree — a line or an open gap — that spawns nothing. Honored on a plain launch — command-line shells take precedence." />
 
         <ItemsControl ItemsSource="{x:Bind ViewModel.Entries, Mode=OneWay}">
             <ItemsControl.ItemsPanel>
@@ -45,10 +50,37 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="local:LaunchEntryViewModel">
-                    <StackPanel Margin="{x:Bind IndentMargin, Mode=OneWay}"
-                                Orientation="Horizontal"
-                                Spacing="4"
-                                TabFocusNavigation="Local">
+                    <!--
+                        A Grid, not a horizontal StackPanel: the Name / Directory / Command
+                        boxes are star-sized so they grow with the page instead of clipping
+                        a long path or command at a fixed width on a wide window (the page's
+                        MaxWidth is raised above for the same reason), and shrink first when
+                        the window is narrow so the trailing Duplicate/Delete buttons stay in
+                        view instead of the row being cropped. Everything else stays Auto-sized.
+                    -->
+                    <Grid Margin="{x:Bind IndentMargin, Mode=OneWay}"
+                          ColumnSpacing="4"
+                          TabFocusNavigation="Local">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*"
+                                              MinWidth="70"
+                                              MaxWidth="400" />
+                            <ColumnDefinition Width="2*"
+                                              MinWidth="100"
+                                              MaxWidth="900" />
+                            <ColumnDefinition Width="2*"
+                                              MinWidth="100"
+                                              MaxWidth="900" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
                         <!--
                             axan #429: the per-row buttons are icon-only and Narrator doesn't
                             read ToolTips as names, so each carries an AutomationProperties.Name.
@@ -59,28 +91,32 @@
                             previous/next SIBLING (same nesting level); the glyphs match the
                             NewTabMenu page's reorder buttons.
                         -->
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="0"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Move entry up"
                                 Click="MoveEntryUp_Click"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Move up (with its children)">
                             <FontIcon FontSize="12" Glyph="&#xF0AD;" />
                         </Button>
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="1"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Move entry down"
                                 Click="MoveEntryDown_Click"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Move down (with its children)">
                             <FontIcon FontSize="12" Glyph="&#xF0AE;" />
                         </Button>
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="2"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Outdent entry"
                                 Click="OutdentEntry_Click"
                                 Tag="{x:Bind}"
                                 ToolTipService.ToolTip="Outdent (move out one level)">
                             <FontIcon FontSize="12" Glyph="&#xE76B;" />
                         </Button>
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="3"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Indent entry"
                                 Click="IndentEntry_Click"
                                 Tag="{x:Bind}"
@@ -95,12 +131,21 @@
                             row's LaunchEntryViewModel. DisplayMemberPath has the same disease
                             (it reflects on Model.Profile), hence the explicit item template.
                         -->
-                        <ComboBox Width="150"
+                        <!--
+                            axan #3: a separator row swaps the session editor (profile, icon,
+                            color, Name / Directory / Command — each Visibility-bound to
+                            SessionVisibility) for the compact divider editor further down,
+                            which spans the same columns and binds SeparatorVisibility. Both
+                            live in the one template; the row's Kind picks which shows.
+                        -->
+                        <ComboBox Grid.Column="4"
+                                  Width="150"
                                   AutomationProperties.Name="Profile"
                                   Loaded="ProfileCombo_Loaded"
                                   SelectionChanged="ProfileCombo_SelectionChanged"
                                   Tag="{x:Bind}"
-                                  ToolTipService.ToolTip="Which shell to spawn (a profile)">
+                                  ToolTipService.ToolTip="Which shell to spawn (a profile)"
+                                  Visibility="{x:Bind SessionVisibility, Mode=OneWay}">
                             <ComboBox.ItemTemplate>
                                 <DataTemplate x:DataType="model:Profile">
                                     <TextBlock Text="{x:Bind Name}" />
@@ -114,10 +159,12 @@
                             builtin-glyph vocabulary, an image-file browse, and a free-text row
                             for emoji / tokens.
                         -->
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="5"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Choose icon"
                                 Tag="{x:Bind}"
-                                ToolTipService.ToolTip="Icon: pick a builtin glyph, browse for an image, or type an emoji">
+                                ToolTipService.ToolTip="Icon: pick a builtin glyph, browse for an image, or type an emoji"
+                                Visibility="{x:Bind SessionVisibility, Mode=OneWay}">
                             <ContentControl Width="20"
                                             Height="20"
                                             VerticalAlignment="Center"
@@ -134,10 +181,12 @@
                             on Opening, same classic-Binding limitation as the icon picker)
                             offers the palette swatches and the icon/text/both target.
                         -->
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="6"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Choose color"
                                 Tag="{x:Bind}"
-                                ToolTipService.ToolTip="Session color: recolor the sidebar icon and/or label text">
+                                ToolTipService.ToolTip="Session color: recolor the sidebar icon and/or label text"
+                                Visibility="{x:Bind SessionVisibility, Mode=OneWay}">
                             <Ellipse Width="14"
                                      Height="14"
                                      Fill="{x:Bind ColorPreviewBrush, Mode=OneWay}"
@@ -147,33 +196,83 @@
                                 <Flyout Opening="ColorFlyout_Opening" />
                             </Button.Flyout>
                         </Button>
-                        <TextBox Width="130"
+                        <TextBox Grid.Column="7"
                                  PlaceholderText="Name"
                                  Text="{x:Bind Name, Mode=TwoWay}"
-                                 ToolTipService.ToolTip="Sidebar label template (optional)" />
-                        <TextBox Width="170"
+                                 ToolTipService.ToolTip="Sidebar label template (optional)"
+                                 Visibility="{x:Bind SessionVisibility, Mode=OneWay}" />
+                        <TextBox Grid.Column="8"
                                  PlaceholderText="Directory"
                                  Text="{x:Bind Directory, Mode=TwoWay}"
-                                 ToolTipService.ToolTip="Working directory; ~ = home (optional)" />
-                        <TextBox Width="170"
+                                 ToolTipService.ToolTip="Working directory; ~ = home (optional)"
+                                 Visibility="{x:Bind SessionVisibility, Mode=OneWay}" />
+                        <TextBox Grid.Column="9"
                                  PlaceholderText="Command"
                                  Text="{x:Bind Command, Mode=TwoWay}"
-                                 ToolTipService.ToolTip="Command to run; empty = the profile's shell" />
-                        <Button VerticalAlignment="Stretch"
+                                 ToolTipService.ToolTip="Command to run; empty = the profile's shell"
+                                 Visibility="{x:Bind SessionVisibility, Mode=OneWay}" />
+                        <!--
+                            axan #3: the separator editor — shown in place of the session
+                            controls above when the row's Kind is "separator". Style and
+                            Placement are literal-item ComboBoxes driven by SelectedIndex
+                            (SeparatorStyleIndex / PlacementIndex on the row VM): the
+                            ItemsSource caveat on the profile combo applies to any list the
+                            page would hand a row template. Height is in session-row units;
+                            the VM setter clamps to [0.1, 10] and rounds to tenths, so the
+                            box snaps to the stored value on commit.
+                        -->
+                        <StackPanel Grid.Column="4"
+                                    Grid.ColumnSpan="6"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Spacing="8"
+                                    Visibility="{x:Bind SeparatorVisibility, Mode=OneWay}">
+                            <FontIcon VerticalAlignment="Center"
+                                      FontSize="14"
+                                      Glyph="&#xE738;" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="Separator" />
+                            <ComboBox Width="100"
+                                      AutomationProperties.Name="Separator style"
+                                      SelectedIndex="{x:Bind SeparatorStyleIndex, Mode=TwoWay}"
+                                      ToolTipService.ToolTip="Line draws a rule across the sidebar; Space leaves an open gap">
+                                <ComboBoxItem Content="Line" />
+                                <ComboBoxItem Content="Space" />
+                            </ComboBox>
+                            <muxc:NumberBox Width="120"
+                                            AutomationProperties.Name="Separator height"
+                                            LargeChange="1"
+                                            Maximum="10"
+                                            Minimum="0.1"
+                                            SmallChange="0.5"
+                                            SpinButtonPlacementMode="Compact"
+                                            ToolTipService.ToolTip="Height in session rows: 1 = one row, 0.5 = half a row, 2 = double-space"
+                                            Value="{x:Bind Height, Mode=TwoWay}" />
+                            <ComboBox Width="100"
+                                      AutomationProperties.Name="Separator placement"
+                                      SelectedIndex="{x:Bind PlacementIndex, Mode=TwoWay}"
+                                      ToolTipService.ToolTip="Inline keeps this position in the list; Bottom pins the separator below its siblings, so sessions added later land above it">
+                                <ComboBoxItem Content="Inline" />
+                                <ComboBoxItem Content="Bottom" />
+                            </ComboBox>
+                        </StackPanel>
+                        <Button Grid.Column="10"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Duplicate entry"
                                 Click="DuplicateEntry_Click"
                                 Tag="{x:Bind}"
-                                ToolTipService.ToolTip="Duplicate this session">
+                                ToolTipService.ToolTip="Duplicate this row">
                             <FontIcon FontSize="12" Glyph="&#xE8C8;" />
                         </Button>
-                        <Button VerticalAlignment="Stretch"
+                        <Button Grid.Column="11"
+                                VerticalAlignment="Stretch"
                                 AutomationProperties.Name="Delete entry"
                                 Click="DeleteEntry_Click"
                                 Tag="{x:Bind}"
-                                ToolTipService.ToolTip="Remove this session">
+                                ToolTipService.ToolTip="Remove this row">
                             <FontIcon FontSize="12" Glyph="&#xE74D;" />
                         </Button>
-                    </StackPanel>
+                    </Grid>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
@@ -186,6 +285,16 @@
                 <StackPanel Orientation="Horizontal">
                     <FontIcon FontSize="14" Glyph="&#xE710;" />
                     <TextBlock Margin="8,0,0,0" Text="Add session" />
+                </StackPanel>
+            </Button>
+            <!--  axan #3: append a separator row (a divider in the sidebar tree; edited
+                  inline in its row above).  -->
+            <Button x:Name="AddSeparatorButton"
+                    Click="AddSeparator_Click"
+                    ToolTipService.ToolTip="Add a divider row to the tree — a line or an open gap that spawns nothing.">
+                <StackPanel Orientation="Horizontal">
+                    <FontIcon FontSize="14" Glyph="&#xE738;" />
+                    <TextBlock Margin="8,0,0,0" Text="Add separator" />
                 </StackPanel>
             </Button>
             <Button x:Name="ImportButton"

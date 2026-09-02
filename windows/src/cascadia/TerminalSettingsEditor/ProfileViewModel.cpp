@@ -14,6 +14,7 @@
 #include "../../types/inc/utils.hpp"
 #include <AxanIconRegistry.h> // builtin:NAME <-> glyph mapping for LaunchEntryViewModel::IconPortable
 #include <AxanSessionPalette.h> // shared session color palette for LaunchEntryViewModel::ColorPreviewBrush (#13)
+#include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary + height normalization
 
 #include <filesystem>
 
@@ -928,6 +929,99 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // icon-less row shows a placeholder instead of a blank cell.
         const auto id = _Icon.empty() ? hstring{ L"\uE756" } : _Icon;
         return Microsoft::Terminal::UI::IconPathConverter::IconWUX(id);
+    }
+
+    // ---- axan #3: separator rows ----
+
+    void LaunchEntryViewModel::Kind(const hstring& value)
+    {
+        if (_Kind != value)
+        {
+            _Kind = value;
+            _NotifyChanges(L"Kind", L"IsSeparator", L"IsSession", L"SessionVisibility", L"SeparatorVisibility");
+        }
+    }
+
+    bool LaunchEntryViewModel::IsSeparator() const
+    {
+        return _Kind == Axan::LaunchEntryWire::KindSeparatorW;
+    }
+
+    Windows::UI::Xaml::Visibility LaunchEntryViewModel::SessionVisibility() const
+    {
+        return IsSeparator() ? Windows::UI::Xaml::Visibility::Collapsed : Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    Windows::UI::Xaml::Visibility LaunchEntryViewModel::SeparatorVisibility() const
+    {
+        return IsSeparator() ? Windows::UI::Xaml::Visibility::Visible : Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    void LaunchEntryViewModel::SeparatorStyle(const hstring& value)
+    {
+        if (_SeparatorStyle != value)
+        {
+            _SeparatorStyle = value;
+            _NotifyChanges(L"SeparatorStyle", L"SeparatorStyleIndex");
+        }
+    }
+
+    // The page's Style ComboBox is a pair of literal items \u2014 0 = line, 1 = space \u2014 bound
+    // through this index (a classic Binding can't reach the page from a C++/WinRT row
+    // template, so there is no ItemsSource to bind the string to). "" reads as line.
+    int32_t LaunchEntryViewModel::SeparatorStyleIndex() const
+    {
+        return _SeparatorStyle == Axan::LaunchEntryWire::StyleSpaceW ? 1 : 0;
+    }
+
+    void LaunchEntryViewModel::SeparatorStyleIndex(int32_t value)
+    {
+        // A ComboBox reports -1 while it has no selection (template teardown); ignore it
+        // rather than snapping the row back to "line".
+        if (value < 0)
+        {
+            return;
+        }
+        SeparatorStyle(hstring{ value == 1 ? Axan::LaunchEntryWire::StyleSpaceW : Axan::LaunchEntryWire::StyleLineW });
+    }
+
+    // Normalizes on the way in (tenths, [0.1, 10]; 0 / NaN -> 1.0) so the model never
+    // sees a raw NumberBox value. Notifies whenever the box's value differs from what was
+    // stored \u2014 including when normalization changed it but the stored value didn't (a
+    // cleared box reads NaN and must snap back to the 1.0 it already held).
+    void LaunchEntryViewModel::Height(double value)
+    {
+        const auto normalized = Axan::LaunchEntryWire::NormalizeSeparatorHeight(value);
+        const bool stored = normalized != _Height;
+        _Height = normalized;
+        if (stored || normalized != value)
+        {
+            _NotifyChanges(L"Height");
+        }
+    }
+
+    void LaunchEntryViewModel::Placement(const hstring& value)
+    {
+        if (_Placement != value)
+        {
+            _Placement = value;
+            _NotifyChanges(L"Placement", L"PlacementIndex");
+        }
+    }
+
+    // 0 = inline (also ""), 1 = bottom; see SeparatorStyleIndex.
+    int32_t LaunchEntryViewModel::PlacementIndex() const
+    {
+        return _Placement == Axan::LaunchEntryWire::PlacementBottomW ? 1 : 0;
+    }
+
+    void LaunchEntryViewModel::PlacementIndex(int32_t value)
+    {
+        if (value < 0)
+        {
+            return;
+        }
+        Placement(hstring{ value == 1 ? Axan::LaunchEntryWire::PlacementBottomW : Axan::LaunchEntryWire::PlacementInlineW });
     }
 
     void ProfileViewModel::DeleteProfile()

@@ -47,6 +47,23 @@ namespace Axan
         int32_t parentIndex{ -1 };
     };
 
+    // axan #3: one separator row from the startup tree. A separator spawns NOTHING — it is
+    // never a StartupSession and never gets a spawn index — so it can't ride in the
+    // index-aligned metadata vectors. It is described by position instead: the spawn index
+    // of the session it nests under (parentSpawnIndex, -1 = root) and the spawn index of the
+    // nearest PRECEDING sibling *session* in that same scope (afterSpawnIndex, -1 = first in
+    // its scope). The sidebar inserts the separator node right after that sibling's node once
+    // every startup session has been realized (TerminalPage::_RealizeStartupSeparators).
+    struct StartupSeparator
+    {
+        winrt::hstring id; // the LaunchEntry Id, kept on the node so a capture round-trips it
+        winrt::hstring style; // "line" | "space" (normalized; empty -> "line")
+        double height{ 1.0 }; // in session-row units, already NormalizeSeparatorHeight'd
+        winrt::hstring placement; // "inline" | "bottom" (normalized; empty -> "inline")
+        int32_t parentSpawnIndex{ -1 };
+        int32_t afterSpawnIndex{ -1 };
+    };
+
     // axan D19: read the GLOBAL startup tree (GlobalAppSettings.StartupSessions) and flatten
     // it into StartupSessions. Each entry becomes a NewTab action under ITS OWN referenced
     // profile (LaunchEntry.Profile, a WT profile GUID; empty/unresolved -> the global default
@@ -61,7 +78,14 @@ namespace Axan
     // DefaultLaunchEntries of M14/D17, the standalone sessions.json of D15/D16) are simply
     // gone — the global tree in settings.json is the only source.
     //
+    // axan #3: separator entries (Kind == "separator") produce NO action; they are returned
+    // through `outSeparators`, positioned by their parent's / preceding sibling session's spawn
+    // index (see StartupSeparator). A session that names a separator as its parent is
+    // re-parented to the separator's own parent (a separator can't own sessions) with a warning.
+    //
     // Returns an empty vector when there is no default profile, the global tree is empty,
-    // or settings is null — the caller then falls back to WT's normal startup.
-    std::vector<StartupSession> LoadStartupTree(const winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings& settings);
+    // or settings is null — the caller then falls back to WT's normal startup (a tree of
+    // separators only also counts as empty: nothing to spawn, so nothing to divide).
+    std::vector<StartupSession> LoadStartupTree(const winrt::Microsoft::Terminal::Settings::Model::CascadiaSettings& settings,
+                                                std::vector<StartupSeparator>& outSeparators);
 }

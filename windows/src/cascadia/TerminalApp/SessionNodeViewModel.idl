@@ -40,5 +40,26 @@ namespace TerminalApp
         // in the minimized sidebar's cells (mirrors the Linux minimized initials). Static so
         // the minimized cell can x:Bind Initials(Label) and re-derive whenever Label changes.
         static String Initials(String label);
+
+        // axan #3: separator rows. A separator node's Content is still a SessionNodeViewModel
+        // (one node type, one ItemTemplate) with IsSeparator true, no session behind it, and
+        // the divider's stored shape: SeparatorStyle ("line" = hairline rule, "space" = empty
+        // gap), SeparatorHeight in session-row units (0.1..10, tenths), and Placement
+        // ("inline" keeps its list position, "bottom" is pinned to the end of its sibling
+        // scope). Read-only from XAML — separators are authored on the Startup sessions
+        // settings page; the live tree only renders them and lets Ctrl+Alt reorder them.
+        Boolean IsSeparator { get; };
+        String SeparatorStyle { get; };
+        Double SeparatorHeight { get; };
+        String Placement { get; };
+        // axan #3: the render-side switches the shared ExpandedNodeTemplate binds. The
+        // session Grid (icon + label) shows for a session, the separator Grid for a
+        // separator; SeparatorLineVisibility is Visible only for the "line" style;
+        // SeparatorPixelHeight is SeparatorHeight x one session row (the
+        // TreeViewItemMinHeight theme resource, resolved by the page at node creation).
+        Windows.UI.Xaml.Visibility SessionVisibility { get; };
+        Windows.UI.Xaml.Visibility SeparatorVisibility { get; };
+        Windows.UI.Xaml.Visibility SeparatorLineVisibility { get; };
+        Double SeparatorPixelHeight { get; };
     }
 }

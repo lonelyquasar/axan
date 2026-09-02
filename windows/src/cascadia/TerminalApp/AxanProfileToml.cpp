@@ -271,41 +271,66 @@ namespace
     // Each entry carries its referenced profile's GUID (bare) plus the profile-name fallback so
     // it re-resolves on a machine where the GUID differs; an empty profile ("follow the global
     // default") is omitted entirely, sparse like color/color-target.
+    //
+    // axan #3: separator rows carry kind/style/height/placement instead (ToTomlBlock emits
+    // the right shape per kind). The [meta] version is decided AFTER the entries are
+    // gathered — Wire::TomlVersionFor writes 1 for a separator-free tree (so it still
+    // round-trips through a version-1-only reader) and 2 once any row is a separator.
     std::string buildStartupSessionsToml(const Json::Value& root)
     {
+        std::vector<Wire::Entry> entries;
+        const std::string sessionsKey{ Wire::JsonKey::StartupSessions };
+        if (root.isMember(sessionsKey) && root[sessionsKey].isArray())
+        {
+            for (const auto& e : root[sessionsKey])
+            {
+                if (!e.isObject())
+                {
+                    continue;
+                }
+                Wire::Entry entry;
+                entry.id = jsonStr(e, Wire::JsonKey::Id);
+                entry.parentId = jsonStr(e, Wire::JsonKey::Parent);
+                entry.kind = jsonStr(e, Wire::JsonKey::Kind);
+                if (entry.IsSeparator())
+                {
+                    entry.style = jsonStr(e, Wire::JsonKey::Style);
+                    entry.placement = jsonStr(e, Wire::JsonKey::Placement);
+                    // height: written by LaunchEntry::ToJson as a double, but a hand-edited
+                    // file may hold an integer ("height": 2); both are numeric to jsoncpp.
+                    const std::string heightKey{ Wire::JsonKey::Height };
+                    if (e.isMember(heightKey) && e[heightKey].isNumeric())
+                    {
+                        entry.height = e[heightKey].asDouble();
+                    }
+                    entry.height = Wire::NormalizeSeparatorHeight(entry.height);
+                    entries.push_back(std::move(entry));
+                    continue;
+                }
+                entry.profile = stripBraces(jsonStr(e, Wire::JsonKey::Profile));
+                entry.profileName = entry.profile.empty() ? std::string{} : lookupProfileName(root, entry.profile);
+                entry.name = jsonStr(e, Wire::JsonKey::Name);
+                entry.directory = jsonStr(e, Wire::JsonKey::Directory);
+                entry.command = jsonStr(e, Wire::JsonKey::Command);
+                // icon: a known Segoe glyph exports as builtin:NAME for portability; anything
+                // else (emoji, path, unmapped glyph) carries verbatim (D18 v1 contract).
+                entry.icon = wToU8(Wire::ExportIcon(u8ToW(jsonStr(e, Wire::JsonKey::Icon))));
+                entry.color = jsonStr(e, Wire::JsonKey::Color);
+                entry.colorTarget = jsonStr(e, Wire::JsonKey::ColorTarget);
+                entries.push_back(std::move(entry));
+            }
+        }
+
         std::ostringstream out;
         out << "# axan startup sessions — the global launch-entry tree.\n"
                "# Canonical config is settings.json (\"startupSessions\"); this file is the\n"
                "# portable mirror. Import it from the Settings > Startup sessions page on\n"
                "# another machine to carry the tree across.\n\n";
         out << "[meta]\n";
-        out << "axan-toml-version = " << Wire::kTomlVersion << "\n";
+        out << "axan-toml-version = " << Wire::TomlVersionFor(entries) << "\n";
         out << "exported-by       = \"windows\"\n\n";
-
-        const std::string sessionsKey{ Wire::JsonKey::StartupSessions };
-        if (!root.isMember(sessionsKey) || !root[sessionsKey].isArray())
+        for (const auto& entry : entries)
         {
-            return out.str();
-        }
-        for (const auto& e : root[sessionsKey])
-        {
-            if (!e.isObject())
-            {
-                continue;
-            }
-            Wire::Entry entry;
-            entry.id = jsonStr(e, Wire::JsonKey::Id);
-            entry.parentId = jsonStr(e, Wire::JsonKey::Parent);
-            entry.profile = stripBraces(jsonStr(e, Wire::JsonKey::Profile));
-            entry.profileName = entry.profile.empty() ? std::string{} : lookupProfileName(root, entry.profile);
-            entry.name = jsonStr(e, Wire::JsonKey::Name);
-            entry.directory = jsonStr(e, Wire::JsonKey::Directory);
-            entry.command = jsonStr(e, Wire::JsonKey::Command);
-            // icon: a known Segoe glyph exports as builtin:NAME for portability; anything
-            // else (emoji, path, unmapped glyph) carries verbatim (D18 v1 contract).
-            entry.icon = wToU8(Wire::ExportIcon(u8ToW(jsonStr(e, Wire::JsonKey::Icon))));
-            entry.color = jsonStr(e, Wire::JsonKey::Color);
-            entry.colorTarget = jsonStr(e, Wire::JsonKey::ColorTarget);
             out << Wire::ToTomlBlock(entry);
         }
         return out.str();

@@ -14,6 +14,8 @@
 #include "WindowTheme.g.cpp"
 #include "TabRowTheme.g.cpp"
 #include "TabTheme.g.cpp"
+#include "SidebarTheme.g.cpp"
+#include "ContentTheme.g.cpp"
 #include "ThemePair.g.cpp"
 #include "Theme.g.cpp"
 
@@ -60,6 +62,8 @@ THEME_OBJECT(WindowTheme, MTSM_THEME_WINDOW_SETTINGS);
 THEME_OBJECT(SettingsTheme, MTSM_THEME_SETTINGS_SETTINGS);
 THEME_OBJECT(TabRowTheme, MTSM_THEME_TABROW_SETTINGS);
 THEME_OBJECT(TabTheme, MTSM_THEME_TAB_SETTINGS);
+THEME_OBJECT(SidebarTheme, MTSM_THEME_SIDEBAR_SETTINGS);
+THEME_OBJECT(ContentTheme, MTSM_THEME_CONTENT_SETTINGS);
 
 #undef THEME_SETTINGS_COPY
 #undef THEME_SETTINGS_TO_JSON
@@ -224,6 +228,8 @@ THEME_OBJECT_CONVERTER(winrt::Microsoft::Terminal::Settings::Model, WindowTheme,
 THEME_OBJECT_CONVERTER(winrt::Microsoft::Terminal::Settings::Model, SettingsTheme, MTSM_THEME_SETTINGS_SETTINGS);
 THEME_OBJECT_CONVERTER(winrt::Microsoft::Terminal::Settings::Model, TabRowTheme, MTSM_THEME_TABROW_SETTINGS);
 THEME_OBJECT_CONVERTER(winrt::Microsoft::Terminal::Settings::Model, TabTheme, MTSM_THEME_TAB_SETTINGS);
+THEME_OBJECT_CONVERTER(winrt::Microsoft::Terminal::Settings::Model, SidebarTheme, MTSM_THEME_SIDEBAR_SETTINGS);
+THEME_OBJECT_CONVERTER(winrt::Microsoft::Terminal::Settings::Model, ContentTheme, MTSM_THEME_CONTENT_SETTINGS);
 
 #undef THEME_SETTINGS_FROM_JSON
 #undef THEME_SETTINGS_TO_JSON
@@ -257,6 +263,14 @@ winrt::com_ptr<Theme> Theme::Copy() const
     if (_Settings)
     {
         theme->_Settings = *winrt::get_self<implementation::SettingsTheme>(_Settings)->Copy();
+    }
+    if (_Sidebar)
+    {
+        theme->_Sidebar = *winrt::get_self<implementation::SidebarTheme>(_Sidebar)->Copy();
+    }
+    if (_Content)
+    {
+        theme->_Content = *winrt::get_self<implementation::ContentTheme>(_Content)->Copy();
     }
 
     return theme;
@@ -333,6 +347,20 @@ void Theme::LogSettingChanges(std::set<std::string>& changes, const std::string_
         const auto obj = _Tab;
         const auto outerJsonKey = outerTabJsonKey;
         MTSM_THEME_TAB_SETTINGS(LOG_IF_SET)
+    }
+
+    if (isSidebarSet)
+    {
+        const auto obj = _Sidebar;
+        const auto outerJsonKey = outerSidebarJsonKey;
+        MTSM_THEME_SIDEBAR_SETTINGS(LOG_IF_SET)
+    }
+
+    if (isContentSet)
+    {
+        const auto obj = _Content;
+        const auto outerJsonKey = outerContentJsonKey;
+        MTSM_THEME_CONTENT_SETTINGS(LOG_IF_SET)
     }
 #undef LOG_IF_SET
 #undef GENERATE_SET_CHECK_AND_JSON_KEYS

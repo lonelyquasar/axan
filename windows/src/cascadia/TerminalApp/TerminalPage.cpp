@@ -342,6 +342,33 @@ namespace winrt::TerminalApp::implementation
         // tab-selection path (which drives the content swap + keeps the strip in sync).
         _tabs.VectorChanged({ get_weak(), &TerminalPage::_OnSessionsCollectionChanged });
         SessionTree().ItemInvoked({ get_weak(), &TerminalPage::_OnSessionTreeItemInvoked });
+        // axan #16: after a drag-and-drop reparent, expand the target so a former leaf shows
+        // its new child instead of swallowing it.
+        SessionTree().DragItemsCompleted({ get_weak(), &TerminalPage::_OnSessionTreeDragItemsCompleted });
+        // axan #3: separator rows are non-interactive until Ctrl+Alt are held. DragItemsStarting
+        // is the belt-and-braces veto for a locked separator drag; the per-container state
+        // (disabled / no drop / no drag) is applied from the inner TreeViewList's
+        // ContainerContentChanging, which only exists once the tree's template has loaded, so
+        // hook it on Loaded. The Ctrl+Alt unlock is read from tunneling key events on the page
+        // root — they run before the focused terminal control consumes the modifier.
+        SessionTree().DragItemsStarting({ get_weak(), &TerminalPage::_OnSessionTreeDragItemsStarting });
+        SessionTree().Loaded([weak = get_weak()](auto&&, auto&&) {
+            if (auto p{ weak.get() })
+            {
+                p->_HookSessionTreeList();
+            }
+        });
+        Root().PreviewKeyDown({ get_weak(), &TerminalPage::_OnRootPreviewKey });
+        Root().PreviewKeyUp({ get_weak(), &TerminalPage::_OnRootPreviewKey });
+        // axan #3: the separator lock can go stale while a popup or another window holds the
+        // Ctrl/Alt key-ups; the pointer coming back over the sidebar is the last chance to
+        // re-lock before a click can land on a divider.
+        SessionTree().PointerEntered([weak = get_weak()](auto&&, auto&&) {
+            if (auto p{ weak.get() })
+            {
+                p->_UpdateSeparatorUnlockFromKeyboard("pointer entered sidebar");
+            }
+        });
         // axan M13: right-click a node for its context menu (rename/icon/duplicate/close/etc.).
         SessionTree().RightTapped({ get_weak(), &TerminalPage::_OnSessionTreeRightTapped });
         // axan #429: Shift+F10 / the menu key raise ContextRequested, not RightTapped — wire
@@ -384,6 +411,9 @@ namespace winrt::TerminalApp::implementation
 
         // Mirror any sessions that already exist (normally none this early).
         _AddMissingSessionNodes();
+        // axan #3: with no startup sessions pending this realizes the (empty) separator list
+        // at once; otherwise it waits for the spawn cursor (see _OnSessionsCollectionChanged).
+        _RealizeStartupSeparators();
 
         const auto canDragDrop = CanDragDrop();
 
@@ -793,6 +823,10 @@ namespace winrt::TerminalApp::implementation
             _actionDispatch->DoAction(actions[i]);
             suspend = true;
         }
+
+        // axan #3: every startup action has had its chance to create a tab; release any
+        // startup slot that produced none and place the startup separators.
+        _MarkStartupSpawnComplete();
 
         // GH#6586: now that we're done processing all startup commands,
         // focus the active control. This will work as expected for both
@@ -4046,6 +4080,9 @@ namespace winrt::TerminalApp::implementation
         // Begin Theme handling
         _updateThemeColors();
 
+        // axan #3: drop live separators the reloaded settings no longer contain.
+        _ReconcileSeparatorsWithSettings();
+
         _updateAllTabCloseButtons();
 
         // The user may have changed the "show title in titlebar" setting.
@@ -5187,12 +5224,94 @@ namespace winrt::TerminalApp::implementation
         // text sitting on translucency. (A custom tabRow color that fights the app theme can
         // still under-contrast the sidebar text — the same limitation WT's own tabs carry;
         // documented as an M12 divergence.)
+        //
+        // axan #2: that solid chrome color is now only the *default*. A theme's
+        // `sidebar.background` (any ThemeColor form — alpha, "accent", "terminalBackground")
+        // wins when set, so a user can make the sidebar a translucent scrim or fully
+        // see-through. Evaluate() hands back nullptr for "terminalBackground" when no pane
+        // has focus yet; treat that like unset, the same way the tabRow path does above.
+        //
+        // axan #2: the global `sidebarMatchesProfileTransparency` toggle (Settings >
+        // Appearance) sits above both theme keys. When on, the sidebar takes the focused
+        // terminal's own BackgroundBrush — the same object the "terminalBackground" ThemeColor
+        // resolves to, carrying the profile's color AND its opacity — and the content backdrop
+        // goes fully clear so the panes' opacity is the only layer (a backdrop alpha would
+        // stack with it). No focused brush yet (startup, before any pane reports one) falls
+        // back to the default solid chrome color; the BackgroundBrush PropertyChanged handler
+        // re-runs this once one appears, and a settings reload re-runs it via
+        // _RefreshUIForSettingsReload.
+        const bool matchProfile{ _settings.GlobalSettings().SidebarMatchesProfileTransparency() };
+
+        const auto sidebarBg{ theme.Sidebar() ? theme.Sidebar().Background() : ThemeColor{ nullptr } };
+        Media::Brush sidebarBrush{ nullptr };
+        const char* sidebarSource{ "default" };
+        if (matchProfile && terminalBrush)
+        {
+            sidebarBrush = terminalBrush;
+            sidebarSource = "matchProfile";
+        }
+        else if (!matchProfile && sidebarBg)
+        {
+            sidebarBrush = sidebarBg.Evaluate(res, terminalBrush, false);
+            if (sidebarBrush)
+            {
+                sidebarSource = "theme";
+            }
+        }
+        if (!sidebarBrush)
+        {
+            sidebarBrush = Media::SolidColorBrush{ static_cast<winrt::Windows::UI::Color>(bgColor) };
+        }
         if (const auto sidebar{ SessionSidebar() })
         {
             sidebar.RequestedTheme(requestedTheme);
-            sidebar.Background(Media::SolidColorBrush{ static_cast<winrt::Windows::UI::Color>(bgColor) });
-            Axan::Log::Debug("TerminalPage", "_updateThemeColors: themed session sidebar to chrome color", { { "requestedTheme", std::to_string(static_cast<int32_t>(requestedTheme)) } });
+            sidebar.Background(sidebarBrush);
         }
+
+        // axan #2: the backdrop behind the terminal content (the ContentBackdrop Border in
+        // TerminalPage.xaml). `content.background` set (or the match-profile toggle on, which
+        // forces a fully transparent brush) -> apply the brush as a local value. Unset ->
+        // ClearValue so the Border's Style setter (an opaque
+        // ApplicationPageBackgroundThemeBrush ThemeResource) takes back over. Clearing rather
+        // than re-looking-up the brush from code matters twice: it's what makes a set->unset
+        // settings reload restore today's exact default, and it keeps the default tracking
+        // the requested light/dark theme (ThemeLookup can't see system resources in our own
+        // theme dictionaries and would hand back the OS-theme value instead).
+        const auto contentBg{ theme.Content() ? theme.Content().Background() : ThemeColor{ nullptr } };
+        Media::Brush contentBrush{ nullptr };
+        const char* contentSource{ "default" };
+        if (matchProfile)
+        {
+            contentBrush = Media::SolidColorBrush{ Colors::Transparent() };
+            contentSource = "matchProfile";
+        }
+        else if (contentBg)
+        {
+            contentBrush = contentBg.Evaluate(res, terminalBrush, false);
+            if (contentBrush)
+            {
+                contentSource = "theme";
+            }
+        }
+        if (const auto backdrop{ ContentBackdrop() })
+        {
+            if (contentBrush)
+            {
+                backdrop.Background(contentBrush);
+            }
+            else
+            {
+                backdrop.ClearValue(WUX::Controls::Border::BackgroundProperty());
+            }
+        }
+
+        Axan::Log::Debug("TerminalPage",
+                         "_updateThemeColors: themed session sidebar and content backdrop",
+                         { { "requestedTheme", std::to_string(static_cast<int32_t>(requestedTheme)) },
+                           { "matchProfile", matchProfile ? "true" : "false" },
+                           { "sidebarBg", sidebarSource },
+                           { "contentBg", contentSource } });
+
         // axan M13/#422: repaint node labels with the theme-correct default text color (a node
         // whose recolor doesn't target the text uses white-on-dark / near-black-on-light) and
         // re-resolve per-node color NAMES to the new palette. Pass requestedTheme explicitly: the
@@ -5359,6 +5478,14 @@ namespace winrt::TerminalApp::implementation
         // the settings, change active panes, etc.
         _activated = activated;
         _updateThemeColors();
+
+        // axan #3: a deactivated window never sees the Ctrl/Alt key-ups, so re-lock the
+        // separator rows here rather than leave them unlocked until the next modifier event.
+        if (!activated)
+        {
+            _separatorDragActive = false;
+            _SetSeparatorsUnlocked(false, "window deactivated");
+        }
 
         _adjustProcessPriorityThrottled->Run();
 

@@ -152,6 +152,9 @@ namespace winrt::TerminalApp::implementation
         //   instead.
         // * if we have commandline arguments, Pass commandline args into the
         //   TerminalPage.
+        // axan #3: the startup tree's separator rows, filled by LoadStartupTree alongside the
+        // session vector (declared out here because the if-init below can hold one declaration).
+        std::vector<Axan::StartupSeparator> axanSeparators;
         if (_startupConnection)
         {
             _root->SetStartupConnection(std::move(_startupConnection));
@@ -160,7 +163,7 @@ namespace winrt::TerminalApp::implementation
         {
             _root->SetStartupActions(std::move(_initialContentArgs));
         }
-        else if (std::vector<Axan::StartupSession> axanTree; !_hasCommandLineArguments && !(axanTree = Axan::LoadStartupTree(_settings)).empty())
+        else if (std::vector<Axan::StartupSession> axanTree; !_hasCommandLineArguments && !(axanTree = Axan::LoadStartupTree(_settings, axanSeparators)).empty())
         {
             // axan (M4/D19): on a plain launch, the curated session tree is authoritative and
             // deterministic — it spawns one session per node, instead of WT's implicit single
@@ -202,6 +205,9 @@ namespace winrt::TerminalApp::implementation
                 axanEntryIds.push_back(std::move(session.id));
             }
             _root->SetStartupNodeMetadata(std::move(axanTemplates), std::move(axanParents), std::move(axanIconOverrides), std::move(axanIconColors), std::move(axanColorTargets), std::move(axanEntryIds));
+            // axan #3: separator rows spawn nothing, so they ride beside the metadata (not in
+            // it) and the sidebar inserts them once the sessions they sit between exist.
+            _root->SetStartupSeparators(std::move(axanSeparators));
             _root->SetStartupActions(std::move(axanActions));
         }
         else if (const auto& layout = LoadPersistedLayout())

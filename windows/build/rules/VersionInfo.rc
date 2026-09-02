@@ -1,0 +1,49 @@
+// Copyright (c) Lonely Quasar.
+// Licensed under the MIT license.
+//
+// axan #9: the shared VERSIONINFO resource for every exe/dll the fork builds.
+//
+// Upstream Windows Terminal stamps version info from an internal NuGet package that
+// its release pipeline installs (Microsoft.Windows.Terminal.Versioning); the vcxprojs'
+// VersionInfoFileDescription properties are inert without it, so local and release
+// builds of the fork shipped binaries with an empty version block. VersionInfo.targets
+// (imported from common.build.post.props) adds this file to every Application /
+// DynamicLibrary project and generates axan_versioninfo.h into $(IntDir) with the
+// per-project values: description, file names, type, and the version read from the
+// package manifest so the binaries always agree with the MSIX.
+
+#include <windows.h>
+#include "axan_versioninfo.h"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION AXAN_VER_COMMA
+ PRODUCTVERSION AXAN_VER_COMMA
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE AXAN_VFT
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", AXAN_COMPANY_NAME
+            VALUE "FileDescription", AXAN_FILE_DESCRIPTION
+            VALUE "FileVersion", AXAN_VER_STRING
+            VALUE "InternalName", AXAN_INTERNAL_NAME
+            VALUE "LegalCopyright", AXAN_COPYRIGHT
+            VALUE "OriginalFilename", AXAN_ORIGINAL_FILENAME
+            VALUE "ProductName", AXAN_PRODUCT_NAME
+            VALUE "ProductVersion", AXAN_VER_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

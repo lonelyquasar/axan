@@ -45,6 +45,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
     }
 
+    void StartupSessions::AddSeparator_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        if (_ViewModel)
+        {
+            _ViewModel.AddSeparator();
+        }
+    }
+
     void StartupSessions::DeleteEntry_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
     {
         if (const auto vm = _entryFromSender(sender); vm && _ViewModel)

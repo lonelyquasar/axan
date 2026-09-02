@@ -34,7 +34,22 @@ namespace winrt::TerminalApp::implementation
     public:
         // axan #429: IStringable — the UIA/Narrator name of any row displaying this node
         // (see the struct comment). Kept in lockstep with the displayed text by definition.
-        hstring ToString() const { return _Label; }
+        // axan #3: a separator has no label of its own; Narrator reads it as "Separator".
+        hstring ToString() const { return _isSeparator ? hstring{ L"Separator" } : _Label; }
+
+        // axan #3: separator rows (see the idl). The projected getters feed the shared
+        // ItemTemplate's x:Binds; ConfigureSeparator (impl-only, called once by
+        // TerminalPage::_CreateSeparatorNode) flips the node into separator mode with its
+        // normalized style/height/placement and the pixel height of one session row.
+        bool IsSeparator() const noexcept { return _isSeparator; }
+        hstring SeparatorStyle() const noexcept { return _separatorStyle; }
+        double SeparatorHeight() const noexcept { return _separatorHeight; }
+        hstring Placement() const noexcept { return _placement; }
+        winrt::Windows::UI::Xaml::Visibility SessionVisibility() const noexcept;
+        winrt::Windows::UI::Xaml::Visibility SeparatorVisibility() const noexcept;
+        winrt::Windows::UI::Xaml::Visibility SeparatorLineVisibility() const noexcept;
+        double SeparatorPixelHeight() const noexcept { return _separatorHeight * _rowHeightPx; }
+        void ConfigureSeparator(const hstring& style, double height, const hstring& placement, double rowHeightPx);
 
         // WINRT_OBSERVABLE_PROPERTY leaves the access region non-public; restore it so the
         // tree plumbing (via winrt::get_self) can reach the impl-only identity payload below.
@@ -137,6 +152,13 @@ namespace winrt::TerminalApp::implementation
         // brush. Drives which palette set a stored color NAME resolves against. Defaults dark to
         // match _defaultTextBrush's white-on-dark fallback before the page pushes the real theme.
         bool _isDarkTheme{ true };
+        // axan #3: separator state (see ConfigureSeparator). _rowHeightPx is the resolved
+        // TreeViewItemMinHeight the page passes in, so SeparatorPixelHeight needs no XAML lookup.
+        bool _isSeparator{ false };
+        hstring _separatorStyle{ L"line" };
+        double _separatorHeight{ 1.0 };
+        hstring _placement{ L"inline" };
+        double _rowHeightPx{ 32.0 };
     };
 }
 

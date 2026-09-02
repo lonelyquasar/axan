@@ -2,6 +2,52 @@
 
 All notable changes to axan are documented here.
 
+## [Unreleased]
+
+### Session tree & menus
+
+- Separator rows in the session tree: non-interactive divider rows, drawn as a
+  line or as open space, with a height in session-row units and an optional
+  pin-to-bottom placement. They are added and edited on the Startup sessions
+  settings page (they also travel through `startup-sessions.toml`, which
+  becomes schema version 2 once it contains one), and holding Ctrl+Alt unlocks
+  them for drag-reordering in the sidebar. Windows only. (#3)
+- Dragging a session onto a session that had no children no longer makes the
+  dragged session vanish: the drop target is expanded (and its expander
+  refreshed) as soon as the drop lands, instead of only once something else
+  gave it a child. Windows only. (#16)
+
+### Startup sessions
+
+- Move up/down on the Startup sessions settings page no longer rebuilds every
+  row on each click; only the moved rows are re-rendered, which removes the
+  visible pause on longer lists and slower machines. Windows only.
+- The Startup sessions page uses the available width: the Name, Directory and
+  Command boxes grow with the window (up to a wider page cap) instead of
+  clipping long paths and commands at a fixed width, and shrink first on a
+  narrow window so the row's trailing buttons stay in view. Windows only.
+
+### Appearance
+
+- Themes can now set `sidebar.background` and `content.background` (the same
+  value forms as `tabRow.background`, including alpha and `terminalBackground`)
+  to make the sidebar and the terminal backdrop translucent or see-through;
+  unset keeps today's opaque surfaces. Windows only. (#2)
+- New "Sidebar matches profile transparency" toggle on the Appearance settings
+  page (`sidebarMatchesProfileTransparency` global, default off): the sidebar
+  takes the focused profile's background and opacity and the backdrop behind
+  the terminal goes fully clear, so the whole window shares the profile's
+  transparency without editing a theme. Overrides the theme keys above while
+  on. Windows only. (#2)
+
+### Build
+
+- Every exe and dll in the Windows build now carries a Win32 version resource:
+  FileDescription (e.g. "axan Console and PTY Host"), ProductName "axan", and
+  FileVersion/ProductVersion read from the package manifest, so Task Manager
+  and file properties can identify axan's binaries and which build they are.
+  The remaining "Windows Terminal …" descriptions were rebranded to axan. (#9)
+
 ## [0.1.1] — 2026-07-11
 
 Windows-only quality-of-life release for session menus and the startup-session

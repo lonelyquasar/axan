@@ -116,6 +116,10 @@ The curated startup tree — which shells to spawn, in what hierarchy — is a l
 | `icon` | icon id (see the icon grammar below) |
 | `color` | recolor token — `red orange yellow green blue purple` (theme-resolved) or literal `#RRGGBB`; sparse (omitted when empty) |
 | `color-target` | `icon` \| `text` \| `both`; sparse (omitted when empty or `both`) |
+| `kind` | `session` (default, omitted) or `separator` — a divider row in the sidebar tree that spawns nothing; it nests and orders like a session. Windows only for now (Linux support later) |
+| `style` | separators only: `line` (default, omitted) draws a rule; `space` leaves an open gap |
+| `height` | separators only: height in session-row units, tenths, `0.1`–`10`; sparse (omitted when `1.0`) |
+| `placement` | separators only: `inline` (default, omitted) keeps its list position; `bottom` pins it below its siblings so sessions added later land above it |
 
 `command` is stored raw. The per-shell survival wrap that keeps a node alive after its command exits (Linux `$SHELL -c "…; exec $SHELL"`, pwsh `-NoExit -Command`, cmd `/k`, WSL `bash -ic "…; exec bash -i"`) is applied at spawn time, never stored, so the command ports across platforms. Malformed trees self-heal on load: orphans and dangling parents promote to root, missing UUIDs are backfilled. The tree is honored only when the CLI asks for no shells of its own — `--tab`, `--working-directory`, and positional commands take precedence.
 
@@ -134,6 +138,8 @@ axan-toml-version = 1       # interchange schema version; newer versions are rej
 exported-by       = "windows"   # provenance, advisory only
 ```
 
+A file is version `1` unless it contains a separator row, in which case it is version `2` — a tree without separators still round-trips through a reader that only knows version 1 (an older Windows build; the Linux build does not read this file yet, see the known gap below).
+
 Keys axan designs are **kebab-case, always** (`parent-id`, `color-target`, `axan-toml-version`). Unknown keys are skipped with a logged warning, never an abort.
 
 **The startup tree** exports as `startup-sessions.toml` (Windows writes it to the package `LocalState`; auto-exported on settings change, imported via the Startup sessions page):
@@ -150,6 +156,14 @@ command      = "claude"
 icon         = "builtin:terminal"
 color        = "blue"             # sparse
 color-target = "icon"             # sparse
+
+[[startup-sessions]]              # a separator (Windows only for now); makes the file version 2
+id           = "5f0c2a7e-…"
+parent-id    = ""
+kind         = "separator"
+style        = "space"            # sparse; default "line"
+height       = 0.5                # session-row units; sparse when 1.0
+placement    = "bottom"           # sparse; default "inline"
 ```
 
 **Whole profiles** export as per-profile `<uuid>.toml` mirrors with two layers: a portable core (`[profile]` — `uuid`, `name`, and the entry tree) that round-trips across platforms, and an opaque native passthrough (`[profile.native.linux]` / `[profile.native.windows]`) carrying each platform's remaining settings verbatim in their native casing (gschema kebab / WT camelCase). The importing platform applies the block matching its own OS and ignores the other — a Linux→Windows import drops Linux appearance scalars by design rather than mistranslating them.
@@ -186,6 +200,23 @@ An entry with no icon of its own inherits one: node override → the profile's i
 **Linux** — drop `.svg` files into `~/.config/axan/icons/`, then run `axan --import-icons` (or the import button in Preferences). Each file is validated before it reaches the picker: the filename must match `name.svg` (lowercase ASCII, starts alphanumeric, dashes/underscores allowed), the file must be under 100 KiB, and it must actually render at sidebar size. Passing names are registered in `~/.config/axan/icons.toml`; the picker reads that registry, not the folder, so a failing file is reported with a reason and stays out of the dropdown. Reference a registered icon by its bare filename, or any image on disk by absolute path. The importer is SVG-only because vectors scale cleanly — but the resolver renders whatever gdk-pixbuf can load, so if you'd rather use a PNG, a WebP, or for some reason an animated GIF, drop it in the folder, set the entry's `icon` to the bare filename by hand, and it will render; it just won't appear in the picker, which is reserved for validated SVGs.
 
 **Windows** — right-click a session node (or use the titlebar app menu) → **Edit node (label + icon)…**. Pick one of the built-in glyphs, or **Browse to icon file…** to use an image (PNG/ICO/SVG) or extract an icon from an exe/dll. The recolor swatches tint the glyph and/or the label text (the `color`/`color-target` fields). When hand-editing `settings.json` or the TOML instead, the `icon` string also accepts a Segoe Fluent/MDL2 glyph character or an emoji directly. Overrides persist per node and survive relaunch.
+
+### Sidebar and backdrop transparency (Windows)
+
+By default the sidebar and the surface behind the terminal panes are opaque, so a profile with reduced opacity or acrylic composites over a solid app-colored backdrop rather than the live desktop. The easy path is the **Sidebar matches profile transparency** toggle under Settings > Appearance (the `sidebarMatchesProfileTransparency` global in `settings.json`): it paints the sidebar with the focused profile's background and opacity and leaves the backdrop behind the terminal clear, so the whole window shares one transparency. Set the opacity per profile under the profile's Appearance > Transparency (`"opacity"` below 100, 80 pairs well, or `"useAcrylic"`). While the toggle is on it overrides the theme keys below.
+
+The manual path is a theme in `settings.json` with two axan-only keys, `sidebar.background` and `content.background`, which take the same values as Windows Terminal's `tabRow.background`: `"#RRGGBB"`, `"#RRGGBBAA"`, `"accent"`, or `"terminalBackground"`. `"terminalBackground"` follows the focused profile's background, opacity included, and is the recommended sidebar value; `"#000000CC"` (80% black) is the fixed-tint alternative, which keeps sidebar labels readable over a busy desktop regardless of the profile; `"#00000080"` is a half-transparent scrim; `"#00000000"` is fully see-through. Leave a key unset and that surface keeps today's opaque look. The content backdrop sits *behind* the terminal panes, so it only shows once a profile has reduced opacity or acrylic, and its alpha then stacks with the profile's: a 90% pane over a 90% black backdrop is nearly opaque. Let the profile opacity do the work and keep `content.background` fully clear. For example:
+
+```json
+"themes": [
+    {
+        "name": "glass",
+        "sidebar": { "background": "terminalBackground" },
+        "content": { "background": "#00000000" }
+    }
+],
+"theme": "glass"
+```
 
 ## Logging
 

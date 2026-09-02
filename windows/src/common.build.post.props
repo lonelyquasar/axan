@@ -114,6 +114,9 @@
     </ClCompile>
   </ItemDefinitionGroup>
 
+  <!-- axan #9: stamp VERSIONINFO (FileDescription / ProductVersion / ...) into every exe and dll. -->
+  <Import Project="$(SolutionDir)\build\rules\VersionInfo.targets" Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
+
   <!-- For C++ projects, bring in the vcpkg targets at the end -->
   <Import Project="$(VcpkgRoot)/scripts/buildsystems/msbuild/vcpkg.targets" Condition="'$(MSBuildProjectExtension)'=='.vcxproj'" />
 </Project>

@@ -39,6 +39,17 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         // the Linux launch-entries color/color_target fields so the value round-trips per theme.
         WINRT_PROPERTY(hstring, Color);
         WINRT_PROPERTY(hstring, ColorTarget);
+        // axan #3: row kind ("" / "session" = session; "separator" = divider row) and the
+        // separator-only fields (style "line"/"space", height in session-row units,
+        // placement "" / "inline" / "bottom"). See LaunchEntry.idl and
+        // Axan::LaunchEntryWire for the sparse-serialization rules and helpers.
+        WINRT_PROPERTY(hstring, Kind);
+        WINRT_PROPERTY(hstring, SeparatorStyle);
+        WINRT_PROPERTY(double, Height, 0.0);
+        WINRT_PROPERTY(hstring, Placement);
+
+    public:
+        bool IsSeparator() const noexcept;
     };
 }
 

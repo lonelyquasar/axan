@@ -28,6 +28,7 @@ namespace SettingsModelUnitTests
         TEST_METHOD(ParseNullWindowTheme);
         TEST_METHOD(ParseThemeWithNullThemeColor);
         TEST_METHOD(InvalidCurrentTheme);
+        TEST_METHOD(ParseSidebarAndContentTheme);
 
         static Core::Color rgb(uint8_t r, uint8_t g, uint8_t b) noexcept
         {
@@ -83,6 +84,8 @@ namespace SettingsModelUnitTests
         VERIFY_ARE_EQUAL(L"empty", theme->Name());
         VERIFY_IS_NULL(theme->TabRow());
         VERIFY_IS_NULL(theme->Window());
+        VERIFY_IS_NULL(theme->Sidebar());
+        VERIFY_IS_NULL(theme->Content());
         VERIFY_ARE_EQUAL(winrt::Windows::UI::Xaml::ElementTheme::Default, theme->RequestedTheme());
     }
 
@@ -264,5 +267,50 @@ namespace SettingsModelUnitTests
             Log::Comment(NoThrowString().Format(deserializationErrorMessage.c_str()));
             throw e;
         }
+    }
+
+    void ThemeTests::ParseSidebarAndContentTheme()
+    {
+        Log::Comment(L"axan #2: sidebar.background and content.background parse as ThemeColors, survive Copy(), and round-trip through ToJson().");
+        static constexpr std::string_view translucentTheme{ R"({
+            "name": "translucent",
+            "sidebar":
+            {
+                "background": "#00000080"
+            },
+            "content":
+            {
+                "background": "terminalBackground"
+            }
+        })" };
+
+        const auto schemeObject = VerifyParseSucceeded(translucentTheme);
+        auto theme = Theme::FromJson(schemeObject);
+        VERIFY_ARE_EQUAL(L"translucent", theme->Name());
+
+        VERIFY_IS_NOT_NULL(theme->Sidebar());
+        VERIFY_IS_NOT_NULL(theme->Sidebar().Background());
+        VERIFY_ARE_EQUAL(Settings::Model::ThemeColorType::Color, theme->Sidebar().Background().ColorType());
+        VERIFY_ARE_EQUAL(rgba(0x00, 0x00, 0x00, 0x80), theme->Sidebar().Background().Color());
+
+        VERIFY_IS_NOT_NULL(theme->Content());
+        VERIFY_IS_NOT_NULL(theme->Content().Background());
+        VERIFY_ARE_EQUAL(Settings::Model::ThemeColorType::TerminalBackground, theme->Content().Background().ColorType());
+
+        // The untouched namespaces stay null so the app falls back to today's surfaces.
+        VERIFY_IS_NULL(theme->TabRow());
+        VERIFY_IS_NULL(theme->Window());
+
+        const auto copy = theme->Copy();
+        VERIFY_IS_NOT_NULL(copy->Sidebar());
+        VERIFY_ARE_EQUAL(rgba(0x00, 0x00, 0x00, 0x80), copy->Sidebar().Background().Color());
+        VERIFY_IS_NOT_NULL(copy->Content());
+        VERIFY_ARE_EQUAL(Settings::Model::ThemeColorType::TerminalBackground, copy->Content().Background().ColorType());
+
+        const auto json = theme->ToJson();
+        VERIFY_IS_TRUE(json.isMember("sidebar"));
+        VERIFY_IS_TRUE(json["sidebar"].isMember("background"));
+        VERIFY_IS_TRUE(json.isMember("content"));
+        VERIFY_ARE_EQUAL("terminalBackground", json["content"]["background"].asString());
     }
 }

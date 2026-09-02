@@ -8,7 +8,7 @@
     <SubSystem>Console</SubSystem>
     <OpenConsoleUniversalApp>true</OpenConsoleUniversalApp>
     <PgoTarget>true</PgoTarget>
-    <VersionInfoFileDescription>Windows Terminal Connection Library</VersionInfoFileDescription>
+    <VersionInfoFileDescription>axan Connection Library</VersionInfoFileDescription>
   </PropertyGroup>
   <PropertyGroup Label="NuGet Dependencies">
     <TerminalCppWinrt>true</TerminalCppWinrt>

@@ -81,6 +81,28 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // nullptr (theme foreground) when no color is set.
         Windows::UI::Xaml::Media::Brush ColorPreviewBrush() const;
 
+        // axan #3: row kind + the separator-only fields. Custom setters (not the macro)
+        // because each has dependents that must re-notify: Kind drives IsSeparator /
+        // IsSession / the two Visibility getters, SeparatorStyle and Placement each have
+        // an index twin for the page's literal-item ComboBoxes, and Height normalizes
+        // through Axan::LaunchEntryWire::NormalizeSeparatorHeight (tenths, [0.1, 10]).
+        hstring Kind() const { return _Kind; }
+        void Kind(const hstring& value);
+        hstring SeparatorStyle() const { return _SeparatorStyle; }
+        void SeparatorStyle(const hstring& value);
+        int32_t SeparatorStyleIndex() const;
+        void SeparatorStyleIndex(int32_t value);
+        double Height() const { return _Height; }
+        void Height(double value);
+        hstring Placement() const { return _Placement; }
+        void Placement(const hstring& value);
+        int32_t PlacementIndex() const;
+        void PlacementIndex(int32_t value);
+        bool IsSeparator() const;
+        bool IsSession() const { return !IsSeparator(); }
+        Windows::UI::Xaml::Visibility SessionVisibility() const;
+        Windows::UI::Xaml::Visibility SeparatorVisibility() const;
+
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, ParentId);
         // axan D19: GUID of the WT profile this row spawns. Set when the row is built from the
         // global tree; edited via the per-row profile picker on the Startup sessions page.
@@ -97,6 +119,12 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         hstring _Icon;
         hstring _Color;
         int32_t _Depth{ 0 };
+        // axan #3: "" on a session row; "separator" on a divider. The separator-only
+        // fields stay at their defaults ("" / 0.0 / "") on a session row.
+        hstring _Kind;
+        hstring _SeparatorStyle;
+        double _Height{ 0.0 };
+        hstring _Placement;
     };
 
     struct ProfileViewModel : ProfileViewModelT<ProfileViewModel>, ViewModelHelper<ProfileViewModel>

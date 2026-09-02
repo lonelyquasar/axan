@@ -13,6 +13,7 @@
 #include "RequestMoveContentArgs.g.h"
 #include "LaunchPositionRequest.g.h"
 #include "Toast.h"
+#include "AxanSessionTree.h" // axan #3: Axan::StartupSeparator (the startup tree's separator rows)
 
 #include "WindowsPackageManagerFactory.h"
 
@@ -138,6 +139,7 @@ namespace winrt::TerminalApp::implementation
 
         void SetStartupActions(std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs> actions);
         void SetStartupNodeMetadata(std::vector<winrt::hstring> templates, std::vector<int32_t> parentIndices, std::vector<winrt::hstring> iconOverrides, std::vector<winrt::hstring> iconColors, std::vector<winrt::hstring> colorTargets, std::vector<winrt::hstring> entryIds); // axan M5/M6/M13/#422
+        void SetStartupSeparators(std::vector<Axan::StartupSeparator> separators); // axan #3
         void SetStartupConnection(winrt::Microsoft::Terminal::TerminalConnection::ITerminalConnection connection);
 
         static std::vector<Microsoft::Terminal::Settings::Model::ActionAndArgs> ConvertExecuteCommandlineToActions(const Microsoft::Terminal::Settings::Model::ExecuteCommandlineArgs& args);
@@ -292,6 +294,22 @@ namespace winrt::TerminalApp::implementation
         std::vector<winrt::hstring> _pendingStartupEntryIds; // #422: source entry Id per spawn index
         size_t _startupNodeCursor{ 0 };
         std::vector<winrt::weak_ref<winrt::Microsoft::UI::Xaml::Controls::TreeViewNode>> _startupNodesBySpawnIndex;
+        // axan #3: the startup tree's separator rows. They spawn no tab, so they can't be drained
+        // by the spawn cursor; they're inserted in one pass (_RealizeStartupSeparators) once the
+        // cursor has consumed every startup session — each lands right after the sibling session
+        // it followed in the entry list (afterSpawnIndex), under its parent (parentSpawnIndex).
+        std::vector<Axan::StartupSeparator> _pendingStartupSeparators;
+        bool _startupSeparatorsRealized{ false };
+        // axan #3: separators are non-interactive (disabled, no tab stop, no drag, no drop) until
+        // Ctrl+Alt are BOTH held; releasing either re-locks them. Tracked here and pushed onto the
+        // realized containers by _ApplySeparatorContainerStates; new containers pick it up in the
+        // TreeViewList's ContainerContentChanging.
+        bool _separatorsUnlocked{ false };
+        // axan #3: true between DragItemsStarting and DragItemsCompleted. The lock state is
+        // frozen for the duration so releasing Ctrl/Alt mid-drag can't disable the container
+        // being dragged; the keyboard state is re-read once the drop lands.
+        bool _separatorDragActive{ false };
+        Microsoft::UI::Xaml::Controls::TreeViewList _sessionTreeList{ nullptr };
 
         std::shared_ptr<Toast> _windowIdToast{ nullptr };
         std::shared_ptr<Toast> _actionSavedToast{ nullptr };
@@ -530,6 +548,28 @@ namespace winrt::TerminalApp::implementation
         void _AddMissingSessionNodes();
         void _PruneRemovedSessionNodes();
         void _RemoveNodeSelfHealing(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        // axan #3: separator rows in the sidebar tree. A separator is a TreeViewNode whose
+        // SessionNodeViewModel has IsSeparator set and no TabRef: it renders (hairline or gap,
+        // Height x one row), nests like a session, is non-interactive unless Ctrl+Alt are held
+        // (then the native drag-and-drop can reorder/reparent it), and is captured back into
+        // startup entries. Startup separators are inserted once every startup session node
+        // exists; "bottom" placement sinks a separator to the end of its sibling scope after
+        // every tree mutation. Definitions in AxanSessionTreeView.cpp.
+        Microsoft::UI::Xaml::Controls::TreeViewNode _CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement);
+        void _RealizeStartupSeparators();
+        void _MarkStartupSpawnComplete();
+        void _ReconcileSeparatorsWithSettings();
+        void _ResetSeparatorSelection(const char* reason);
+        void _SinkBottomSeparators();
+        double _SessionRowHeightPx();
+        void _HookSessionTreeList();
+        void _OnSessionTreeContainerContentChanging(const Windows::UI::Xaml::Controls::ListViewBase& sender, const Windows::UI::Xaml::Controls::ContainerContentChangingEventArgs& args);
+        void _ApplySeparatorContainerState(const Microsoft::UI::Xaml::Controls::TreeViewItem& container, bool isSeparator);
+        void _ApplySeparatorContainerStates();
+        void _SetSeparatorsUnlocked(bool unlocked, const char* reason);
+        void _UpdateSeparatorUnlockFromKeyboard(const char* reason);
+        void _OnRootPreviewKey(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::KeyRoutedEventArgs& args);
+        void _OnSessionTreeDragItemsStarting(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewDragItemsStartingEventArgs& args);
         // axan M13: re-raise every node's LabelBrush so labels repaint theme-correct on a theme
         // switch (the default text color is white-on-dark / near-black-on-light).
         // #422: themeOverride lets _updateThemeColors pass the just-set requested theme directly,
@@ -538,6 +578,9 @@ namespace winrt::TerminalApp::implementation
         void _RefreshNodeLabelBrushes(Windows::UI::Xaml::ElementTheme themeOverride = Windows::UI::Xaml::ElementTheme::Default);
         void _OnSessionsCollectionChanged(const Windows::Foundation::Collections::IObservableVector<winrt::TerminalApp::Tab>& sender, const Windows::Foundation::Collections::IVectorChangedEventArgs& args);
         void _OnSessionTreeItemInvoked(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewItemInvokedEventArgs& args);
+        // axan #16: expand the drop target after a drag-and-drop reparent so a leaf that just
+        // gained its first child actually shows it.
+        void _OnSessionTreeDragItemsCompleted(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewDragItemsCompletedEventArgs& args);
         // axan #436 item 3: the one resolve-and-select path shared by the expanded tree
         // (ItemInvoked) and the minimized icon list (ItemClick): VM -> weak TabRef -> Tab ->
         // the existing TabView selection path.

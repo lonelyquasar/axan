@@ -25,6 +25,11 @@ static constexpr std::string_view IconKey{ Axan::LaunchEntryWire::JsonKey::Icon 
 // convention (cf. "startingDirectory"); the value, not the key, is what stays portable with Linux.
 static constexpr std::string_view ColorKey{ Axan::LaunchEntryWire::JsonKey::Color };
 static constexpr std::string_view ColorTargetKey{ Axan::LaunchEntryWire::JsonKey::ColorTarget };
+// axan #3: separator rows — kind discriminator + the separator-only fields.
+static constexpr std::string_view KindKey{ Axan::LaunchEntryWire::JsonKey::Kind };
+static constexpr std::string_view StyleKey{ Axan::LaunchEntryWire::JsonKey::Style };
+static constexpr std::string_view HeightKey{ Axan::LaunchEntryWire::JsonKey::Height };
+static constexpr std::string_view PlacementKey{ Axan::LaunchEntryWire::JsonKey::Placement };
 
 namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 {
@@ -40,7 +45,21 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         JsonUtils::GetValueForKey(json, IconKey, result->_Icon);
         JsonUtils::GetValueForKey(json, ColorKey, result->_Color);
         JsonUtils::GetValueForKey(json, ColorTargetKey, result->_ColorTarget);
+        // axan #3: separator rows. All sparse on disk; a session row carries none of them.
+        JsonUtils::GetValueForKey(json, KindKey, result->_Kind);
+        JsonUtils::GetValueForKey(json, StyleKey, result->_SeparatorStyle);
+        JsonUtils::GetValueForKey(json, HeightKey, result->_Height);
+        JsonUtils::GetValueForKey(json, PlacementKey, result->_Placement);
+        if (result->IsSeparator())
+        {
+            result->_Height = Axan::LaunchEntryWire::NormalizeSeparatorHeight(result->_Height);
+        }
         return result;
+    }
+
+    bool LaunchEntry::IsSeparator() const noexcept
+    {
+        return _Kind == Axan::LaunchEntryWire::KindSeparatorW;
     }
 
     Json::Value LaunchEntry::ToJson() const
@@ -48,6 +67,26 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         Json::Value json{ Json::objectValue };
         JsonUtils::SetValueForKey(json, IdKey, _Id);
         JsonUtils::SetValueForKey(json, ParentKey, _ParentId);
+        // axan #3: a separator writes only its own keys (see the block at the end) — the
+        // session recipe keys would all be null noise on it.
+        if (IsSeparator())
+        {
+            JsonUtils::SetValueForKey(json, KindKey, _Kind);
+            if (!_SeparatorStyle.empty() && _SeparatorStyle != Axan::LaunchEntryWire::StyleLineW)
+            {
+                JsonUtils::SetValueForKey(json, StyleKey, _SeparatorStyle);
+            }
+            const auto height = Axan::LaunchEntryWire::NormalizeSeparatorHeight(_Height);
+            if (height != 1.0)
+            {
+                JsonUtils::SetValueForKey(json, HeightKey, height);
+            }
+            if (!_Placement.empty() && _Placement != Axan::LaunchEntryWire::PlacementInlineW)
+            {
+                JsonUtils::SetValueForKey(json, PlacementKey, _Placement);
+            }
+            return json;
+        }
         JsonUtils::SetValueForKey(json, ProfileKey, _Profile);
         JsonUtils::SetValueForKey(json, NameKey, _Name);
         JsonUtils::SetValueForKey(json, DirectoryKey, _Directory);
@@ -63,6 +102,8 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         {
             JsonUtils::SetValueForKey(json, ColorTargetKey, _ColorTarget);
         }
+        // axan #3: a session row never writes kind/style/height/placement, so its on-disk
+        // shape is byte-identical to before separators existed.
         return json;
     }
 
@@ -80,6 +121,10 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         entry->_Icon = _Icon;
         entry->_Color = _Color;
         entry->_ColorTarget = _ColorTarget;
+        entry->_Kind = _Kind;
+        entry->_SeparatorStyle = _SeparatorStyle;
+        entry->_Height = _Height;
+        entry->_Placement = _Placement;
         return *entry;
     }
 }

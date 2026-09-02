@@ -271,4 +271,44 @@ namespace winrt::TerminalApp::implementation
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"Icon" });
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" });
     }
+
+    // axan #3: the shared ExpandedNodeTemplate holds BOTH a session Grid and a separator Grid
+    // and shows exactly one, driven by these two. Collapsed (not Opacity/Hidden) so the hidden
+    // half takes no layout space — a 0.5-row separator must actually be half a row tall.
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SessionVisibility() const noexcept
+    {
+        return _isSeparator ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SeparatorVisibility() const noexcept
+    {
+        return _isSeparator ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    // axan #3: the hairline shows only for the "line" style; "space" is an empty gap of the
+    // same height.
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SeparatorLineVisibility() const noexcept
+    {
+        return (_isSeparator && _separatorStyle == L"line") ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    // axan #3: flip this VM into separator mode. Called once by the page when it mints a
+    // separator node (never on a live session VM). The inputs are already normalized by
+    // LoadStartupTree (style/placement non-empty, height clamped), but the fallbacks here keep
+    // a bad value from rendering a zero-height or unstyled row. Raises every projected
+    // separator property so a container recycled onto this node re-pulls the right half of
+    // the template; Label is set too so the (hidden) label binding and tooltip are never blank.
+    void SessionNodeViewModel::ConfigureSeparator(const winrt::hstring& style, double height, const winrt::hstring& placement, double rowHeightPx)
+    {
+        _isSeparator = true;
+        _separatorStyle = (style == L"space") ? winrt::hstring{ L"space" } : winrt::hstring{ L"line" };
+        _separatorHeight = (height > 0.0) ? height : 1.0;
+        _placement = (placement == L"bottom") ? winrt::hstring{ L"bottom" } : winrt::hstring{ L"inline" };
+        _rowHeightPx = (rowHeightPx > 0.0) ? rowHeightPx : 32.0;
+        Label(winrt::hstring{ L"Separator" });
+        for (const auto name : { L"IsSeparator", L"SeparatorStyle", L"SeparatorHeight", L"Placement", L"SessionVisibility", L"SeparatorVisibility", L"SeparatorLineVisibility", L"SeparatorPixelHeight" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
 }

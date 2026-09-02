@@ -41,6 +41,16 @@
             </ComboBox>
         </local:SettingContainer>
 
+        <!--
+            axan #2: sidebar matches profile transparency. Paints the session sidebar with the
+            focused profile's background brush (color + opacity) and leaves the backdrop behind
+            the terminal clear, overriding the theme's sidebar/content keys.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarMatchesProfileTransparency">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarMatchesProfileTransparency, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        </local:SettingContainer>
+
         <!--  Position of new tab  -->
         <local:SettingContainer x:Uid="Globals_NewTabPosition">
             <ComboBox AutomationProperties.AccessibilityView="Content"
