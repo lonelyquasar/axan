@@ -353,10 +353,22 @@ namespace winrt::TerminalApp::implementation
         // root — they run before the focused terminal control consumes the modifier.
         SessionTree().DragItemsStarting({ get_weak(), &TerminalPage::_OnSessionTreeDragItemsStarting });
         SessionTree().Loaded([weak = get_weak()](auto&&, auto&&) {
-            if (auto p{ weak.get() }) { p->_HookSessionTreeList(); }
+            if (auto p{ weak.get() })
+            {
+                p->_HookSessionTreeList();
+            }
         });
         Root().PreviewKeyDown({ get_weak(), &TerminalPage::_OnRootPreviewKey });
         Root().PreviewKeyUp({ get_weak(), &TerminalPage::_OnRootPreviewKey });
+        // axan #3: the separator lock can go stale while a popup or another window holds the
+        // Ctrl/Alt key-ups; the pointer coming back over the sidebar is the last chance to
+        // re-lock before a click can land on a divider.
+        SessionTree().PointerEntered([weak = get_weak()](auto&&, auto&&) {
+            if (auto p{ weak.get() })
+            {
+                p->_UpdateSeparatorUnlockFromKeyboard("pointer entered sidebar");
+            }
+        });
         // axan M13: right-click a node for its context menu (rename/icon/duplicate/close/etc.).
         SessionTree().RightTapped({ get_weak(), &TerminalPage::_OnSessionTreeRightTapped });
         // axan #429: Shift+F10 / the menu key raise ContextRequested, not RightTapped — wire
@@ -811,6 +823,10 @@ namespace winrt::TerminalApp::implementation
             _actionDispatch->DoAction(actions[i]);
             suspend = true;
         }
+
+        // axan #3: every startup action has had its chance to create a tab; release any
+        // startup slot that produced none and place the startup separators.
+        _MarkStartupSpawnComplete();
 
         // GH#6586: now that we're done processing all startup commands,
         // focus the active control. This will work as expected for both
@@ -4063,6 +4079,9 @@ namespace winrt::TerminalApp::implementation
         ////////////////////////////////////////////////////////////////////////
         // Begin Theme handling
         _updateThemeColors();
+
+        // axan #3: drop live separators the reloaded settings no longer contain.
+        _ReconcileSeparatorsWithSettings();
 
         _updateAllTabCloseButtons();
 

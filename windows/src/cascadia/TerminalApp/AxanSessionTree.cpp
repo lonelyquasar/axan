@@ -163,6 +163,14 @@ namespace Axan
             // sits (parent scope + the session it follows) so the sidebar can place its node
             // once the sessions around it exist. Style/height/placement are normalized here so
             // the view never sees an out-of-range height or an empty style/placement.
+            // The row-kind vocabulary is "" / "session" / "separator"; anything else is a hand
+            // edit (or a newer build's row kind). Spawning a shell for it would be wrong and its
+            // kind would be dropped on the next save, so skip the row loudly instead.
+            if (const auto kind = entry.Kind(); !kind.empty() && kind != Axan::LaunchEntryWire::KindSessionW && kind != Axan::LaunchEntryWire::KindSeparatorW)
+            {
+                Axan::Log::Warn("AxanSessionTree", "LoadStartupTree: unrecognized entry kind; skipping the row", { { "id", winrt::to_string(entry.Id()) }, { "kind", winrt::to_string(kind) } });
+                continue;
+            }
             if (entry.IsSeparator())
             {
                 StartupSeparator sep{};

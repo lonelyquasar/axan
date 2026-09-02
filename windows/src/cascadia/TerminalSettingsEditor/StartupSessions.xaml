@@ -69,9 +69,15 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" MinWidth="70" MaxWidth="400" />
-                            <ColumnDefinition Width="2*" MinWidth="100" MaxWidth="900" />
-                            <ColumnDefinition Width="2*" MinWidth="100" MaxWidth="900" />
+                            <ColumnDefinition Width="*"
+                                              MinWidth="70"
+                                              MaxWidth="400" />
+                            <ColumnDefinition Width="2*"
+                                              MinWidth="100"
+                                              MaxWidth="900" />
+                            <ColumnDefinition Width="2*"
+                                              MinWidth="100"
+                                              MaxWidth="900" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>

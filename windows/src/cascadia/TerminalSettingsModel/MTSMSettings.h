@@ -183,7 +183,7 @@ Author(s):
 #define MTSM_THEME_CONTENT_SETTINGS(X) \
     X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, Background, "background", nullptr)
 
-#define MTSM_THEME_TAB_SETTINGS(X)                                                                                                                   \
+#define MTSM_THEME_TAB_SETTINGS(X)                                                                                                                     \
     X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, Background, "background", nullptr)                                                      \
     X(winrt::Microsoft::Terminal::Settings::Model::ThemeColor, UnfocusedBackground, "unfocusedBackground", nullptr)                                    \
     X(winrt::Microsoft::Terminal::Settings::Model::IconStyle, IconStyle, "iconStyle", winrt::Microsoft::Terminal::Settings::Model::IconStyle::Default) \

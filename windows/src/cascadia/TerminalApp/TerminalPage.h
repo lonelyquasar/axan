@@ -557,6 +557,9 @@ namespace winrt::TerminalApp::implementation
         // every tree mutation. Definitions in AxanSessionTreeView.cpp.
         Microsoft::UI::Xaml::Controls::TreeViewNode _CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement);
         void _RealizeStartupSeparators();
+        void _MarkStartupSpawnComplete();
+        void _ReconcileSeparatorsWithSettings();
+        void _ResetSeparatorSelection(const char* reason);
         void _SinkBottomSeparators();
         double _SessionRowHeightPx();
         void _HookSessionTreeList();

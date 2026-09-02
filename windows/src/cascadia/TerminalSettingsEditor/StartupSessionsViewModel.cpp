@@ -544,6 +544,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                                     hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) } :
                                     winrt::to_hstring(e.id);
 
+            // axan #3: an unrecognized row kind (hand edit, or a newer build's kind) would be
+            // imported as a default-profile shell and lose its kind on save — skip it loudly.
+            if (!e.kind.empty() && e.kind != Wire::KindSession && e.kind != Wire::KindSeparator)
+            {
+                Axan::Log::Warn("StartupSessionsViewModel", "import: unrecognized row kind; skipping the entry", { { "kind", e.kind }, { "entry", e.id } });
+                continue;
+            }
+
             // axan #3: a separator row has no profile/icon/etc. to resolve — only its own
             // fields (FromTomlTable already normalized the height).
             if (e.IsSeparator())

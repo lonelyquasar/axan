@@ -138,7 +138,7 @@ axan-toml-version = 1       # interchange schema version; newer versions are rej
 exported-by       = "windows"   # provenance, advisory only
 ```
 
-A file is version `1` unless it contains a separator row, in which case it is version `2` — a tree without separators still round-trips through a reader that only knows version 1 (the Linux build today).
+A file is version `1` unless it contains a separator row, in which case it is version `2` — a tree without separators still round-trips through a reader that only knows version 1 (an older Windows build; the Linux build does not read this file yet, see the known gap below).
 
 Keys axan designs are **kebab-case, always** (`parent-id`, `color-target`, `axan-toml-version`). Unknown keys are skipped with a logged warning, never an abort.
 

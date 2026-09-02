@@ -510,6 +510,72 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Info("TerminalPage", "realized startup separators", { { "placed", std::to_string(placed) }, { "appended", std::to_string(appended) } });
     }
 
+    // axan #3: called once the startup action loop has run to its end. The spawn cursor only
+    // advances per tab that actually landed in _tabs, and a startup action can legitimately
+    // create none here: a profile with "elevate": true opens a separate elevated window, a
+    // profile that no longer resolves returns S_FALSE, a connection that threw is swallowed by
+    // CATCH_RETURN. Left alone, a short cursor would (a) keep _RealizeStartupSeparators waiting
+    // forever, so the separators silently never appeared, and (b) hand the leftover startup
+    // slot — label, parent, icon, entry id — to the next tab the user opened interactively.
+    // Release the unspawned slots and realize now; a separator anchored to a session that
+    // never spawned degrades to an append at the end of its scope (see above).
+    void TerminalPage::_MarkStartupSpawnComplete()
+    {
+        const auto expected = _pendingStartupLabelTemplates.size();
+        if (_startupNodeCursor < expected)
+        {
+            Axan::Log::Warn("TerminalPage", "startup spawn finished with fewer tabs than entries; releasing the unspawned startup slots", { { "spawned", std::to_string(_startupNodeCursor) }, { "expected", std::to_string(expected) } });
+            _startupNodeCursor = expected;
+        }
+        _RealizeStartupSeparators();
+    }
+
+    // axan #3: separators have no tab, so the _tabs reconcile never prunes them — and nothing
+    // else rebuilds the live tree from settings before a relaunch. Without this, a separator
+    // deleted on the Startup sessions page (or dropped by a TOML import) stayed in the sidebar
+    // with no way to remove it, and the next "Save current as startup" snapshot wrote it
+    // straight back. On every settings reload, drop the live separators whose entry id is no
+    // longer a separator in startupSessions. Additions are NOT reconciled (their position
+    // depends on sessions that may not exist yet) — like sessions, they appear on the next launch.
+    void TerminalPage::_ReconcileSeparatorsWithSettings()
+    {
+        if (!SessionTree())
+        {
+            return;
+        }
+        std::set<winrt::hstring> persisted;
+        if (const auto entries = _settings.GlobalSettings().StartupSessions())
+        {
+            for (const auto& entry : entries)
+            {
+                if (entry.IsSeparator() && !entry.Id().empty())
+                {
+                    persisted.insert(entry.Id());
+                }
+            }
+        }
+        std::vector<MUX::Controls::TreeViewNode> stale;
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            const auto vm = _nodeVM(node);
+            if (!vm || !vm->IsSeparator() || vm->EntryId.empty())
+            {
+                return; // live-only separators (no id) have nothing in settings to disagree with
+            }
+            if (persisted.count(vm->EntryId) == 0)
+            {
+                stale.push_back(node);
+            }
+        });
+        for (const auto& node : stale)
+        {
+            _RemoveNodeSelfHealing(node);
+        }
+        if (!stale.empty())
+        {
+            Axan::Log::Info("TerminalPage", "settings reload: removed separators no longer in startupSessions", { { "removed", std::to_string(stale.size()) } });
+        }
+    }
+
     // axan #3: the bottom-sink pass for one sibling scope, then recursively every child scope.
     // Separators with Placement "bottom" move to the end of their container, keeping their
     // relative order; nothing else moves, and a scope whose bottom separators already form
@@ -990,7 +1056,10 @@ namespace winrt::TerminalApp::implementation
         }
         if (_nodeIsSeparator(node))
         {
-            return; // axan #3: separators activate nothing (and _SelectTabForNodeVM would no-op anyway)
+            // axan #3: separators activate nothing (and _SelectTabForNodeVM would no-op anyway) —
+            // but the click that got here just made the separator the tree's selection.
+            _ResetSeparatorSelection("separator invoked");
+            return;
         }
         _SelectTabForNodeVM(node.Content().try_as<winrt::TerminalApp::SessionNodeViewModel>());
     }
@@ -1214,41 +1283,71 @@ namespace winrt::TerminalApp::implementation
         _separatorsUnlocked = unlocked;
         Axan::Log::Debug("TerminalPage", unlocked ? "separators unlocked (Ctrl+Alt held)" : "separators locked", { { "reason", reason } });
         _ApplySeparatorContainerStates();
+        if (!unlocked)
+        {
+            // A click on an unlocked separator made it the tree's (single) selection; once the
+            // row is disabled again nothing else would ever move the highlight off it, and both
+            // the keyboard context menu and focusSidebar resolve SelectedNode first.
+            _ResetSeparatorSelection("separators locked");
+        }
+    }
+
+    // axan #3: if the tree's selection sits on a separator, move it to the focused session's
+    // node (or clear it). Only an unlocked separator can be selected, so this runs when the
+    // lock re-engages and when a separator is invoked.
+    void TerminalPage::_ResetSeparatorSelection(const char* reason)
+    {
+        const auto tree = SessionTree();
+        if (!tree)
+        {
+            return;
+        }
+        const auto selected = tree.SelectedNode();
+        if (!selected || !_nodeIsSeparator(selected))
+        {
+            return;
+        }
+        MUX::Controls::TreeViewNode target{ nullptr };
+        if (const auto tab = _GetFocusedTab())
+        {
+            target = _FindNodeForTab(tab);
+        }
+        tree.SelectedNode(target);
+        Axan::Log::Debug("TerminalPage", "moved the tree selection off a separator row", { { "reason", reason }, { "target", target ? "focused session" : "none" } });
     }
 
     // Derive the lock from the live modifier state (Win32 GetKeyState — evaluated inside a
     // key message it reflects that message, so a Ctrl/Alt key-up reads as up). Frozen while
     // a drag is in flight so a release mid-drag can't disable the container being dragged.
+    // AltGr on international layouts arrives as LeftCtrl+RightAlt (ControlKeyStates::
+    // IsAltGrPressed models it the same way, and the keybinding path excludes it per GH#2235):
+    // typing '@' or '{' must not unlock the dividers, so that exact shape stays locked.
     void TerminalPage::_UpdateSeparatorUnlockFromKeyboard(const char* reason)
     {
         if (_separatorDragActive)
         {
             return;
         }
-        const bool ctrl = (::GetKeyState(VK_CONTROL) & 0x8000) != 0;
-        const bool alt = (::GetKeyState(VK_MENU) & 0x8000) != 0;
-        _SetSeparatorsUnlocked(ctrl && alt, reason);
+        const auto down = [](int vk) { return (::GetKeyState(vk) & 0x8000) != 0; };
+        const bool lctrl = down(VK_LCONTROL);
+        const bool rctrl = down(VK_RCONTROL);
+        const bool lalt = down(VK_LMENU);
+        const bool ralt = down(VK_RMENU);
+        const bool altGr = lctrl && ralt && !rctrl && !lalt;
+        const bool unlocked = (lctrl || rctrl) && (lalt || ralt) && !altGr;
+        _SetSeparatorsUnlocked(unlocked, reason);
     }
 
     // PreviewKeyDown/PreviewKeyUp on the page root (tunneling — runs before the focused
-    // terminal control handles the key). Only modifier keys can change the answer, so
-    // anything else is ignored without touching the state; never marks the event handled.
+    // terminal control handles the key). Re-derives the lock on EVERY key event, not only on
+    // modifier keys: a Ctrl/Alt release delivered while a flyout or dialog owns focus never
+    // tunnels through this root (popups live under the PopupRoot, outside it), so the next
+    // keystroke anywhere in the page is the first chance to notice it. Two GetKeyState reads
+    // per key; _SetSeparatorsUnlocked no-ops when nothing changed. Never marks the event handled.
     void TerminalPage::_OnRootPreviewKey(const winrt::Windows::Foundation::IInspectable& /*sender*/,
-                                         const WUX::Input::KeyRoutedEventArgs& args)
+                                         const WUX::Input::KeyRoutedEventArgs& /*args*/)
     {
-        switch (args.Key())
-        {
-        case winrt::Windows::System::VirtualKey::Control:
-        case winrt::Windows::System::VirtualKey::LeftControl:
-        case winrt::Windows::System::VirtualKey::RightControl:
-        case winrt::Windows::System::VirtualKey::Menu:
-        case winrt::Windows::System::VirtualKey::LeftMenu:
-        case winrt::Windows::System::VirtualKey::RightMenu:
-            _UpdateSeparatorUnlockFromKeyboard("modifier key event");
-            break;
-        default:
-            break;
-        }
+        _UpdateSeparatorUnlockFromKeyboard("key event");
     }
 
     // Belt and braces for the lock: a drag that includes a separator while locked is
@@ -1452,6 +1551,14 @@ namespace winrt::TerminalApp::implementation
         }
 
         _sessionNodeMenu = flyout;
+        // axan #3: a Ctrl/Alt release while the menu has focus never reaches Root()'s key
+        // handlers (the flyout lives under the PopupRoot); re-derive the separator lock as it closes.
+        flyout.Closed([weak = get_weak()](auto&&, auto&&) {
+            if (auto p{ weak.get() })
+            {
+                p->_UpdateSeparatorUnlockFromKeyboard("context menu closed");
+            }
+        });
         if (position)
         {
             flyout.ShowAt(item, *position);
@@ -1476,6 +1583,12 @@ namespace winrt::TerminalApp::implementation
         MenuFlyout flyout{};
         _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
         _sessionNodeMenu = flyout;
+        flyout.Closed([weak = get_weak()](auto&&, auto&&) {
+            if (auto p{ weak.get() })
+            {
+                p->_UpdateSeparatorUnlockFromKeyboard("background menu closed");
+            }
+        });
         flyout.ShowAt(SessionTree(), position);
         Axan::Log::Debug("TerminalPage", "showed sidebar background context menu");
     }
@@ -2667,21 +2780,34 @@ namespace winrt::TerminalApp::implementation
 
         const auto tree = SessionTree();
         auto node = tree.SelectedNode();
-        if (!node && tree.RootNodes().Size() > 0)
+        // axan #3: a separator row can't take focus (disabled, no tab stop) — skip one that is
+        // selected or that leads the root list and land on the first session row instead.
+        if (node && _nodeIsSeparator(node))
         {
-            node = tree.RootNodes().GetAt(0);
+            node = nullptr;
+        }
+        if (!node)
+        {
+            const auto roots = tree.RootNodes();
+            for (uint32_t i = 0; i < roots.Size() && !node; ++i)
+            {
+                if (const auto candidate = roots.GetAt(i); !_nodeIsSeparator(candidate))
+                {
+                    node = candidate;
+                }
+            }
         }
         if (node)
         {
             // A sidebar expanded just above may not have realized row containers yet.
             tree.UpdateLayout();
-            if (const auto item = tree.ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>())
+            if (const auto item = tree.ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>(); item && item.Focus(FocusState::Keyboard))
             {
-                item.Focus(FocusState::Keyboard);
                 return;
             }
         }
-        // No rows (or no realized container) — at least land focus on the tree control.
+        // No rows, no realized container, or a row that refused focus — at least land focus
+        // on the tree control.
         tree.Focus(FocusState::Keyboard);
     }
 
