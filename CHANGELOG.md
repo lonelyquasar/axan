@@ -26,12 +26,6 @@ All notable changes to axan are documented here.
   Command boxes grow with the window (up to a wider page cap) instead of
   clipping long paths and commands at a fixed width, and shrink first on a
   narrow window so the row's trailing buttons stay in view. Windows only.
-- A startup entry that opens no tab in this window (an `elevate: true`
-  profile, or a profile that no longer exists) no longer stalls the rest of
-  the startup tree: later separators still appear and the next tab you open
-  no longer inherits the missing entry's name and parent. Rows whose `kind` is
-  not `session` or `separator` are skipped with a logged warning instead of
-  opening a default shell. Windows only.
 
 ### Appearance
 
