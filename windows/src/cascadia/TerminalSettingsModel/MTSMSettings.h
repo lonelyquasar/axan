@@ -42,6 +42,7 @@ Author(s):
     X(hstring, Language, "language")                                                                                                                                                                  \
     X(winrt::Microsoft::UI::Xaml::Controls::TabViewWidthMode, TabWidthMode, "tabWidthMode", winrt::Microsoft::UI::Xaml::Controls::TabViewWidthMode::Equal)                                            \
     X(bool, UseAcrylicInTabRow, "useAcrylicInTabRow", false)                                                                                                                                          \
+    X(bool, SidebarMatchesProfileTransparency, "sidebarMatchesProfileTransparency", false)                                                                                                            \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \
@@ -151,7 +152,9 @@ Author(s):
 // axan #2: `sidebar` and `content` are axan-only theme namespaces. Each carries a single
 // `background` ThemeColor (same value forms as tabRow.background, alpha included) for the
 // session-tree sidebar and the backdrop behind the terminal content. Both default to
-// null, which keeps today's opaque surfaces.
+// null, which keeps today's opaque surfaces. The global `sidebarMatchesProfileTransparency`
+// (MTSM_GLOBAL_SETTINGS above) overrides both when true: sidebar = focused terminal
+// brush, content = fully clear.
 #define MTSM_THEME_SETTINGS(X)                                                                   \
     X(winrt::Microsoft::Terminal::Settings::Model::WindowTheme, Window, "window", nullptr)       \
     X(winrt::Microsoft::Terminal::Settings::Model::SettingsTheme, Settings, "settings", nullptr) \

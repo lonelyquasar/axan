@@ -5211,14 +5211,35 @@ namespace winrt::TerminalApp::implementation
         // wins when set, so a user can make the sidebar a translucent scrim or fully
         // see-through. Evaluate() hands back nullptr for "terminalBackground" when no pane
         // has focus yet; treat that like unset, the same way the tabRow path does above.
+        //
+        // axan #2: the global `sidebarMatchesProfileTransparency` toggle (Settings >
+        // Appearance) sits above both theme keys. When on, the sidebar takes the focused
+        // terminal's own BackgroundBrush — the same object the "terminalBackground" ThemeColor
+        // resolves to, carrying the profile's color AND its opacity — and the content backdrop
+        // goes fully clear so the panes' opacity is the only layer (a backdrop alpha would
+        // stack with it). No focused brush yet (startup, before any pane reports one) falls
+        // back to the default solid chrome color; the BackgroundBrush PropertyChanged handler
+        // re-runs this once one appears, and a settings reload re-runs it via
+        // _RefreshUIForSettingsReload.
+        const bool matchProfile{ _settings.GlobalSettings().SidebarMatchesProfileTransparency() };
+
         const auto sidebarBg{ theme.Sidebar() ? theme.Sidebar().Background() : ThemeColor{ nullptr } };
         Media::Brush sidebarBrush{ nullptr };
-        if (sidebarBg)
+        const char* sidebarSource{ "default" };
+        if (matchProfile && terminalBrush)
+        {
+            sidebarBrush = terminalBrush;
+            sidebarSource = "matchProfile";
+        }
+        else if (!matchProfile && sidebarBg)
         {
             sidebarBrush = sidebarBg.Evaluate(res, terminalBrush, false);
+            if (sidebarBrush)
+            {
+                sidebarSource = "theme";
+            }
         }
-        const bool sidebarFromTheme{ sidebarBrush != nullptr };
-        if (!sidebarFromTheme)
+        if (!sidebarBrush)
         {
             sidebarBrush = Media::SolidColorBrush{ static_cast<winrt::Windows::UI::Color>(bgColor) };
         }
@@ -5229,8 +5250,9 @@ namespace winrt::TerminalApp::implementation
         }
 
         // axan #2: the backdrop behind the terminal content (the ContentBackdrop Border in
-        // TerminalPage.xaml). `content.background` set -> apply the evaluated brush as a local
-        // value. Unset -> ClearValue so the Border's Style setter (an opaque
+        // TerminalPage.xaml). `content.background` set (or the match-profile toggle on, which
+        // forces a fully transparent brush) -> apply the brush as a local value. Unset ->
+        // ClearValue so the Border's Style setter (an opaque
         // ApplicationPageBackgroundThemeBrush ThemeResource) takes back over. Clearing rather
         // than re-looking-up the brush from code matters twice: it's what makes a set->unset
         // settings reload restore today's exact default, and it keeps the default tracking
@@ -5238,14 +5260,23 @@ namespace winrt::TerminalApp::implementation
         // theme dictionaries and would hand back the OS-theme value instead).
         const auto contentBg{ theme.Content() ? theme.Content().Background() : ThemeColor{ nullptr } };
         Media::Brush contentBrush{ nullptr };
-        if (contentBg)
+        const char* contentSource{ "default" };
+        if (matchProfile)
+        {
+            contentBrush = Media::SolidColorBrush{ Colors::Transparent() };
+            contentSource = "matchProfile";
+        }
+        else if (contentBg)
         {
             contentBrush = contentBg.Evaluate(res, terminalBrush, false);
+            if (contentBrush)
+            {
+                contentSource = "theme";
+            }
         }
-        const bool contentFromTheme{ contentBrush != nullptr };
         if (const auto backdrop{ ContentBackdrop() })
         {
-            if (contentFromTheme)
+            if (contentBrush)
             {
                 backdrop.Background(contentBrush);
             }
@@ -5258,8 +5289,9 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Debug("TerminalPage",
                          "_updateThemeColors: themed session sidebar and content backdrop",
                          { { "requestedTheme", std::to_string(static_cast<int32_t>(requestedTheme)) },
-                           { "sidebarBg", sidebarFromTheme ? "theme" : "default" },
-                           { "contentBg", contentFromTheme ? "theme" : "default" } });
+                           { "matchProfile", matchProfile ? "true" : "false" },
+                           { "sidebarBg", sidebarSource },
+                           { "contentBg", contentSource } });
 
         // axan M13/#422: repaint node labels with the theme-correct default text color (a node
         // whose recolor doesn't target the text uses white-on-dark / near-black-on-light) and

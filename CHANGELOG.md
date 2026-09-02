@@ -33,6 +33,12 @@ All notable changes to axan are documented here.
   value forms as `tabRow.background`, including alpha and `terminalBackground`)
   to make the sidebar and the terminal backdrop translucent or see-through;
   unset keeps today's opaque surfaces. Windows only. (#2)
+- New "Sidebar matches profile transparency" toggle on the Appearance settings
+  page (`sidebarMatchesProfileTransparency` global, default off): the sidebar
+  takes the focused profile's background and opacity and the backdrop behind
+  the terminal goes fully clear, so the whole window shares the profile's
+  transparency without editing a theme. Overrides the theme keys above while
+  on. Windows only. (#2)
 
 ### Build
 

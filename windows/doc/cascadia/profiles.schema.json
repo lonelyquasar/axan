@@ -2013,7 +2013,7 @@
       "description": "A set of properties for customizing the appearance of the session-tree sidebar (axan)",
       "properties": {
         "background": {
-          "description": "The backdrop of the session-tree sidebar. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\") for a translucent or see-through sidebar; \"#000000CC\" (80% black) is the recommended starting point. Unset keeps the opaque chrome color.",
+          "description": "The backdrop of the session-tree sidebar. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\") for a translucent or see-through sidebar. \"terminalBackground\" (the focused profile's background and opacity) is the recommended value; \"#000000CC\" (80% black) is the fixed-tint alternative. Unset keeps the opaque chrome color. Ignored while the global sidebarMatchesProfileTransparency is true.",
           "$ref": "#/$defs/ThemeColor"
         }
       }
@@ -2023,7 +2023,7 @@
       "description": "A set of properties for customizing the backdrop behind the terminal content (axan)",
       "properties": {
         "background": {
-          "description": "The backdrop behind the terminal panes, which profiles with reduced opacity composite over. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\"). It only shows once a profile's opacity is below 100 or useAcrylic is on, and its alpha then stacks with the profile's (a 90% pane over a 90% black backdrop is nearly opaque), so the recommended value is fully clear (\"#00000000\") with the profile opacity doing the work. Unset keeps the opaque application background.",
+          "description": "The backdrop behind the terminal panes, which profiles with reduced opacity composite over. Accepts the same forms as tabRow.background, including an alpha channel (\"#RRGGBBAA\"). It only shows once a profile's opacity is below 100 or useAcrylic is on, and its alpha then stacks with the profile's (a 90% pane over a 90% black backdrop is nearly opaque), so the recommended value is fully clear (\"#00000000\") with the profile opacity doing the work. Unset keeps the opaque application background. Ignored while the global sidebarMatchesProfileTransparency is true (which forces it fully clear).",
           "$ref": "#/$defs/ThemeColor"
         }
       }
@@ -2595,6 +2595,11 @@
         "useAcrylicInTabRow": {
           "default": false,
           "description": "When set to true, the tab row will have an acrylic material background with 50% opacity.",
+          "type": "boolean"
+        },
+        "sidebarMatchesProfileTransparency": {
+          "default": false,
+          "description": "When set to true, the session-tree sidebar is painted with the focused profile's background brush (its color and opacity) and the backdrop behind the terminal content is left fully clear, so the whole window shares the profile's transparency. Overrides the theme's sidebar.background and content.background. Set the opacity per profile with \"opacity\" or \"useAcrylic\" (axan).",
           "type": "boolean"
         },
         "actions": {

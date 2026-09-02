@@ -203,13 +203,15 @@ An entry with no icon of its own inherits one: node override → the profile's i
 
 ### Sidebar and backdrop transparency (Windows)
 
-By default the sidebar and the surface behind the terminal panes are opaque, so a profile with reduced opacity or acrylic composites over a solid app-colored backdrop rather than the live desktop. A theme in `settings.json` can change both with two axan-only keys, `sidebar.background` and `content.background`, which take the same values as Windows Terminal's `tabRow.background`: `"#RRGGBB"`, `"#RRGGBBAA"`, `"accent"`, or `"terminalBackground"`. Alpha is honored: `"#000000CC"` is 80% black, which keeps sidebar labels readable over a busy desktop and is the recommended sidebar value; `"#00000080"` is a half-transparent scrim; `"#00000000"` is fully see-through; and `"terminalBackground"` follows the focused terminal's background. Leave a key unset and that surface keeps today's opaque look. The content backdrop sits *behind* the terminal panes, so it only shows once a profile has `"opacity"` below 100 (80 pairs well) or `"useAcrylic"`, and its alpha then stacks with the profile's: a 90% pane over a 90% black backdrop is nearly opaque. Let the profile opacity do the work and keep `content.background` fully clear. For example:
+By default the sidebar and the surface behind the terminal panes are opaque, so a profile with reduced opacity or acrylic composites over a solid app-colored backdrop rather than the live desktop. The easy path is the **Sidebar matches profile transparency** toggle under Settings > Appearance (the `sidebarMatchesProfileTransparency` global in `settings.json`): it paints the sidebar with the focused profile's background and opacity and leaves the backdrop behind the terminal clear, so the whole window shares one transparency. Set the opacity per profile under the profile's Appearance > Transparency (`"opacity"` below 100, 80 pairs well, or `"useAcrylic"`). While the toggle is on it overrides the theme keys below.
+
+The manual path is a theme in `settings.json` with two axan-only keys, `sidebar.background` and `content.background`, which take the same values as Windows Terminal's `tabRow.background`: `"#RRGGBB"`, `"#RRGGBBAA"`, `"accent"`, or `"terminalBackground"`. `"terminalBackground"` follows the focused profile's background, opacity included, and is the recommended sidebar value; `"#000000CC"` (80% black) is the fixed-tint alternative, which keeps sidebar labels readable over a busy desktop regardless of the profile; `"#00000080"` is a half-transparent scrim; `"#00000000"` is fully see-through. Leave a key unset and that surface keeps today's opaque look. The content backdrop sits *behind* the terminal panes, so it only shows once a profile has reduced opacity or acrylic, and its alpha then stacks with the profile's: a 90% pane over a 90% black backdrop is nearly opaque. Let the profile opacity do the work and keep `content.background` fully clear. For example:
 
 ```json
 "themes": [
     {
         "name": "glass",
-        "sidebar": { "background": "#000000CC" },
+        "sidebar": { "background": "terminalBackground" },
         "content": { "background": "#00000000" }
     }
 ],

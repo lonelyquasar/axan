@@ -65,6 +65,9 @@ namespace Microsoft.Terminal.Settings.Model
         INHERITABLE_SETTING(String, Language);
         INHERITABLE_SETTING(Microsoft.UI.Xaml.Controls.TabViewWidthMode, TabWidthMode);
         INHERITABLE_SETTING(Boolean, UseAcrylicInTabRow);
+        // axan #2: sidebar takes the focused profile's background brush (color + opacity),
+        // content backdrop goes fully clear. Overrides the theme's sidebar/content keys.
+        INHERITABLE_SETTING(Boolean, SidebarMatchesProfileTransparency);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);
