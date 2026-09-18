@@ -55,7 +55,9 @@ namespace Axan::IconRegistry
             { L"git", 0xE8AB }, // Branch / Switch            (verify)
             { L"editor", 0xE943 }, // Code
             { L"logs", 0xE7C3 }, // Page / document           (verify)
-            { L"build", 0xE15E }, // Repair / wrench           (verify)
+            { L"build", 0xE90F }, // Repair / wrench. NOT 0xE15E: IconPathConverter only uses the
+            //                                symbol font for U+E700..U+F8FF, so the sidebar/tab
+            //                                drew the legacy Segoe UI Symbol codepoint as tofu.
             { L"test", 0xE73E }, // Completed / checkmark       (verify)
         } };
     }
