@@ -3051,8 +3051,13 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         }
         else
         {
-            // Do we ever get here (= uninitialized terminal)? If so: How?
-            assert(false);
+            // axan: upstream asserted here ("Do we ever get here? If so: How?").
+            // We do: WM_GETMINMAXINFO (IslandWindow::_OnGetMinMaxInfo) can ask the
+            // focused pane for its minimum size before the control's first layout
+            // pass has initialized the terminal. Upstream's gap is a few ms; a
+            // startup tree that spawns many sessions holds the UI thread long
+            // enough for a titlebar click to land inside it. Fall back to a
+            // nominal size instead of taking a Debug build down.
             return { 10, 10 };
         }
     }
