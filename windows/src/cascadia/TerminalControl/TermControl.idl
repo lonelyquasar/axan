@@ -58,6 +58,10 @@ namespace Microsoft.Terminal.Control
         event Windows.Foundation.TypedEventHandler<Object, PasteFromClipboardEventArgs> PasteFromClipboard;
         event Windows.Foundation.TypedEventHandler<Object, OpenHyperlinkEventArgs> OpenHyperlink;
         event Windows.Foundation.TypedEventHandler<Object, Object> SetTaskbarProgress;
+        // axan #29: the OSC 7501 record set changed (read ProgramStatusRecords for the new
+        // snapshot). Raised on a background thread, outside the terminal lock; handlers
+        // must marshal to the UI thread themselves.
+        event Windows.Foundation.TypedEventHandler<Object, Object> ProgramStatusChanged;
         event Windows.Foundation.TypedEventHandler<Object, NoticeEventArgs> RaiseNotice;
         event Windows.Foundation.TypedEventHandler<Object, Object> WarningBell;
         event Windows.Foundation.TypedEventHandler<Object, Object> HidePointerCursor;

@@ -281,8 +281,9 @@ public:
     // Snapshot sorted by id (root first). Caller must hold at least the read lock.
     std::vector<ProgramStatusRecord> GetProgramStatusRecords() const;
     // The single feature gate: when off, the query is not answered and reports are
-    // ignored. On by default; see TerminalProgramStatus.cpp.
-    void SetProgramStatusEnabled(const bool enabled) noexcept;
+    // ignored (and turning it off clears the records). On by default; see
+    // TerminalProgramStatus.cpp. Caller holds the write lock.
+    void SetProgramStatusEnabled(const bool enabled);
     bool IsProgramStatusEnabled() const noexcept;
     // Drop working/blocked records (process exit / connection closed). Caller holds the
     // write lock. Fires the changed callback if anything was removed.

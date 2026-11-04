@@ -52,9 +52,20 @@ namespace
     }
 }
 
-void Terminal::SetProgramStatusEnabled(const bool enabled) noexcept
+void Terminal::SetProgramStatusEnabled(const bool enabled)
 {
+    if (_programStatusEnabled == enabled)
+    {
+        return;
+    }
     _programStatusEnabled = enabled;
+    Axan::Log::Info(LogComponent, enabled ? "feature enabled" : "feature disabled");
+    // Turning the feature off drops what it collected, so nothing stale lingers.
+    if (!enabled && !_programStatusRecords.empty())
+    {
+        _programStatusRecords.clear();
+        _programStatusNotify();
+    }
 }
 
 bool Terminal::IsProgramStatusEnabled() const noexcept

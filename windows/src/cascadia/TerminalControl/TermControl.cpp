@@ -323,6 +323,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         _revokers.TitleChanged = _core.TitleChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleTitleChanged });
         _revokers.TabColorChanged = _core.TabColorChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleTabColorChanged });
         _revokers.TaskbarProgressChanged = _core.TaskbarProgressChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleSetTaskbarProgress });
+        _revokers.ProgramStatusChanged = _core.ProgramStatusChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleProgramStatusChanged });
         _revokers.ConnectionStateChanged = _core.ConnectionStateChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleConnectionStateChanged });
         _revokers.ShowWindowChanged = _core.ShowWindowChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleShowWindowChanged });
         _revokers.CloseTerminalRequested = _core.CloseTerminalRequested(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleCloseTerminalRequested });
@@ -4042,6 +4043,22 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     Windows::Foundation::Collections::IVector<Control::ScrollMark> TermControl::ScrollMarks() const
     {
         return _core.ScrollMarks();
+    }
+
+    // axan #29: OSC 7501 - see ICoreState.idl.
+    Windows::Foundation::Collections::IVector<Control::ProgramStatusRecord> TermControl::ProgramStatusRecords() const
+    {
+        return _core.ProgramStatusRecords();
+    }
+
+    bool TermControl::ProgramStatusEnabled() const
+    {
+        return _core.ProgramStatusEnabled();
+    }
+
+    void TermControl::ProgramStatusEnabled(bool enabled)
+    {
+        _core.ProgramStatusEnabled(enabled);
     }
 
     void TermControl::SelectCommand(const bool goUp)

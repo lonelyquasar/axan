@@ -26,6 +26,38 @@ namespace Microsoft.Terminal.Control
         Last
     };
 
+    // axan #29: OSC 7501 Program Status records. Values mirror
+    // terminal/adapter/ProgramStatus.hpp (State minus Clear, which is not a record state).
+    enum ProgramStatusState
+    {
+        Idle = 0,
+        Working = 1,
+        Done = 2,
+        Blocked = 3,
+        Error = 4
+    };
+
+    enum ProgramStatusKind
+    {
+        None = 0,
+        Permission = 1,
+        Question = 2,
+        Auth = 3
+    };
+
+    struct ProgramStatusRecord
+    {
+        String Id; // "" = the root record; children are "/"-separated paths
+        ProgramStatusState State;
+        String App; // as reported; "" = absent
+        String EffectiveApp; // App, else the nearest ancestor record's App
+        ProgramStatusKind Kind; // only for Blocked
+        Int32 Progress; // 0..100 for Working/Blocked; -1 = indeterminate/absent
+        String Title; // decoded, bidi controls stripped; "" = absent
+        String Msg; // decoded, bidi controls stripped; "" = absent
+        UInt64 Revision; // terminal-wide write counter: changes whenever the record is rewritten
+    };
+
     // These are properties of the TerminalCore that should be queryable by the
     // rest of the app.
     interface ICoreState
@@ -61,6 +93,13 @@ namespace Microsoft.Terminal.Control
         void SelectCommand(Boolean goUp);
         void SelectOutput(Boolean goUp);
         IVector<ScrollMark> ScrollMarks { get; };
+
+        // axan #29: OSC 7501. A snapshot (copy) of this terminal's records, sorted by
+        // id with the root first; empty when the program reported nothing. Pair with
+        // the ProgramStatusChanged event to stay current. ProgramStatusEnabled is the
+        // feature gate: false = don't answer the query, ignore reports (default true).
+        IVector<ProgramStatusRecord> ProgramStatusRecords { get; };
+        Boolean ProgramStatusEnabled;
 
         String CurrentWorkingDirectory { get; };
 
