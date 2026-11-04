@@ -1074,8 +1074,8 @@ namespace winrt::TerminalApp::implementation
     // Drops between siblings at the root leave Parent() as the tree's hidden root node
     // (Depth -1); nothing to expand there.
     // axan #3: also the drag's epilogue for separators — the drag-active freeze on the
-    // Ctrl+Alt lock ends here, a session that somehow landed UNDER a separator (AllowDrop is
-    // off on separator containers, so this is a guard) is moved out to sit right after it,
+    // Ctrl+Alt lock ends here, a row dropped ONTO a separator (separators are drop targets
+    // during a drag, #28) is moved out to sit right after it at the separator's depth,
     // bottom-placed separators re-sink, and every realized container's lock state is
     // re-applied (the drop recycles containers).
     void TerminalPage::_OnSessionTreeDragItemsCompleted(const MUX::Controls::TreeView& /*sender*/,
@@ -1093,23 +1093,35 @@ namespace winrt::TerminalApp::implementation
                     continue;
                 }
                 auto parent = node.Parent();
-                if (parent && parent.Depth() >= 0 && _nodeIsSeparator(parent) && !_nodeIsSeparator(node))
+                if (parent && parent.Depth() >= 0 && _nodeIsSeparator(parent))
                 {
-                    // Guard: a separator can't own sessions. Relocate the dropped session to
-                    // the separator's own scope, immediately after it.
+                    // axan #28: a separator can't own children, so dropping a row (session or
+                    // unlocked separator) ONTO a separator means "insert directly after it":
+                    // relocate the dropped node to the separator's own scope, right after it.
+                    // Separators are drop targets during a drag (see _ApplySeparatorContainerState)
+                    // precisely so the drop takes this node-level path.
+                    const auto separator = parent;
                     Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode> sepContainer{ nullptr };
                     uint32_t sepIndex = 0;
-                    if (_locateNodeContainer(SessionTree().RootNodes(), parent, sepContainer, sepIndex))
+                    if (_locateNodeContainer(SessionTree().RootNodes(), separator, sepContainer, sepIndex))
                     {
                         uint32_t childIndex = 0;
-                        if (parent.Children().IndexOf(node, childIndex))
+                        if (separator.Children().IndexOf(node, childIndex))
                         {
-                            parent.Children().RemoveAt(childIndex);
+                            separator.Children().RemoveAt(childIndex);
                         }
                         sepContainer.InsertAt(std::min(sepIndex + 1, sepContainer.Size()), node);
-                        Axan::Log::Warn("TerminalPage", "drag-drop: session dropped under a separator; moved it after the separator instead (#3)");
-                        parent = node.Parent();
+                        // The drop may have expanded the separator / shown its chevron; it's a
+                        // leaf again, so put both back.
+                        separator.IsExpanded(false);
+                        if (const auto sepItem = SessionTree().ContainerFromNode(separator).try_as<MUX::Controls::TreeViewItem>())
+                        {
+                            sepItem.GlyphOpacity(0.0);
+                        }
+                        Axan::Log::Info("TerminalPage", "drag-drop: dropped onto a separator; inserted after it at the same depth (#28)", { { "isSeparator", _nodeIsSeparator(node) ? "1" : "0" }, { "depth", std::to_string(node.Depth()) } });
+                        continue;
                     }
+                    Axan::Log::Warn("TerminalPage", "drag-drop: dropped onto a separator that isn't in the tree; leaving the node where it landed (#28)");
                 }
                 if (!parent || parent.Depth() < 0)
                 {
@@ -1125,8 +1137,89 @@ namespace winrt::TerminalApp::implementation
             }
         }
         _SinkBottomSeparators();
+        // axan #28: the drag is over; separators go back to their lock state (no drop target
+        // outside a drag) on the re-apply below.
+        _sessionTreeDragInFlight = false;
         _ApplySeparatorContainerStates();
         _UpdateSeparatorUnlockFromKeyboard("drag completed");
+        _VerifySessionTreeFlatList("drag completed");
+    }
+
+    // axan #28: the TreeView's inner TreeViewList keeps a flat vector of the visible nodes
+    // that is meant to mirror RootNodes (each node, then its children when expanded). A drop
+    // that WinUI handles as a list-level reorder instead of a node move can desync the two —
+    // the dragged node ends up in the flat list twice and a sibling vanishes from view while
+    // still present in RootNodes. Compare the two after every drop; on a mismatch rebuild the
+    // view from RootNodes (re-appending a node re-adds its expanded descendants).
+    void TerminalPage::_VerifySessionTreeFlatList(const char* reason)
+    {
+        const auto tree = SessionTree();
+        if (!tree || !_sessionTreeList)
+        {
+            return;
+        }
+        const auto countVisible = [](const auto& self, const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>& nodes) -> uint32_t {
+            uint32_t n = 0;
+            for (const auto& node : nodes)
+            {
+                ++n;
+                if (node.IsExpanded())
+                {
+                    n += self(self, node.Children());
+                }
+            }
+            return n;
+        };
+        const auto inspect = [&](uint32_t& modelCount, uint32_t& flatCount, uint32_t& duplicates) {
+            modelCount = countVisible(countVisible, tree.RootNodes());
+            const auto flat = _sessionTreeList.Items();
+            flatCount = flat ? flat.Size() : 0;
+            duplicates = 0;
+            std::vector<void*> seen;
+            seen.reserve(flatCount);
+            for (uint32_t i = 0; i < flatCount; ++i)
+            {
+                const auto item = flat.GetAt(i);
+                void* const key = item ? winrt::get_abi(item) : nullptr;
+                if (std::find(seen.begin(), seen.end(), key) != seen.end())
+                {
+                    ++duplicates;
+                }
+                else
+                {
+                    seen.push_back(key);
+                }
+            }
+        };
+        uint32_t modelCount = 0, flatCount = 0, duplicates = 0;
+        inspect(modelCount, flatCount, duplicates);
+        if (modelCount == flatCount && duplicates == 0)
+        {
+            Axan::Log::Debug("TerminalPage", "session tree flat list matches RootNodes", { { "reason", reason }, { "visible", std::to_string(modelCount) }, { "flat", std::to_string(flatCount) } });
+            return;
+        }
+        Axan::Log::Error("TerminalPage", "session tree flat list desynced from RootNodes; rebuilding the view (#28)", { { "reason", reason }, { "visible", std::to_string(modelCount) }, { "flat", std::to_string(flatCount) }, { "duplicates", std::to_string(duplicates) } });
+
+        std::vector<MUX::Controls::TreeViewNode> roots;
+        for (const auto& node : tree.RootNodes())
+        {
+            roots.push_back(node);
+        }
+        tree.RootNodes().Clear();
+        for (const auto& node : roots)
+        {
+            tree.RootNodes().Append(node);
+        }
+        _ApplySeparatorContainerStates();
+        if (const auto tab = _GetFocusedTab())
+        {
+            if (const auto node = _FindNodeForTab(tab))
+            {
+                tree.SelectedNode(node);
+            }
+        }
+        inspect(modelCount, flatCount, duplicates);
+        Axan::Log::Info("TerminalPage", "session tree view rebuilt from RootNodes", { { "visible", std::to_string(modelCount) }, { "flat", std::to_string(flatCount) }, { "duplicates", std::to_string(duplicates) } });
     }
 
     // ===================== axan #3: separator lock (Ctrl+Alt unlock) =====================
@@ -1221,10 +1314,16 @@ namespace winrt::TerminalApp::implementation
         }
         if (isSeparator)
         {
+            // axan #28: during a drag every separator is an enabled drop target, locked or not.
+            // A disabled / AllowDrop(false) container refuses the node-level drop and the drop
+            // falls through to TreeViewList's flat-list reorder, which desyncs from RootNodes
+            // (duplicated row, vanished separator). DragItemsCompleted turns a drop onto a
+            // separator into "insert after it". Outside a drag the lock is unchanged.
             const bool unlocked = _separatorsUnlocked;
-            container.IsEnabled(unlocked);
+            const bool dragInFlight = _sessionTreeDragInFlight;
+            container.IsEnabled(unlocked || dragInFlight);
             container.IsTabStop(false);
-            container.AllowDrop(false);
+            container.AllowDrop(dragInFlight);
             container.CanDrag(unlocked);
             return;
         }
@@ -1375,7 +1474,11 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         _separatorDragActive = true;
+        _sessionTreeDragInFlight = true;
         Axan::Log::Debug("TerminalPage", "session tree drag starting", { { "draggingSeparator", draggingSeparator ? "1" : "0" }, { "unlocked", _separatorsUnlocked ? "1" : "0" } });
+        // axan #28: make the realized separator rows drop targets for this drag (rows realized
+        // later pick it up from ContainerContentChanging).
+        _ApplySeparatorContainerStates();
     }
 
     // ===================== axan M13: session-node context menu =====================

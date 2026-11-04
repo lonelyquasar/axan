@@ -309,6 +309,12 @@ namespace winrt::TerminalApp::implementation
         // frozen for the duration so releasing Ctrl/Alt mid-drag can't disable the container
         // being dragged; the keyboard state is re-read once the drop lands.
         bool _separatorDragActive{ false };
+        // axan #28: true between DragItemsStarting and DragItemsCompleted ONLY (unlike
+        // _separatorDragActive, window deactivation doesn't clear it). While set, separator
+        // containers are enabled drop targets even when locked, so a drop onto one runs the
+        // node-level drop instead of falling through to TreeViewList's flat-list reorder
+        // (which desynced from RootNodes and duplicated the dragged row).
+        bool _sessionTreeDragInFlight{ false };
         Microsoft::UI::Xaml::Controls::TreeViewList _sessionTreeList{ nullptr };
 
         std::shared_ptr<Toast> _windowIdToast{ nullptr };
@@ -566,6 +572,9 @@ namespace winrt::TerminalApp::implementation
         void _OnSessionTreeContainerContentChanging(const Windows::UI::Xaml::Controls::ListViewBase& sender, const Windows::UI::Xaml::Controls::ContainerContentChangingEventArgs& args);
         void _ApplySeparatorContainerState(const Microsoft::UI::Xaml::Controls::TreeViewItem& container, bool isSeparator);
         void _ApplySeparatorContainerStates();
+        // axan #28: after a drop, check TreeViewList's flat item list against RootNodes and
+        // rebuild the view from RootNodes if they've desynced.
+        void _VerifySessionTreeFlatList(const char* reason);
         void _SetSeparatorsUnlocked(bool unlocked, const char* reason);
         void _UpdateSeparatorUnlockFromKeyboard(const char* reason);
         void _OnRootPreviewKey(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::KeyRoutedEventArgs& args);
