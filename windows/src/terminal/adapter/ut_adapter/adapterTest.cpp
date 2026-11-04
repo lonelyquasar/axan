@@ -229,6 +229,32 @@ public:
         Log::Comment(L"SearchMissingCommand MOCK called...");
     }
 
+    // axan #29: OSC 7501
+    bool ProgramStatusQuery() override
+    {
+        Log::Comment(L"ProgramStatusQuery MOCK called...");
+        ++_programStatusQueries;
+        return _programStatusEnabled;
+    }
+
+    void ProgramStatusReport(const ProgramStatus::ParseResult& result) override
+    {
+        Log::Comment(L"ProgramStatusReport MOCK called...");
+        _programStatusResults.push_back(result);
+    }
+
+    void ProgramStatusPromptStarted() override
+    {
+        Log::Comment(L"ProgramStatusPromptStarted MOCK called...");
+        ++_programStatusPromptStarts;
+    }
+
+    void ProgramStatusReset() override
+    {
+        Log::Comment(L"ProgramStatusReset MOCK called...");
+        ++_programStatusResets;
+    }
+
     void PrepData()
     {
         PrepData(CursorDirection::UP); // if called like this, the cursor direction doesn't matter.
@@ -277,6 +303,12 @@ public:
 
         _response.clear();
         _retainResponse = false;
+
+        _programStatusEnabled = true;
+        _programStatusQueries = 0;
+        _programStatusResults.clear();
+        _programStatusPromptStarts = 0;
+        _programStatusResets = 0;
     }
 
     void PrepCursor(CursorX xact, CursorY yact)
@@ -397,6 +429,13 @@ public:
 
     std::wstring _expectedMenuJson{};
     unsigned int _expectedReplaceLength = 0;
+
+    // axan #29: OSC 7501
+    bool _programStatusEnabled = true;
+    size_t _programStatusQueries = 0;
+    std::vector<ProgramStatus::ParseResult> _programStatusResults;
+    size_t _programStatusPromptStarts = 0;
+    size_t _programStatusResets = 0;
 
 private:
     HANDLE _hCon;
@@ -4014,6 +4053,298 @@ public:
 
         _pDispatch->RequestColorTableEntry(0);
         _testGetSet->ValidateInputEvent(L"\x1b]4;0;rgb:0c0c/0c0c/0c0c\x1b\\");
+    }
+
+    // axan #29: OSC 7501 Program Status -----------------------------------------------
+
+    // Build base64 fixtures from readable plaintext (no opaque blobs in the source).
+    static std::wstring ProgramStatusB64(const std::string_view utf8)
+    {
+        static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::wstring out;
+        size_t i = 0;
+        for (; i + 2 < utf8.size(); i += 3)
+        {
+            const uint32_t n = static_cast<uint8_t>(utf8[i]) << 16 | static_cast<uint8_t>(utf8[i + 1]) << 8 | static_cast<uint8_t>(utf8[i + 2]);
+            out += static_cast<wchar_t>(alphabet[(n >> 18) & 63]);
+            out += static_cast<wchar_t>(alphabet[(n >> 12) & 63]);
+            out += static_cast<wchar_t>(alphabet[(n >> 6) & 63]);
+            out += static_cast<wchar_t>(alphabet[n & 63]);
+        }
+        const auto rest = utf8.size() - i;
+        if (rest == 1)
+        {
+            const uint32_t n = static_cast<uint8_t>(utf8[i]) << 16;
+            out += static_cast<wchar_t>(alphabet[(n >> 18) & 63]);
+            out += static_cast<wchar_t>(alphabet[(n >> 12) & 63]);
+            out += L"==";
+        }
+        else if (rest == 2)
+        {
+            const uint32_t n = static_cast<uint8_t>(utf8[i]) << 16 | static_cast<uint8_t>(utf8[i + 1]) << 8;
+            out += static_cast<wchar_t>(alphabet[(n >> 18) & 63]);
+            out += static_cast<wchar_t>(alphabet[(n >> 12) & 63]);
+            out += static_cast<wchar_t>(alphabet[(n >> 6) & 63]);
+            out += L"=";
+        }
+        return out;
+    }
+
+    static constexpr std::wstring_view ProgramStatusReplyST{ L"\x1b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\x1b\\" };
+
+    static ProgramStatus::ParseResult ExpectReport(const std::wstring_view payload)
+    {
+        auto result = ProgramStatus::Parse(payload);
+        Log::Comment(NoThrowString().Format(L"payload: %.*s", gsl::narrow_cast<int>(std::min<size_t>(payload.size(), 120)), payload.data()));
+        VERIFY_ARE_EQUAL(ProgramStatus::Outcome::Report, result.outcome);
+        return result;
+    }
+
+    static void ExpectDiscard(const std::wstring_view payload, const std::string_view reason)
+    {
+        const auto result = ProgramStatus::Parse(payload);
+        Log::Comment(NoThrowString().Format(L"payload: %.*s", gsl::narrow_cast<int>(std::min<size_t>(payload.size(), 120)), payload.data()));
+        VERIFY_ARE_EQUAL(ProgramStatus::Outcome::Discarded, result.outcome);
+        Log::Comment(NoThrowString().Format(L"reason: expected %hs, got %hs", std::string{ reason }.c_str(), std::string{ result.reason }.c_str()));
+        VERIFY_IS_TRUE(reason == result.reason);
+    }
+
+    TEST_METHOD(ProgramStatusQueryReplyPrecedesDA1)
+    {
+        // Claude Code sends the query and DA1 back to back and treats "DA1 reply first"
+        // as "unsupported". Split the pair at every offset; the 7501 reply must always
+        // be first, and identical regardless of how the bytes were chunked.
+        const std::wstring input = std::wstring{ L"\x1b]7501;?\x1b\\" } + L"\x1b[c";
+        for (size_t split = 0; split <= input.size(); ++split)
+        {
+            _testGetSet->PrepData();
+            auto retain = _testGetSet->EnableInputRetentionInScope();
+            _stateMachine->ProcessString(std::wstring_view{ input }.substr(0, split));
+            _stateMachine->ProcessString(std::wstring_view{ input }.substr(split));
+            VERIFY_IS_TRUE(_testGetSet->_response.starts_with(ProgramStatusReplyST));
+            VERIFY_ARE_EQUAL(ProgramStatusReplyST.size(), _testGetSet->_response.find(L"\x1b[?61;"));
+            VERIFY_ARE_EQUAL(1u, _testGetSet->_programStatusQueries);
+            VERIFY_ARE_EQUAL(0u, _testGetSet->_programStatusResults.size());
+        }
+    }
+
+    TEST_METHOD(ProgramStatusQueryVariants)
+    {
+        Log::Comment(L"BEL-terminated query is answered (the reply always uses ST)");
+        _testGetSet->PrepData();
+        _stateMachine->ProcessString(L"\x1b]7501;?\x07");
+        _testGetSet->ValidateInputEvent(std::wstring{ ProgramStatusReplyST }.c_str());
+
+        Log::Comment(L"Whitespace around the ? is tolerated");
+        _testGetSet->PrepData();
+        _stateMachine->ProcessString(L"\x1b]7501; \t? \x1b\\");
+        _testGetSet->ValidateInputEvent(std::wstring{ ProgramStatusReplyST }.c_str());
+
+        Log::Comment(L"'?' with other content is not a query (and has no state): no reply");
+        _testGetSet->PrepData();
+        _stateMachine->ProcessString(L"\x1b]7501;?x\x1b\\");
+        _testGetSet->ValidateInputEvent(L"");
+        VERIFY_ARE_EQUAL(0u, _testGetSet->_programStatusQueries);
+        VERIFY_ARE_EQUAL(1u, _testGetSet->_programStatusResults.size());
+        VERIFY_ARE_EQUAL(ProgramStatus::Outcome::Discarded, _testGetSet->_programStatusResults[0].outcome);
+    }
+
+    TEST_METHOD(ProgramStatusGateOffMeansNoReply)
+    {
+        _testGetSet->PrepData();
+        _testGetSet->_programStatusEnabled = false;
+        auto retain = _testGetSet->EnableInputRetentionInScope();
+        _stateMachine->ProcessString(L"\x1b]7501;?\x1b\\\x1b[c");
+        VERIFY_ARE_EQUAL(1u, _testGetSet->_programStatusQueries);
+        VERIFY_ARE_EQUAL(std::wstring::npos, _testGetSet->_response.find(L"7501"));
+        VERIFY_IS_TRUE(_testGetSet->_response.starts_with(L"\x1b[?61;"));
+    }
+
+    TEST_METHOD(ProgramStatusReportsReachTheApi)
+    {
+        _testGetSet->PrepData();
+        const std::wstring report{ L"\x1b]7501;state=working:app=claude\x07" };
+        for (size_t split = 0; split <= report.size(); ++split)
+        {
+            _testGetSet->_programStatusResults.clear();
+            _stateMachine->ProcessString(std::wstring_view{ report }.substr(0, split));
+            _stateMachine->ProcessString(std::wstring_view{ report }.substr(split));
+            VERIFY_ARE_EQUAL(1u, _testGetSet->_programStatusResults.size());
+            const auto& r = _testGetSet->_programStatusResults[0];
+            VERIFY_ARE_EQUAL(ProgramStatus::Outcome::Report, r.outcome);
+            VERIFY_ARE_EQUAL(ProgramStatus::State::Working, r.report.state);
+            VERIFY_ARE_EQUAL(L"claude", r.report.app);
+        }
+        VERIFY_ARE_EQUAL(L"", _testGetSet->_response);
+    }
+
+    TEST_METHOD(ProgramStatusPromptStartAndReset)
+    {
+        _testGetSet->PrepData();
+        _stateMachine->ProcessString(L"\x1b]133;A\x1b\\");
+        VERIFY_ARE_EQUAL(1u, _testGetSet->_programStatusPromptStarts);
+        _stateMachine->ProcessString(L"\x1b]133;A;cl=m;aid=1\x07");
+        VERIFY_ARE_EQUAL(2u, _testGetSet->_programStatusPromptStarts);
+        _stateMachine->ProcessString(L"\x1b]133;B\x07\x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;AB\x07");
+        VERIFY_ARE_EQUAL(2u, _testGetSet->_programStatusPromptStarts);
+
+        Log::Comment(L"RIS resets records; DECSTR does not");
+        _pDispatch->SoftReset();
+        VERIFY_ARE_EQUAL(0u, _testGetSet->_programStatusResets);
+        _pDispatch->HardReset(true);
+        VERIFY_ARE_EQUAL(1u, _testGetSet->_programStatusResets);
+    }
+
+    TEST_METHOD(ProgramStatusParseFullReport)
+    {
+        const auto payload = L"state=blocked:kind=permission:app=terraform:id=build/test:progress=40:title=" + ProgramStatusB64("Plan") +
+                             L":msg=" + ProgramStatusB64("Apply 3 to add, 1 to change, 0 to destroy?");
+        const auto r = ExpectReport(payload);
+        VERIFY_ARE_EQUAL(ProgramStatus::State::Blocked, r.report.state);
+        VERIFY_ARE_EQUAL(ProgramStatus::Kind::Permission, r.report.kind);
+        VERIFY_ARE_EQUAL(L"terraform", r.report.app);
+        VERIFY_ARE_EQUAL(L"build/test", r.report.id);
+        VERIFY_IS_TRUE(r.report.progress.has_value());
+        VERIFY_ARE_EQUAL(40, static_cast<int>(*r.report.progress));
+        VERIFY_ARE_EQUAL(L"Plan", r.report.title);
+        VERIFY_ARE_EQUAL(L"Apply 3 to add, 1 to change, 0 to destroy?", r.report.msg);
+        VERIFY_ARE_EQUAL(0u, r.skippedPairs);
+    }
+
+    TEST_METHOD(ProgramStatusParseFieldRules)
+    {
+        Log::Comment(L"Whitespace around keys and values is removed; last repeated key wins");
+        auto r = ExpectReport(L" state = working : app = x : state=done ");
+        VERIFY_ARE_EQUAL(ProgramStatus::State::Done, r.report.state);
+        VERIFY_ARE_EQUAL(L"x", r.report.app);
+
+        Log::Comment(L"kind only applies to blocked; progress only to working/blocked");
+        r = ExpectReport(L"state=done:kind=auth:progress=50");
+        VERIFY_ARE_EQUAL(ProgramStatus::Kind::None, r.report.kind);
+        VERIFY_IS_FALSE(r.report.progress.has_value());
+        r = ExpectReport(L"state=working:kind=auth:progress=0");
+        VERIFY_ARE_EQUAL(ProgramStatus::Kind::None, r.report.kind);
+        VERIFY_ARE_EQUAL(0, static_cast<int>(r.report.progress.value_or(255)));
+        r = ExpectReport(L"state=blocked:kind=question:progress=100");
+        VERIFY_ARE_EQUAL(ProgramStatus::Kind::Question, r.report.kind);
+        VERIFY_ARE_EQUAL(100, static_cast<int>(r.report.progress.value_or(255)));
+
+        Log::Comment(L"Invalid kind/progress are treated as absent");
+        r = ExpectReport(L"state=blocked:kind=coffee:progress=101");
+        VERIFY_ARE_EQUAL(ProgramStatus::Kind::None, r.report.kind);
+        VERIFY_IS_FALSE(r.report.progress.has_value());
+        r = ExpectReport(L"state=working:progress=4.5");
+        VERIFY_IS_FALSE(r.report.progress.has_value());
+        r = ExpectReport(L"state=working:progress=-1");
+        VERIFY_IS_FALSE(r.report.progress.has_value());
+
+        Log::Comment(L"Malformed pairs are skipped; unknown keys ignored");
+        r = ExpectReport(L"state=idle:garbage:=x:Key=1:app=a!b:future=1:");
+        VERIFY_ARE_EQUAL(ProgramStatus::State::Idle, r.report.state);
+        VERIFY_ARE_EQUAL(L"", r.report.app);
+        VERIFY_ARE_EQUAL(5u, r.skippedPairs); // garbage, =x, Key=1, app=a!b, trailing empty
+
+        Log::Comment(L"app: outside [A-Za-z0-9_.+-] or empty is absent; 32 bytes is fine");
+        r = ExpectReport(L"state=idle:app=a,b");
+        VERIFY_ARE_EQUAL(L"", r.report.app);
+        r = ExpectReport(L"state=idle:app=");
+        VERIFY_ARE_EQUAL(L"", r.report.app);
+        r = ExpectReport(L"state=idle:app=" + std::wstring(32, L'a'));
+        VERIFY_ARE_EQUAL(std::wstring(32, L'a'), r.report.app);
+
+        Log::Comment(L"A 16-byte key is fine (and unknown)");
+        ExpectReport(L"state=idle:abcdefghijklmnop=1");
+
+        Log::Comment(L"clear with and without an id");
+        r = ExpectReport(L"state=clear");
+        VERIFY_ARE_EQUAL(ProgramStatus::State::Clear, r.report.state);
+        VERIFY_ARE_EQUAL(L"", r.report.id);
+        r = ExpectReport(L"state=clear:id=build");
+        VERIFY_ARE_EQUAL(L"build", r.report.id);
+
+        Log::Comment(L"Valid id shapes");
+        ExpectReport(L"state=idle:id=a/b/c/d/e/f/g/h");
+        ExpectReport(L"state=idle:id=" + std::wstring(32, L'x'));
+        ExpectReport(L"state=idle:id=A-z_0.9+");
+    }
+
+    TEST_METHOD(ProgramStatusParseDiscards)
+    {
+        ExpectDiscard(L"app=x", "missing-state");
+        ExpectDiscard(L"state=sleeping", "unknown-state");
+        ExpectDiscard(L"state=", "unknown-state");
+        ExpectDiscard(L"state=idle:abcdefghijklmnopq=1", "key-too-long");
+        ExpectDiscard(L"state=idle:app=" + std::wstring(33, L'a'), "app-too-long");
+
+        Log::Comment(L"Invalid ids discard the whole report");
+        ExpectDiscard(L"state=idle:id=", "invalid-id");
+        ExpectDiscard(L"state=idle:id=a//b", "invalid-id");
+        ExpectDiscard(L"state=idle:id=/a", "invalid-id");
+        ExpectDiscard(L"state=idle:id=a/", "invalid-id");
+        ExpectDiscard(L"state=idle:id=a,b", "invalid-id");
+        ExpectDiscard(L"state=idle:id=a/b/c/d/e/f/g/h/i", "invalid-id");
+        ExpectDiscard(L"state=idle:id=" + std::wstring(33, L'x'), "invalid-id");
+        ExpectDiscard(L"state=idle:id=" + std::wstring(32, L'x') + L"/" + std::wstring(32, L'x') + L"/" + std::wstring(32, L'x') + L"/" + std::wstring(32, L'x'), "invalid-id");
+
+        Log::Comment(L"A bad id never falls back to the root, even for clear or when a valid id follows");
+        ExpectDiscard(L"state=clear:id=bad!", "invalid-id");
+        ExpectDiscard(L"state=clear:id=bad!:id=build", "invalid-id");
+        ExpectDiscard(L"id=bad!:state=clear", "invalid-id");
+
+        Log::Comment(L"base64 that does not decode");
+        ExpectDiscard(L"state=idle:msg=abcde", "bad-base64");
+        ExpectDiscard(L"state=idle:msg=QQ=", "bad-base64");
+        ExpectDiscard(L"state=idle:msg=Q=Q=", "bad-base64");
+        ExpectDiscard(L"state=idle:title=QUJD===", "bad-base64");
+        ExpectDiscard(L"state=idle:msg=a-b_", "bad-base64");
+
+        Log::Comment(L"Decoded text: control characters and invalid UTF-8");
+        ExpectDiscard(L"state=idle:msg=" + ProgramStatusB64("line1\nline2"), "control-char");
+        ExpectDiscard(L"state=idle:msg=" + ProgramStatusB64("tab\there"), "control-char");
+        ExpectDiscard(L"state=idle:msg=" + ProgramStatusB64("del\x7f"), "control-char");
+        ExpectDiscard(L"state=idle:title=" + ProgramStatusB64("c1\xc2\x85"), "control-char");
+        ExpectDiscard(L"state=idle:msg=" + ProgramStatusB64("\xff"), "bad-utf8");
+        ExpectDiscard(L"state=idle:msg=" + ProgramStatusB64("\xc0\xaf"), "bad-utf8");
+        ExpectDiscard(L"state=idle:msg=" + ProgramStatusB64("\xed\xa0\x80"), "bad-utf8");
+        ExpectDiscard(L"state=idle:msg=" + ProgramStatusB64("\xe2\x82"), "bad-utf8");
+
+        Log::Comment(L"Length limits");
+        ExpectReport(L"state=idle:title=" + ProgramStatusB64(std::string(192, 'a')));
+        ExpectDiscard(L"state=idle:title=" + ProgramStatusB64(std::string(193, 'a')), "text-too-long");
+        ExpectReport(L"state=idle:msg=" + ProgramStatusB64(std::string(2048, 'a')));
+        ExpectDiscard(L"state=idle:msg=" + ProgramStatusB64(std::string(2049, 'a')), "text-too-long");
+        ExpectDiscard(L"state=idle:msg=" + std::wstring(2736, L'A'), "text-too-long");
+
+        Log::Comment(L"Whole-sequence limit (4096 bytes OSC..ST)");
+        std::wstring longest{ L"state=idle:zz=" };
+        longest.append(ProgramStatus::MaxPayloadChars - longest.size(), L'a');
+        ExpectReport(longest);
+        ExpectDiscard(longest + L"a", "sequence-too-long");
+
+        Log::Comment(L"A limit violation discards even when the state is valid and the pair is late");
+        ExpectDiscard(L"state=working:app=ok:msg=" + ProgramStatusB64("ok") + L":title=" + ProgramStatusB64("x\n"), "control-char");
+    }
+
+    TEST_METHOD(ProgramStatusParseText)
+    {
+        Log::Comment(L"Unpadded base64 is accepted");
+        auto r = ExpectReport(L"state=done:msg=QQ");
+        VERIFY_ARE_EQUAL(L"A", r.report.msg);
+
+        Log::Comment(L"Non-ASCII text, including astral-plane characters, round-trips");
+        r = ExpectReport(L"state=done:msg=" + ProgramStatusB64("caf\xc3\xa9 \xf0\x9f\x98\x80"));
+        VERIFY_ARE_EQUAL(std::wstring{ L"café \U0001F600" }, r.report.msg);
+
+        Log::Comment(L"Bidi controls are stripped from decoded text");
+        r = ExpectReport(L"state=done:title=" + ProgramStatusB64("a\xe2\x80\xae"
+                                                                 "b\xe2\x81\xa6"
+                                                                 "c\xe2\x80\x8f"));
+        VERIFY_ARE_EQUAL(L"abc", r.report.title);
+
+        Log::Comment(L"Empty msg/title decode to empty (absent)");
+        r = ExpectReport(L"state=done:msg=:title=");
+        VERIFY_ARE_EQUAL(L"", r.report.msg);
+        VERIFY_ARE_EQUAL(L"", r.report.title);
     }
 
 private:

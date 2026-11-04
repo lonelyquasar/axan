@@ -1443,6 +1443,13 @@ public:
     {
     }
 
+    // axan #29: OSC 7501
+    void DoProgramStatusAction(const std::wstring_view string) override
+    {
+        _programStatusPayloads.emplace_back(string);
+    }
+
+    std::vector<std::wstring> _programStatusPayloads;
     std::wstring _printString;
     size_t _cursorDistance;
     size_t _line;
@@ -3570,5 +3577,49 @@ class StateMachineExternalTest final
         VERIFY_ARE_EQUAL(pDispatch->_printString, L";34H");
 
         pDispatch->ClearState();
+    }
+
+    // axan #29: OSC 7501 reaches the dispatch with its payload intact, for both
+    // terminators, split anywhere, and is consumed (nothing printed).
+    TEST_METHOD(TestProgramStatusDispatch)
+    {
+        auto dispatch = std::make_unique<StatefulDispatch>();
+        auto pDispatch = dispatch.get();
+        auto engine = std::make_unique<OutputStateMachineEngine>(std::move(dispatch));
+        StateMachine mach(std::move(engine));
+
+        Log::Comment(L"Query, ST-terminated");
+        mach.ProcessString(L"]7501;?\\");
+        VERIFY_ARE_EQUAL(1u, pDispatch->_programStatusPayloads.size());
+        VERIFY_ARE_EQUAL(L"?", pDispatch->_programStatusPayloads.back());
+        VERIFY_ARE_EQUAL(L"", pDispatch->_printString);
+
+        pDispatch->ClearState();
+
+        Log::Comment(L"Query, BEL-terminated");
+        mach.ProcessString(L"]7501;?");
+        VERIFY_ARE_EQUAL(1u, pDispatch->_programStatusPayloads.size());
+        VERIFY_ARE_EQUAL(L"?", pDispatch->_programStatusPayloads.back());
+
+        pDispatch->ClearState();
+
+        Log::Comment(L"Report, split at every offset, followed by printable text");
+        const std::wstring report{ L"]7501;state=working:app=claude:progress=40\\" };
+        for (size_t split = 0; split <= report.size(); ++split)
+        {
+            pDispatch->ClearState();
+            mach.ProcessString(report.substr(0, split));
+            mach.ProcessString(report.substr(split));
+            mach.ProcessString(L"x");
+            VERIFY_ARE_EQUAL(1u, pDispatch->_programStatusPayloads.size());
+            VERIFY_ARE_EQUAL(L"state=working:app=claude:progress=40", pDispatch->_programStatusPayloads.back());
+            VERIFY_ARE_EQUAL(L"x", pDispatch->_printString);
+        }
+
+        pDispatch->ClearState();
+
+        Log::Comment(L"A neighbouring OSC number is not routed to 7501");
+        mach.ProcessString(L"]750;?]75011;?");
+        VERIFY_ARE_EQUAL(0u, pDispatch->_programStatusPayloads.size());
     }
 };
