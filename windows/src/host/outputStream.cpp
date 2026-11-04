@@ -459,3 +459,24 @@ void ConhostInternalGetSet::SearchMissingCommand(std::wstring_view /*missingComm
 {
     // Not implemented for conhost.
 }
+
+// axan #29: OSC 7501 Program Status is a terminal (axan) feature. conhost never answers
+// the query: in ConPTY mode the terminal on the other end does, and a classic console
+// window has nowhere to show the records. Handling the sequence here (rather than leaving
+// it unknown) is what keeps reports from being treated as an unrecognized OSC.
+bool ConhostInternalGetSet::ProgramStatusQuery()
+{
+    return false;
+}
+
+void ConhostInternalGetSet::ProgramStatusReport(const ProgramStatus::ParseResult& /*result*/)
+{
+}
+
+void ConhostInternalGetSet::ProgramStatusPromptStarted()
+{
+}
+
+void ConhostInternalGetSet::ProgramStatusReset()
+{
+}

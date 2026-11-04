@@ -163,6 +163,12 @@ public:
 
     void SearchMissingCommand(const std::wstring_view command) override;
 
+    // axan #29: OSC 7501 (defined in TerminalProgramStatus.cpp)
+    bool ProgramStatusQuery() override;
+    void ProgramStatusReport(const ::Microsoft::Console::VirtualTerminal::ProgramStatus::ParseResult& result) override;
+    void ProgramStatusPromptStarted() override;
+    void ProgramStatusReset() override;
+
 #pragma endregion
 
     void ClearMark();
@@ -254,6 +260,36 @@ public:
 
     const size_t GetTaskbarState() const noexcept;
     const size_t GetTaskbarProgress() const noexcept;
+
+    // axan #29: OSC 7501 Program Status record store (TerminalProgramStatus.cpp).
+    // One record per id ("" = root). A record is a full snapshot of its last report;
+    // `revision` is a terminal-wide counter stamped on every write, so a consumer can
+    // tell "this record changed since I last looked" (e.g. #30's seen-tracking for
+    // done/error) without the store itself knowing about "seen".
+    struct ProgramStatusRecord
+    {
+        std::wstring id;
+        ::Microsoft::Console::VirtualTerminal::ProgramStatus::State state{};
+        std::wstring app; // as reported; empty = absent
+        std::wstring effectiveApp; // app, else the nearest ancestor's (filled by snapshots)
+        ::Microsoft::Console::VirtualTerminal::ProgramStatus::Kind kind{};
+        std::optional<uint8_t> progress;
+        std::wstring title;
+        std::wstring msg;
+        uint64_t revision{};
+    };
+    // Snapshot sorted by id (root first). Caller must hold at least the read lock.
+    std::vector<ProgramStatusRecord> GetProgramStatusRecords() const;
+    // The single feature gate: when off, the query is not answered and reports are
+    // ignored. On by default; see TerminalProgramStatus.cpp.
+    void SetProgramStatusEnabled(const bool enabled) noexcept;
+    bool IsProgramStatusEnabled() const noexcept;
+    // Drop working/blocked records (process exit / connection closed). Caller holds the
+    // write lock. Fires the changed callback if anything was removed.
+    void ProgramStatusDropLive(std::string_view reason);
+    // Invoked under the write lock whenever the record set changes. The owner must not
+    // raise UI events from inside it; ControlCore just sets a flag and raises later.
+    void SetProgramStatusChangedCallback(std::function<void()> pfn) noexcept;
 
     // axan M11: public accessor for the alt-screen-buffer state, so the input-safety
     // guard can exclude full-screen TUI apps (vim/less/htop). Caller must hold the lock.
@@ -356,6 +392,15 @@ private:
     std::function<void(std::wstring_view, const til::CoordType)> _pfnSearchMissingCommand;
     std::function<void()> _pfnClearQuickFix;
     std::function<void(int32_t, int32_t)> _pfnWindowSizeChanged;
+    std::function<void()> _pfnProgramStatusChanged; // axan #29
+
+    // axan #29: OSC 7501 record store, keyed by id. std::map keeps ids ordered, so a
+    // subtree ("a" and everything under "a/") is one contiguous range.
+    std::map<std::wstring, ProgramStatusRecord, std::less<>> _programStatusRecords;
+    uint64_t _programStatusRevision{ 0 };
+    bool _programStatusEnabled{ true };
+    bool _programStatusDropLive(std::string_view reason);
+    void _programStatusNotify();
 
     RenderSettings _renderSettings;
     std::unique_ptr<::Microsoft::Console::VirtualTerminal::StateMachine> _stateMachine;

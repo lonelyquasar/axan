@@ -73,6 +73,11 @@ public:
 
     void SearchMissingCommand(std::wstring_view missingCommand) override;
 
+    bool ProgramStatusQuery() override;
+    void ProgramStatusReport(const ::Microsoft::Console::VirtualTerminal::ProgramStatus::ParseResult& result) override;
+    void ProgramStatusPromptStarted() override;
+    void ProgramStatusReset() override;
+
 private:
     Microsoft::Console::IIoProvider& _io;
 };

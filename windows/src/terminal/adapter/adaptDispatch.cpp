@@ -3023,6 +3023,9 @@ void AdaptDispatch::HardReset(bool erase)
     // Reset the Sixel parser.
     _sixelParser = nullptr;
 
+    // axan #29: RIS removes every OSC 7501 record (DECSTR/SoftReset does not).
+    _api.ProgramStatusReset();
+
     // Completely reset the TerminalOutput state.
     _termOutput = {};
     // Reset the code page to the default value.
@@ -3654,6 +3657,13 @@ void AdaptDispatch::DoITerm2Action(const std::wstring_view string)
 // - string: contains the parameters that define which action we do
 void AdaptDispatch::DoFinalTermAction(const std::wstring_view string)
 {
+    // axan #29: a new prompt (OSC 133;A) drops live OSC 7501 records. This is a protocol
+    // rule, so it runs ahead of (and independent of) the scrollbar-marks feature gate.
+    if (!string.empty() && string.front() == L'A' && (string.size() == 1 || string[1] == L';'))
+    {
+        _api.ProgramStatusPromptStarted();
+    }
+
     if constexpr (!Feature_ScrollbarMarks::IsEnabled())
     {
         return;
@@ -3824,6 +3834,30 @@ void AdaptDispatch::DoWTAction(const std::wstring_view string)
             _api.SearchMissingCommand(missingCmd);
         }
     }
+}
+
+// Method Description:
+// - axan #29: OSC 7501 Program Status Protocol.
+// - `OSC 7501 ; ? ST` is answered right here, synchronously, if the API says the
+//   feature is enabled. The reply goes into the same response queue as DA1, so for the
+//   query+`CSI c` pair Claude Code sends, our reply always precedes the DA1 reply. Never
+//   move this behind an async hop: the program treats "DA1 first" as "unsupported".
+// - Everything else is parsed and validated here (ProgramStatus.hpp) and handed to the
+//   API, which owns the record store. Discards go to the API too, so it can log why.
+// Arguments:
+// - string: the OSC payload after "7501;"
+void AdaptDispatch::DoProgramStatusAction(const std::wstring_view string)
+{
+    auto result = ProgramStatus::Parse(string);
+    if (result.outcome == ProgramStatus::Outcome::Query)
+    {
+        if (_api.ProgramStatusQuery())
+        {
+            _ReturnOscResponse(ProgramStatus::QueryReply);
+        }
+        return;
+    }
+    _api.ProgramStatusReport(result);
 }
 
 // Method Description:

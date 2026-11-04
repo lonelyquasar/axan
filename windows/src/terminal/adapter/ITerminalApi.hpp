@@ -19,6 +19,7 @@ Author(s):
 #include "../../buffer/out/LineRendition.hpp"
 #include "../../buffer/out/textBuffer.hpp"
 #include "../../renderer/inc/RenderSettings.hpp"
+#include "ProgramStatus.hpp"
 
 #include <deque>
 #include <memory>
@@ -91,5 +92,18 @@ namespace Microsoft::Console::VirtualTerminal
         virtual void InvokeCompletions(std::wstring_view menuJson, unsigned int replaceLength) = 0;
 
         virtual void SearchMissingCommand(const std::wstring_view command) = 0;
+
+        // axan #29: OSC 7501 Program Status Protocol. The adapter parses and validates
+        // (ProgramStatus.hpp); the implementation owns the record store and its lifetime
+        // rules. conhost implements all of these as no-ops and never answers the query.
+        // - ProgramStatusQuery: return true to have the adapter answer `OSC 7501;?`
+        //   (synchronously, so the reply precedes any DA1 reply that follows it).
+        // - ProgramStatusReport: a parsed report, or a discard with its reason (for logging).
+        // - ProgramStatusPromptStarted: OSC 133;A - drop live (working/blocked) records.
+        // - ProgramStatusReset: RIS - remove every record.
+        virtual bool ProgramStatusQuery() = 0;
+        virtual void ProgramStatusReport(const ProgramStatus::ParseResult& result) = 0;
+        virtual void ProgramStatusPromptStarted() = 0;
+        virtual void ProgramStatusReset() = 0;
     };
 }
