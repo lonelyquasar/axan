@@ -536,6 +536,30 @@
     <value>An idle session with no input or output for this long is drawn dimmed and smaller in the sidebar, so the sessions you're working with stand out. Sessions that need you, finished unseen, or errored are never de-emphasised. Set to 0 to turn this off.</value>
     <comment>axan #31: A description for the "de-emphasise idle sessions" setting. Presented near "Globals_SidebarIdleAfterMinutes.Header".</comment>
   </data>
+  <data name="Globals_SidebarStatusAfterSeen.Header" xml:space="preserve">
+    <value>After opening a finished session</value>
+    <comment>axan: Header for a combo box: what a sidebar row shows once the user has opened a session that finished or errored.</comment>
+  </data>
+  <data name="Globals_SidebarStatusAfterSeen.HelpText" xml:space="preserve">
+    <value>When a session that finished or errored has been opened, it no longer counts as needing you. "Keep last status" leaves its last message on the row, dimmed, with how long ago it arrived, until a new status replaces it or the program exits.</value>
+    <comment>axan: A description for the "after opening a finished session" setting. Presented near "Globals_SidebarStatusAfterSeen.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStatusAfterSeenKeep.Content" xml:space="preserve">
+    <value>Keep last status</value>
+    <comment>axan: An option for the "after opening a finished session" setting: the row keeps the last status message, dimmed.</comment>
+  </data>
+  <data name="Globals_SidebarStatusAfterSeenClear.Content" xml:space="preserve">
+    <value>Clear status after opening</value>
+    <comment>axan: An option for the "after opening a finished session" setting: the row goes back to plain once opened.</comment>
+  </data>
+  <data name="Globals_SidebarShowAgentPresence.Header" xml:space="preserve">
+    <value>Show an icon on sessions with an agent</value>
+    <comment>axan: Header for a toggle: show a small icon on sidebar rows where a status-reporting program (such as Claude Code) is running.</comment>
+  </data>
+  <data name="Globals_SidebarShowAgentPresence.HelpText" xml:space="preserve">
+    <value>Marks sidebar rows where a program that reports its status to the terminal (such as Claude Code) is running, even while it is idle. The working and running icons take its place while they apply.</value>
+    <comment>axan: A description for the "show an icon on sessions with an agent" setting. Presented near "Globals_SidebarShowAgentPresence.Header".</comment>
+  </data>
   <data name="Globals_ShowTitleInTitlebar.Header" xml:space="preserve">
     <value>Use active terminal title as application title</value>
     <comment>Header for a control to toggle whether the terminal's title is shown as the application title, or not.</comment>

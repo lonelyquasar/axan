@@ -1013,6 +1013,14 @@
   <data name="AxanMenuOpenProfileSettings" xml:space="preserve">
     <value>Open profile in Settings</value>
   </data>
+  <data name="AxanMenuKeepStatusAfterOpening" xml:space="preserve">
+    <value>Keep last status after opening</value>
+    <comment>axan: Sidebar context-menu toggle: once a finished session has been opened, keep its last status message on the row (dimmed) instead of clearing it.</comment>
+  </data>
+  <data name="AxanMenuShowAgentPresence" xml:space="preserve">
+    <value>Show agent icon</value>
+    <comment>axan: Sidebar context-menu toggle: show a small icon on rows where a status-reporting program (such as Claude Code) is running.</comment>
+  </data>
   <data name="AxanMenuShowNeedsYouGroup" xml:space="preserve">
     <value>Show "Needs you" group</value>
     <comment>axan #34: Sidebar context-menu toggle: list sessions that need attention (needs input, error, finished unseen) in a group above the session tree.</comment>

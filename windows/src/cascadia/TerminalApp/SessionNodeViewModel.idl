@@ -93,6 +93,10 @@ namespace TerminalApp
         Windows.UI.Xaml.Visibility StateGlyphVisibility { get; };
         String SubLabel { get; };
         Windows.UI.Xaml.Visibility SubLabelVisibility { get; };
+        // axan: 0.7 for a live state's second line, 0.45 for a kept (already seen) report
+        // under sidebar.statusAfterSeen = keep. StateGlyph also carries the agent-presence
+        // glyph (sidebar.showAgentPresence) when working / running don't own the slot.
+        Double SubLabelOpacity { get; };
         String StateToolTip { get; };
         Windows.UI.Xaml.Visibility StateToolTipVisibility { get; };
 

@@ -3304,6 +3304,7 @@ namespace winrt::TerminalApp::implementation
         {
             auto& pane = panes.emplace_back();
             pane.commandRunning = control.ShellCommandRunning();
+            pane.paneId = control.ContentId();
             const auto records = control.ProgramStatusRecords();
             const auto seenIt = vm->SeenRevisions.find(control.ContentId());
             const uint64_t seenRevision = seenIt == vm->SeenRevisions.end() ? 0 : seenIt->second;
@@ -3312,6 +3313,7 @@ namespace winrt::TerminalApp::implementation
             {
                 auto& in = pane.records.emplace_back();
                 in.isRoot = r.Id.empty();
+                in.id = texts.emplace_back(r.Id);
                 in.state = static_cast<Axan::SessionState::RecordState>(r.State);
                 in.kind = static_cast<Axan::SessionState::RecordKind>(r.Kind);
                 in.revision = r.Revision;
@@ -3321,9 +3323,19 @@ namespace winrt::TerminalApp::implementation
             }
         }
 
-        const auto result = Axan::SessionState::Derive(panes, tabImpl->AxanBellIndicator());
+        Axan::SessionState::Options options;
+        options.keepAfterSeen = _settings && _settings.GlobalSettings().SidebarStatusAfterSeen() == winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen::Keep;
+        const auto result = Axan::SessionState::Derive(panes, tabImpl->AxanBellIndicator(), options);
         const auto now = winrt::clock::now();
-        if (vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now))
+        SessionRestingState resting;
+        if (result.retained.present)
+        {
+            resting.retainedWhat = result.retained.state == Axan::SessionState::RecordState::Error ? L"error" : L"done";
+            resting.retainedMessage = winrt::hstring{ result.retained.message };
+        }
+        resting.reportKey = winrt::hstring{ result.reportKey };
+        resting.showPresence = result.agentPresent && _settings && _settings.GlobalSettings().SidebarShowAgentPresence();
+        if (vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now, resting))
         {
             _RecomputeSections(); // axan #33: a collapsed header's badge summarises hidden states
             Axan::Log::Info("SessionState",
@@ -3366,6 +3378,19 @@ namespace winrt::TerminalApp::implementation
             Axan::Log::Debug("SessionState", "node acknowledged", { { "label", winrt::to_string(vm->Label()) }, { "reason", reason } });
         }
         _RecomputeNodeState(node);
+    }
+
+    // axan: re-derive every node, e.g. after sidebar.statusAfterSeen / showAgentPresence
+    // changed (settings reload or the sidebar menu).
+    void TerminalPage::_RecomputeAllNodeStates()
+    {
+        if (!SessionTree())
+        {
+            return;
+        }
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            _RecomputeNodeState(node);
+        });
     }
 
     void TerminalPage::_AcknowledgeFocusedNode(const char* reason)
@@ -3835,5 +3860,66 @@ namespace winrt::TerminalApp::implementation
         });
         flyout.Items().Append(MenuFlyoutSeparator{});
         flyout.Items().Append(item);
+
+        // axan: the two session-status display settings ride along in the same menus.
+        // Persisted to settings.json like the group toggle; every row re-derives at once.
+        ToggleMenuFlyoutItem keepItem{};
+        keepItem.Text(RS_(L"AxanMenuKeepStatusAfterOpening"));
+        keepItem.IsChecked(_settings && _settings.GlobalSettings().SidebarStatusAfterSeen() == winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen::Keep);
+        keepItem.Click([weakThis{ get_weak() }](auto&& sender, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                if (const auto t = sender.template try_as<ToggleMenuFlyoutItem>())
+                {
+                    p->_SetSidebarStatusSetting("statusAfterSeen", [keep = t.IsChecked()](const auto& globals) {
+                        const auto want = keep ? winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen::Keep : winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen::Clear;
+                        if (globals.SidebarStatusAfterSeen() == want)
+                        {
+                            return false;
+                        }
+                        globals.SidebarStatusAfterSeen(want);
+                        return true;
+                    });
+                }
+            }
+        });
+        flyout.Items().Append(keepItem);
+
+        ToggleMenuFlyoutItem presenceItem{};
+        presenceItem.Text(RS_(L"AxanMenuShowAgentPresence"));
+        presenceItem.IsChecked(_settings && _settings.GlobalSettings().SidebarShowAgentPresence());
+        presenceItem.Click([weakThis{ get_weak() }](auto&& sender, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                if (const auto t = sender.template try_as<ToggleMenuFlyoutItem>())
+                {
+                    p->_SetSidebarStatusSetting("showAgentPresence", [show = t.IsChecked()](const auto& globals) {
+                        if (globals.SidebarShowAgentPresence() == show)
+                        {
+                            return false;
+                        }
+                        globals.SidebarShowAgentPresence(show);
+                        return true;
+                    });
+                }
+            }
+        });
+        flyout.Items().Append(presenceItem);
+    }
+
+    // axan: apply one sidebar status-display setting change from the menu, persist it, and
+    // re-derive every row.
+    void TerminalPage::_SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply)
+    {
+        if (!_settings || !apply(_settings.GlobalSettings()))
+        {
+            return;
+        }
+        if (!_settings.WriteSettingsToDisk())
+        {
+            Axan::Log::Error("TerminalPage", "sidebar status setting: WriteSettingsToDisk failed; applied live only", { { "setting", name } });
+        }
+        Axan::Log::Info("TerminalPage", "sidebar status setting changed", { { "setting", name } });
+        _RecomputeAllNodeStates();
     }
 }

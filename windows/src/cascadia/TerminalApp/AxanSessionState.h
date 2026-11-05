@@ -30,6 +30,16 @@
 // "Seen": done/error records are unread until the node is selected or its pane gains
 // focus. The caller acknowledges by remembering, per control, the highest record Revision
 // it has shown the user; a done/error record whose revision is <= that is `seen`.
+//
+// After seen (setting `sidebar.statusAfterSeen`): with `clear` a seen done/error record is
+// simply idle. With `keep` (the default) it is still idle for every attention rule (#31
+// de-emphasis, #33 badges, #34 Needs-you), but Result.retained carries it so the row keeps
+// showing the last report, muted, while the node rests (idle / running). It goes away when
+// the record is rewritten (a new report) or cleared, or the pane closes.
+//
+// Presence (`sidebar.showAgentPresence`): Result.agentPresent is true when any pane has any
+// OSC 7501 record, i.e. a status-reporting program (Claude Code) lives in the session. The
+// row shows a static "agent here" glyph for it unless working / running own the glyph slot.
 
 #include <cstdint>
 #include <span>
@@ -69,6 +79,7 @@ namespace Axan::SessionState
     struct RecordInput
     {
         bool isRoot{ false };
+        std::wstring_view id; // "" = root; only used for Result::reportKey
         RecordState state{ RecordState::Idle };
         RecordKind kind{ RecordKind::None };
         std::wstring_view msg;
@@ -81,6 +92,20 @@ namespace Axan::SessionState
     {
         std::vector<RecordInput> records;
         bool commandRunning{ false };
+        uint64_t paneId{ 0 }; // the control's ContentId; only used for Result::reportKey
+    };
+
+    struct Options
+    {
+        bool keepAfterSeen{ false }; // sidebar.statusAfterSeen == keep
+    };
+
+    // A seen done/error report kept on display (keep mode, node idle / running).
+    struct Retained
+    {
+        bool present{ false };
+        RecordState state{ RecordState::Done }; // Done or Error
+        std::wstring message; // msg, else title, else ""
     };
 
     struct Result
@@ -89,6 +114,13 @@ namespace Axan::SessionState
         std::wstring message; // 7501 msg (or title when msg is empty), "bell", or ""
         std::wstring kind; // "permission" / "question" / "auth" for needs-you, else ""
         std::string_view source{ "none" }; // "osc7501" / "osc133" / "bell" / "none"
+        bool agentPresent{ false }; // any pane has any OSC 7501 record
+        Retained retained; // keep mode only; set only while the node is idle / running
+        // Identity of the done/error report the row's age counts from: "<paneId>:<id>:<state>"
+        // for an unseen done/error that decided the state, or for the retained report; ""
+        // otherwise. Stable across msg rewrites of the same state (done, then done + msg),
+        // so the caller can keep "since" when it doesn't change, e.g. across acknowledgement.
+        std::wstring reportKey;
     };
 
     constexpr int Rank(State s) noexcept
@@ -150,16 +182,28 @@ namespace Axan::SessionState
         }
     }
 
-    inline Result Derive(std::span<const PaneInput> panes, bool bellIndicator)
+    inline std::wstring ReportKey(const PaneInput& pane, const RecordInput& r)
+    {
+        std::wstring key = std::to_wstring(pane.paneId);
+        key += L':';
+        key.append(r.id);
+        key += L':';
+        key += std::to_wstring(static_cast<int>(r.state));
+        return key;
+    }
+
+    inline Result Derive(std::span<const PaneInput> panes, bool bellIndicator, const Options& options = {})
     {
         Result best;
         const RecordInput* bestRecord = nullptr;
+        const PaneInput* bestPane = nullptr;
         bool haveBest = false;
 
         for (const auto& pane : panes)
         {
             if (!pane.records.empty())
             {
+                best.agentPresent = true;
                 for (const auto& r : pane.records)
                 {
                     const auto s = FromRecord(r);
@@ -176,6 +220,7 @@ namespace Axan::SessionState
                         best.state = s;
                         best.source = "osc7501";
                         bestRecord = &r;
+                        bestPane = &pane;
                     }
                 }
             }
@@ -188,6 +233,7 @@ namespace Axan::SessionState
                     best.state = s;
                     best.source = pane.commandRunning ? "osc133" : "none";
                     bestRecord = nullptr;
+                    bestPane = nullptr;
                 }
             }
         }
@@ -199,6 +245,10 @@ namespace Axan::SessionState
             {
                 best.kind.assign(KindName(bestRecord->kind));
             }
+            if (best.state == State::DoneUnseen || best.state == State::Error)
+            {
+                best.reportKey = ReportKey(*bestPane, *bestRecord);
+            }
         }
 
         if (best.state == State::Idle && bellIndicator)
@@ -207,6 +257,41 @@ namespace Axan::SessionState
             best.message = L"bell";
             best.kind.clear();
             best.source = "bell";
+        }
+
+        // keep: while the node rests, show the strongest seen done/error report (error over
+        // done, then root, then newest), same tie-breaks as the state pick.
+        if (options.keepAfterSeen && (best.state == State::Idle || best.state == State::Running))
+        {
+            const RecordInput* kept = nullptr;
+            const PaneInput* keptPane = nullptr;
+            for (const auto& pane : panes)
+            {
+                for (const auto& r : pane.records)
+                {
+                    if (!r.seen || (r.state != RecordState::Done && r.state != RecordState::Error))
+                    {
+                        continue;
+                    }
+                    const bool better = !kept ||
+                                        (r.state == RecordState::Error && kept->state != RecordState::Error) ||
+                                        (r.state == kept->state &&
+                                         ((r.isRoot && !kept->isRoot) ||
+                                          (r.isRoot == kept->isRoot && r.revision > kept->revision)));
+                    if (better)
+                    {
+                        kept = &r;
+                        keptPane = &pane;
+                    }
+                }
+            }
+            if (kept)
+            {
+                best.retained.present = true;
+                best.retained.state = kept->state;
+                best.retained.message.assign(!kept->msg.empty() ? kept->msg : kept->title);
+                best.reportKey = ReportKey(*keptPane, *kept);
+            }
         }
         return best;
     }

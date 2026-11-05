@@ -21,6 +21,10 @@ namespace Microsoft.Terminal.Settings.Editor
         IInspectable CurrentTabWidthMode;
         Windows.Foundation.Collections.IObservableVector<Microsoft.Terminal.Settings.Editor.EnumEntry> TabWidthModeList { get; };
 
+        // axan: sidebar.statusAfterSeen
+        IInspectable CurrentSidebarStatusAfterSeen;
+        Windows.Foundation.Collections.IObservableVector<Microsoft.Terminal.Settings.Editor.EnumEntry> SidebarStatusAfterSeenList { get; };
+
         Boolean InvertedDisableAnimations;
 
         void ShowTitlebarToggled(IInspectable sender, Windows.UI.Xaml.RoutedEventArgs args);
@@ -31,6 +35,7 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, UseAcrylicInTabRow);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarMatchesProfileTransparency);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Int32, SidebarIdleAfterMinutes); // axan #31
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarShowAgentPresence); // axan
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, ShowTitleInTitlebar);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AlwaysOnTop);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AutoHideWindow);

@@ -64,6 +64,24 @@
                             Value="{x:Bind ViewModel.SidebarIdleAfterMinutes, Mode=TwoWay}" />
         </local:SettingContainer>
 
+        <!--
+            axan: what a finished / errored session's row keeps once it has been seen. Keep
+            leaves the last report on the second line (muted, with its age); Clear drops it.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarStatusAfterSeen">
+            <ComboBox AutomationProperties.AccessibilityView="Content"
+                      ItemTemplate="{StaticResource EnumComboBoxTemplate}"
+                      ItemsSource="{x:Bind ViewModel.SidebarStatusAfterSeenList, Mode=OneWay}"
+                      SelectedItem="{x:Bind ViewModel.CurrentSidebarStatusAfterSeen, Mode=TwoWay}"
+                      Style="{StaticResource ComboBoxSettingStyle}" />
+        </local:SettingContainer>
+
+        <!--  axan: a static glyph on rows where an agent (an OSC 7501 program) lives  -->
+        <local:SettingContainer x:Uid="Globals_SidebarShowAgentPresence">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarShowAgentPresence, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        </local:SettingContainer>
+
         <!--  Position of new tab  -->
         <local:SettingContainer x:Uid="Globals_NewTabPosition">
             <ComboBox AutomationProperties.AccessibilityView="Content"

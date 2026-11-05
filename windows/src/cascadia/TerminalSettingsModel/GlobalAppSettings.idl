@@ -50,6 +50,13 @@ namespace Microsoft.Terminal.Settings.Model
         AfterCurrentTab,
     };
 
+    // axan: what a sidebar row shows once a finished / errored session has been seen.
+    enum SidebarStatusAfterSeen
+    {
+        Keep, // keep the last report on the second line, muted, with its age
+        Clear, // drop it; the row goes back to plain
+    };
+
     [default_interface] runtimeclass GlobalAppSettings {
         Guid DefaultProfile;
 
@@ -73,6 +80,12 @@ namespace Microsoft.Terminal.Settings.Model
         INHERITABLE_SETTING(Int32, SidebarIdleAfterMinutes);
         // axan #34: show the hoisted "Needs you" group above the session tree. Off by default.
         INHERITABLE_SETTING(Boolean, SidebarNeedsYouGroup);
+        // axan: after a done/error session is seen, keep its last report on the row (muted)
+        // or clear it. Default Keep. Either way it stops counting as needing attention.
+        INHERITABLE_SETTING(SidebarStatusAfterSeen, SidebarStatusAfterSeen);
+        // axan: a static "agent here" glyph on rows whose pane has a live OSC 7501 program
+        // (e.g. Claude Code at rest). Default true.
+        INHERITABLE_SETTING(Boolean, SidebarShowAgentPresence);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

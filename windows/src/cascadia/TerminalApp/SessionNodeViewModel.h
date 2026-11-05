@@ -25,6 +25,19 @@ namespace winrt::TerminalApp::implementation
     // Narrator name that's evaluated fresh on each query, so it can never go stale through
     // container recycling or the async label recompute. (The system XAML data-item peers use
     // the same string-representation probe, which also names the minimized icon list's rows.)
+    // axan: the resting details of a node's state (AxanSessionState.h Result), pushed with
+    // the state itself. retainedWhat is "done" / "error" when a seen report is kept on the
+    // row (sidebar.statusAfterSeen = keep), else "". reportKey identifies the done/error
+    // report the age counts from ("" = none). showPresence = an OSC 7501 program lives in
+    // the session AND sidebar.showAgentPresence is on.
+    struct SessionRestingState
+    {
+        hstring retainedWhat;
+        hstring retainedMessage;
+        hstring reportKey;
+        bool showPresence{ false };
+    };
+
     struct SessionNodeViewModel : SessionNodeViewModelT<SessionNodeViewModel, winrt::Windows::Foundation::IStringable>
     {
         SessionNodeViewModel() = default;
@@ -147,7 +160,7 @@ namespace winrt::TerminalApp::implementation
         hstring StateMessage() const noexcept { return _stateMessage; }
         hstring StateKind() const noexcept { return _stateKind; }
         winrt::Windows::Foundation::DateTime LastActivity() const noexcept { return _lastActivity; }
-        bool SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now);
+        bool SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting = {});
         void SetLastActivity(winrt::Windows::Foundation::DateTime value);
 
         // axan #32: row presentation of the state (see the idl).
@@ -158,12 +171,15 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Visibility StateGlyphVisibility() const noexcept;
         hstring SubLabel() const noexcept { return _subLabel; }
         winrt::Windows::UI::Xaml::Visibility SubLabelVisibility() const noexcept;
+        // axan: a kept (seen) report renders more muted than a live one.
+        double SubLabelOpacity() const noexcept { return ShowsRetained() ? 0.45 : 0.7; }
+        bool ShowsRetained() const noexcept { return !_isSeparator && !_retainedWhat.empty(); }
         hstring StateToolTip() const;
         winrt::Windows::UI::Xaml::Visibility StateToolTipVisibility() const noexcept;
         // Recompute the age part of SubLabel. Called by the sidebar's 1s clock; a no-op (no
         // PropertyChanged) unless the visible text changed, and only states that show an
         // age (needs-you / done-unseen / error) ever change it.
-        void RefreshAge(winrt::Windows::Foundation::DateTime now);
+        void RefreshAge(winrt::Windows::Foundation::DateTime now); // also a kept report's age
         bool ShowsAge() const noexcept;
         // "<1m", "4m", "2h", "3d" - the compact age the second line shows.
         static hstring FormatAge(winrt::Windows::Foundation::TimeSpan age);
@@ -237,6 +253,14 @@ namespace winrt::TerminalApp::implementation
         // axan #32
         hstring _subLabel;
         hstring _subLabelMessage;
+        // axan: statusAfterSeen = keep / agent presence (see SessionRestingState). _reportSince
+        // is when the report named by _reportKey first appeared; it survives acknowledgement,
+        // so a kept "done" shows how long ago it finished, not how long ago it was opened.
+        hstring _retainedWhat;
+        hstring _retainedMessage;
+        hstring _reportKey;
+        winrt::Windows::Foundation::DateTime _reportSince{};
+        bool _showPresence{ false };
         // axan #31
         bool _deEmphasised{ false };
         // axan #33

@@ -36,7 +36,7 @@ namespace winrt::TerminalApp::implementation
     }
 
     // axan #30: see the header. StateSince restarts only on a state/kind transition.
-    bool SessionNodeViewModel::SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now)
+    bool SessionNodeViewModel::SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting)
     {
         const bool transition = state != _state || kind != _stateKind;
         if (transition)
@@ -58,7 +58,22 @@ namespace winrt::TerminalApp::implementation
         {
             _setDeEmphasised(false);
         }
-        if (transition || message != _subLabelMessage)
+        // axan: the done/error report the age counts from. A new identity restarts it; the same
+        // one (e.g. done-unseen -> kept after being seen, or done -> done + msg) keeps it.
+        const bool reportChanged = resting.reportKey != _reportKey;
+        if (reportChanged)
+        {
+            _reportKey = resting.reportKey;
+            _reportSince = _reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
+        }
+        const bool restingChanged = reportChanged || resting.retainedWhat != _retainedWhat || resting.retainedMessage != _retainedMessage || resting.showPresence != _showPresence;
+        if (restingChanged)
+        {
+            _retainedWhat = resting.retainedWhat;
+            _retainedMessage = resting.retainedMessage;
+            _showPresence = resting.showPresence;
+        }
+        if (transition || message != _subLabelMessage || restingChanged)
         {
             _subLabelMessage = message;
             _subLabel = _computeSubLabel(now);
@@ -71,7 +86,7 @@ namespace winrt::TerminalApp::implementation
 
     void SessionNodeViewModel::_raiseStatePresentation()
     {
-        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"SubLabel", L"SubLabelVisibility", L"StateToolTip", L"StateToolTipVisibility" })
+        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"SubLabel", L"SubLabelVisibility", L"SubLabelOpacity", L"StateToolTip", L"StateToolTipVisibility" })
         {
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
         }
@@ -120,7 +135,10 @@ namespace winrt::TerminalApp::implementation
     }
 
     // Static Segoe Fluent / MDL2 glyphs, never animated: lightning bolt for an agent
-    // working (OSC 7501), play for a shell command running (OSC 133).
+    // working (OSC 7501), play for a shell command running (OSC 133), and otherwise, when an
+    // OSC 7501 program lives in the session and sidebar.showAgentPresence is on, the Robot
+    // glyph (U+E99A) for "an agent is here, at rest". Robot rather than a circle or another
+    // play-like shape: it can't be mistaken for running, and it says "agent", not "state".
     hstring SessionNodeViewModel::StateGlyph() const noexcept
     {
         if (_state == L"working")
@@ -131,12 +149,16 @@ namespace winrt::TerminalApp::implementation
         {
             return hstring{ L"\uE768" };
         }
+        if (_showPresence)
+        {
+            return hstring{ L"\uE99A" };
+        }
         return {};
     }
 
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateGlyphVisibility() const noexcept
     {
-        return !_isSeparator && (_state == L"working" || _state == L"running") ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+        return !_isSeparator && (_state == L"working" || _state == L"running" || _showPresence) ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
     }
 
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SubLabelVisibility() const noexcept
@@ -163,9 +185,33 @@ namespace winrt::TerminalApp::implementation
         return hstring{ std::to_wstring(secs / 86400) + L"d" };
     }
 
+    // "<what> · <age>", with the message capped so the age stays visible at normal sidebar
+    // widths (the TextBlock would otherwise ellipsize the age away); the full message is in
+    // the tooltip.
+    static hstring _withAge(std::wstring what, winrt::Windows::Foundation::DateTime now, winrt::Windows::Foundation::DateTime since)
+    {
+        constexpr size_t kMaxMessageChars = 24;
+        if (what.size() > kMaxMessageChars)
+        {
+            what.resize(kMaxMessageChars);
+            if (what.back() >= 0xD800 && what.back() <= 0xDBFF)
+            {
+                what.pop_back(); // don't split a surrogate pair
+            }
+            while (!what.empty() && what.back() == L' ')
+            {
+                what.pop_back();
+            }
+            what += L"\u2026";
+        }
+        const auto age = now > since ? now - since : winrt::Windows::Foundation::TimeSpan{ 0 };
+        return hstring{ what + L" \u00B7 " + std::wstring{ SessionNodeViewModel::FormatAge(age) } };
+    }
+
     // Second line: what the state is about, plus how long it has been that way for the
     // states the user is looking for. Working shows only its message (no age); running
-    // and idle show nothing, so their rows stay one line.
+    // and idle show nothing, so their rows stay one line, unless a seen report is kept
+    // (statusAfterSeen = keep): then it shows that report, muted, aged from when it arrived.
     hstring SessionNodeViewModel::_computeSubLabel(winrt::Windows::Foundation::DateTime now) const
     {
         if (_isSeparator)
@@ -179,6 +225,11 @@ namespace winrt::TerminalApp::implementation
         }
         if (!ShowsAge())
         {
+            if (ShowsRetained())
+            {
+                std::wstring kept{ _retainedMessage.empty() ? _retainedWhat : _retainedMessage };
+                return _withAge(std::move(kept), now, _reportSince != winrt::Windows::Foundation::DateTime{} ? _reportSince : _stateSince);
+            }
             return {};
         }
         if (what.empty())
@@ -196,24 +247,7 @@ namespace winrt::TerminalApp::implementation
                 what = L"error";
             }
         }
-        // Cap the message so the age stays visible at normal sidebar widths (the TextBlock
-        // would otherwise ellipsize the age away); the full message is in the tooltip.
-        constexpr size_t kMaxMessageChars = 24;
-        if (what.size() > kMaxMessageChars)
-        {
-            what.resize(kMaxMessageChars);
-            if (what.back() >= 0xD800 && what.back() <= 0xDBFF)
-            {
-                what.pop_back(); // don't split a surrogate pair
-            }
-            while (!what.empty() && what.back() == L' ')
-            {
-                what.pop_back();
-            }
-            what += L"\u2026";
-        }
-        const auto age = now > _stateSince ? now - _stateSince : winrt::Windows::Foundation::TimeSpan{ 0 };
-        return hstring{ what + L" \u00B7 " + std::wstring{ FormatAge(age) } };
+        return _withAge(std::move(what), now, _stateSince);
     }
 
     // ----- axan #31: idle de-emphasis ------------------------------------------------------
@@ -257,7 +291,7 @@ namespace winrt::TerminalApp::implementation
 
     void SessionNodeViewModel::RefreshAge(winrt::Windows::Foundation::DateTime now)
     {
-        if (!ShowsAge())
+        if (!ShowsAge() && !ShowsRetained())
         {
             return;
         }
@@ -274,38 +308,65 @@ namespace winrt::TerminalApp::implementation
     // Shown under the label in the row tooltip; Collapsed when idle.
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateToolTipVisibility() const noexcept
     {
-        return _isSeparator || _state == L"idle" ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+        return _isSeparator || (_state == L"idle" && !ShowsRetained()) ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
     }
 
+    static void _appendSince(std::wstring& tip, winrt::Windows::Foundation::DateTime since)
+    {
+        if (since == winrt::Windows::Foundation::DateTime{})
+        {
+            return;
+        }
+        const FILETIME utc = winrt::clock::to_FILETIME(since);
+        FILETIME local{};
+        SYSTEMTIME st{};
+        if (FileTimeToLocalFileTime(&utc, &local) && FileTimeToSystemTime(&local, &st))
+        {
+            wchar_t buf[32]{};
+            swprintf_s(buf, L" since %02u:%02u:%02u", st.wHour, st.wMinute, st.wSecond);
+            tip += buf;
+        }
+    }
+
+    // A kept report (statusAfterSeen = keep) adds "done (seen) since 14:32:05" and its full
+    // message, after the live state's lines when the node is running.
     hstring SessionNodeViewModel::StateToolTip() const
     {
-        if (_isSeparator || _state == L"idle")
+        if (_isSeparator)
         {
             return {};
         }
-        std::wstring tip{ _state };
-        if (!_stateKind.empty())
+        std::wstring tip;
+        if (_state != L"idle")
         {
-            tip += L" (";
-            tip += _stateKind;
-            tip += L")";
-        }
-        if (_stateSince != winrt::Windows::Foundation::DateTime{})
-        {
-            const FILETIME utc = winrt::clock::to_FILETIME(_stateSince);
-            FILETIME local{};
-            SYSTEMTIME st{};
-            if (FileTimeToLocalFileTime(&utc, &local) && FileTimeToSystemTime(&local, &st))
+            tip = _state;
+            if (!_stateKind.empty())
             {
-                wchar_t buf[32]{};
-                swprintf_s(buf, L" since %02u:%02u:%02u", st.wHour, st.wMinute, st.wSecond);
-                tip += buf;
+                tip += L" (";
+                tip += _stateKind;
+                tip += L")";
+            }
+            _appendSince(tip, _stateSince);
+            if (!_stateMessage.empty())
+            {
+                tip += L"\n";
+                tip += _stateMessage;
             }
         }
-        if (!_stateMessage.empty())
+        if (ShowsRetained())
         {
-            tip += L"\n";
-            tip += _stateMessage;
+            if (!tip.empty())
+            {
+                tip += L"\n";
+            }
+            tip += _retainedWhat;
+            tip += L" (seen)";
+            _appendSince(tip, _reportSince != winrt::Windows::Foundation::DateTime{} ? _reportSince : _stateSince);
+            if (!_retainedMessage.empty())
+            {
+                tip += L"\n";
+                tip += _retainedMessage;
+            }
         }
         return hstring{ tip };
     }
