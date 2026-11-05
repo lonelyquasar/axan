@@ -456,7 +456,7 @@ namespace winrt::TerminalApp::implementation
             transparent.Color(Windows::UI::Colors::Transparent());
             _tabRow.Background(transparent);
         }
-        _updateThemeColors();
+        _updateThemeColors("page created");
 
         // Initialize the state of the CloseButtonOverlayMode property of
         // our TabView, to match the tab.showCloseButton property in the theme.
@@ -2083,12 +2083,12 @@ namespace winrt::TerminalApp::implementation
 
         term.ConnectionStateChanged({ get_weak(), &TerminalPage::_ConnectionStateChangedHandler });
 
-        term.PropertyChanged([weakThis = get_weak()](auto& /*sender*/, auto& e) {
+        term.PropertyChanged([weakThis = get_weak()](auto& sender, auto& e) {
             if (auto page{ weakThis.get() })
             {
                 if (e.PropertyName() == L"BackgroundBrush")
                 {
-                    page->_updateThemeColors();
+                    page->_OnControlBackgroundBrushChanged(sender);
                 }
             }
         });
@@ -2699,7 +2699,7 @@ namespace winrt::TerminalApp::implementation
             // Possibly update the icon of the tab.
             _UpdateTabIcon(*tab);
 
-            _updateThemeColors();
+            _updateThemeColors("active pane changed");
 
             // Update the taskbar progress as well. We'll raise our own
             // SetTaskbarProgress event here, to get tell the hosting
@@ -4022,6 +4022,10 @@ namespace winrt::TerminalApp::implementation
         // up the previous ones we built.
         _terminalSettingsCache->Reset(_settings, *_bindings);
 
+        // axan #26: every control raises BackgroundBrush (several times) as it takes the new
+        // settings; the one _updateThemeColors below covers them all.
+        _suppressControlThemeRefresh = true;
+        auto resumeControlThemeRefresh = wil::scope_exit([this]() noexcept { _suppressControlThemeRefresh = false; });
         for (const auto& tab : _tabs)
         {
             if (auto tabImpl{ _GetTabImpl(tab) })
@@ -4041,6 +4045,7 @@ namespace winrt::TerminalApp::implementation
             auto tabImpl{ winrt::get_self<Tab>(tab) };
             tabImpl->SetActionMap(_settings.ActionMap());
         }
+        resumeControlThemeRefresh.reset();
 
         if (const auto focusedTab{ _GetFocusedTabImpl() })
         {
@@ -4078,7 +4083,7 @@ namespace winrt::TerminalApp::implementation
 
         ////////////////////////////////////////////////////////////////////////
         // Begin Theme handling
-        _updateThemeColors();
+        _updateThemeColors("settings reloaded");
 
         // axan #3: drop live separators the reloaded settings no longer contain.
         _ReconcileSeparatorsWithSettings();
@@ -5088,7 +5093,37 @@ namespace winrt::TerminalApp::implementation
         applicationState.DismissedMessages(std::move(messages));
     }
 
-    void TerminalPage::_updateThemeColors()
+    // axan #26: see the header. Coalesces control brush changes into one low-priority pass.
+    void TerminalPage::_OnControlBackgroundBrushChanged(const winrt::Windows::Foundation::IInspectable& sender)
+    {
+        if (_suppressControlThemeRefresh)
+        {
+            return;
+        }
+        // Only the focused tab's active control's brush is read by _updateThemeColors (the
+        // content backdrop / terminalBackground tint); a background tab's control repainting
+        // its own background changes nothing on the page. Focus changes refresh on their own.
+        const auto control = sender.try_as<winrt::Microsoft::Terminal::Control::TermControl>();
+        const auto focusedTab = _GetFocusedTabImpl();
+        if (!control || !focusedTab || focusedTab->GetActiveTerminalControl() != control)
+        {
+            return;
+        }
+        if (_themeRefreshPending)
+        {
+            return;
+        }
+        _themeRefreshPending = true;
+        Dispatcher().RunAsync(CoreDispatcherPriority::Low, [weak = get_weak()]() {
+            if (const auto page{ weak.get() })
+            {
+                page->_themeRefreshPending = false;
+                page->_updateThemeColors("focused control background changed");
+            }
+        });
+    }
+
+    void TerminalPage::_updateThemeColors(const char* reason)
     {
         if (_settings == nullptr)
         {
@@ -5307,7 +5342,8 @@ namespace winrt::TerminalApp::implementation
 
         Axan::Log::Debug("TerminalPage",
                          "_updateThemeColors: themed session sidebar and content backdrop",
-                         { { "requestedTheme", std::to_string(static_cast<int32_t>(requestedTheme)) },
+                         { { "reason", reason },
+                           { "requestedTheme", std::to_string(static_cast<int32_t>(requestedTheme)) },
                            { "matchProfile", matchProfile ? "true" : "false" },
                            { "sidebarBg", sidebarSource },
                            { "contentBg", contentSource } });
@@ -5477,7 +5513,7 @@ namespace winrt::TerminalApp::implementation
         // Stash if we're activated. Use that when we reload
         // the settings, change active panes, etc.
         _activated = activated;
-        _updateThemeColors();
+        _updateThemeColors(activated ? "window activated" : "window deactivated");
 
         // axan #3: a deactivated window never sees the Ctrl/Alt key-ups, so re-lock the
         // separator rows here rather than leave them unlocked until the next modifier event.

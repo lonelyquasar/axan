@@ -773,7 +773,16 @@ namespace winrt::TerminalApp::implementation
         static bool _IsMessageDismissed(const winrt::Microsoft::Terminal::Settings::Model::InfoBarMessage& message);
         static void _DismissMessage(const winrt::Microsoft::Terminal::Settings::Model::InfoBarMessage& message);
 
-        void _updateThemeColors();
+        // axan #26: `reason` names the caller in the debug log line so refresh storms are traceable.
+        void _updateThemeColors(const char* reason = "unspecified");
+        // axan #26: a TermControl's BackgroundBrush changed. Only the focused tab's active
+        // control feeds the page backdrop, and every refresh is coalesced into one
+        // low-priority dispatcher pass (each control raises the brush ~4x per settings reload).
+        void _OnControlBackgroundBrushChanged(const winrt::Windows::Foundation::IInspectable& sender);
+        bool _themeRefreshPending{ false };
+        // axan #26: true while UpdateSettings pushes new settings into every tab; it runs one
+        // _updateThemeColors of its own afterwards, so per-control brush raises are dropped.
+        bool _suppressControlThemeRefresh{ false };
         void _updateAllTabCloseButtons();
         void _updatePaneResources(const winrt::Windows::UI::Xaml::ElementTheme& requestedTheme);
 

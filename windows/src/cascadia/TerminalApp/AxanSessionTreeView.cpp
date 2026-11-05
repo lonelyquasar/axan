@@ -961,17 +961,24 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         const bool isDark = _SidebarIsDarkTheme(themeOverride);
-        Axan::Log::Debug("TerminalPage", "refresh node theme brushes", { { "isDark", isDark ? "1" : "0" }, { "themeOverride", std::to_string(static_cast<int32_t>(themeOverride)) } });
         const auto col = isDark ? kDefaultLabelColorDark : kDefaultLabelColorLight;
         const WUX::Media::SolidColorBrush brush{ col };
         // Pass isDark so a node's stored color NAME re-resolves to the right palette set; this
         // path runs on every theme switch (_updateThemeColors), so colors retrack the theme.
-        _forEachSessionNode(SessionTree().RootNodes(), [&brush, isDark](const MUX::Controls::TreeViewNode& node) {
+        // axan #26: nodes whose color and palette set are unchanged skip the repaint.
+        size_t nodes = 0;
+        size_t repainted = 0;
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             if (const auto vm = _nodeVM(node))
             {
-                vm->SetDefaultTextBrush(brush, isDark);
+                ++nodes;
+                if (vm->SetDefaultTextBrush(brush, isDark))
+                {
+                    ++repainted;
+                }
             }
         });
+        Axan::Log::Debug("TerminalPage", "refresh node theme brushes", { { "isDark", isDark ? "1" : "0" }, { "themeOverride", std::to_string(static_cast<int32_t>(themeOverride)) }, { "nodes", std::to_string(nodes) }, { "repainted", std::to_string(repainted) } });
     }
 
     // axan M2/M6: keep the sidebar tree in sync with the session list (_tabs). Since drag

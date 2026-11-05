@@ -194,14 +194,29 @@ namespace winrt::TerminalApp::implementation
 
     // axan M13: the page pushes the theme-correct default text brush (from the sidebar's
     // ActualTheme); re-raise LabelBrush so any node not text-recolored repaints to it.
-    void SessionNodeViewModel::SetDefaultTextBrush(const winrt::Windows::UI::Xaml::Media::Brush& brush, bool isDarkTheme)
+    bool SessionNodeViewModel::SetDefaultTextBrush(const winrt::Windows::UI::Xaml::Media::Brush& brush, bool isDarkTheme)
     {
+        // axan #26: the page pushes this on every _updateThemeColors pass; when neither the
+        // default text color nor the palette set changed there is nothing to repaint, and
+        // re-raising LabelBrush+Icon on every node rebuilds every row's icon element. (The
+        // palette is a compile-time table, so color + isDark fully determine the output.) A
+        // new node has no brush yet, so it always takes the first push.
+        if (isDarkTheme == _isDarkTheme && _defaultTextBrush && brush)
+        {
+            const auto oldSolid = _defaultTextBrush.try_as<winrt::Windows::UI::Xaml::Media::SolidColorBrush>();
+            const auto newSolid = brush.try_as<winrt::Windows::UI::Xaml::Media::SolidColorBrush>();
+            if (oldSolid && newSolid && oldSolid.Color() == newSolid.Color())
+            {
+                return false;
+            }
+        }
         _defaultTextBrush = brush;
         _isDarkTheme = isDarkTheme;
         // A theme switch flips which palette set a stored color NAME resolves against, so both
         // the label brush and the glyph tint can change — raise Icon too, not just LabelBrush.
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" });
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"Icon" });
+        return true;
     }
 
     // axan #422: see the header. "" -> ""; "#hex" -> verbatim; a palette name -> the active set's

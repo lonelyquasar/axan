@@ -69,8 +69,9 @@ namespace winrt::TerminalApp::implementation
         // sidebar's ActualTheme — white on dark, near-black on light) AND whether that theme is
         // dark. Re-raises LabelBrush and Icon: a per-node color is stored as a palette NAME, so a
         // theme switch re-resolves it to the other set's hex and both the glyph tint and the label
-        // must repaint. Used for every node; refreshed on a theme switch.
-        void SetDefaultTextBrush(const winrt::Windows::UI::Xaml::Media::Brush& brush, bool isDarkTheme);
+        // must repaint. Used for every node; refreshed on a theme switch. axan #26: no-op when
+        // neither the color nor isDarkTheme changed; returns whether anything was raised.
+        bool SetDefaultTextBrush(const winrt::Windows::UI::Xaml::Media::Brush& brush, bool isDarkTheme);
         // axan #422: resolve a stored color token to a concrete "#RRGGBB" for the given theme:
         // "" -> "" (no recolor); "#hex" -> verbatim (theme-static escape hatch); a palette name
         // ("red".."purple", case-insensitive) -> that hue's hex in the active-theme set; an

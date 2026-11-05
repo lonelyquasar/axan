@@ -1013,7 +1013,7 @@ namespace winrt::TerminalApp::implementation
             // Raise an event that our title changed
             TitleChanged.raise(*this, nullptr);
 
-            _updateThemeColors();
+            _updateThemeColors("tab selected");
 
             auto tabImpl = _GetTabImpl(tab);
             if (tabImpl)
