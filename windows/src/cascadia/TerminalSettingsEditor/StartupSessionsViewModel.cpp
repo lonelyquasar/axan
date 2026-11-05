@@ -64,17 +64,58 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _NotifyChanges(L"Entries");
     }
 
-    // One row from a model entry. axan #3: the separator fields ride along (Kind decides
-    // which editor the row template shows); on a session row they stay at their defaults.
+    // axan #19: the ONLY place a LaunchEntryViewModel is constructed, and (with
+    // _modelFromRow below) one of the two places that own the entry field list, one per
+    // direction. Every row (settings rebuild, add, add-separator, duplicate, import, live
+    // capture) is built from a Model::LaunchEntry through here, so a new field threaded
+    // through these two functions can't be silently dropped by one construction site.
+    // axan #3: the separator fields ride along (Kind decides which editor the row template
+    // shows); on a session row they stay at their defaults.
     Editor::LaunchEntryViewModel StartupSessionsViewModel::_rowFromModel(const Model::LaunchEntry& e)
     {
-        auto vm = winrt::make<LaunchEntryViewModel>(e.Id(), e.ParentId(), e.Name(), e.Directory(), e.Command(), e.Icon(), e.Color(), e.ColorTarget());
+        auto vm = winrt::make<LaunchEntryViewModel>(e.Id());
+        vm.ParentId(e.ParentId());
         vm.Profile(e.Profile());
+        vm.Name(e.Name());
+        vm.Directory(e.Directory());
+        vm.Command(e.Command());
+        vm.Icon(e.Icon());
+        vm.Color(e.Color());
+        vm.ColorTarget(e.ColorTarget());
         vm.Kind(e.Kind());
         vm.SeparatorStyle(e.SeparatorStyle());
         vm.Height(e.Height());
         vm.Placement(e.Placement());
         return vm;
+    }
+
+    // axan #19: the reverse direction, one model entry from a row. Used by _commit and by
+    // DuplicateEntry's round trip.
+    Model::LaunchEntry StartupSessionsViewModel::_modelFromRow(const Editor::LaunchEntryViewModel& vm)
+    {
+        Model::LaunchEntry e{};
+        e.Id(vm.Id());
+        e.ParentId(vm.ParentId());
+        e.Profile(vm.Profile());
+        e.Name(vm.Name());
+        e.Directory(vm.Directory());
+        e.Command(vm.Command());
+        e.Icon(vm.Icon());
+        e.Color(vm.Color());
+        e.ColorTarget(vm.ColorTarget());
+        // axan #3: separator fields. LaunchEntry::ToJson writes them sparsely and only on a
+        // separator, so a session row's on-disk shape is unchanged.
+        e.Kind(vm.Kind());
+        e.SeparatorStyle(vm.SeparatorStyle());
+        e.Height(vm.Height());
+        e.Placement(vm.Placement());
+        return e;
+    }
+
+    // axan #19: a fresh row id for add / duplicate / an imported entry without one.
+    static hstring _newEntryId()
+    {
+        return hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
     }
 
     // Re-commit the global tree whenever a row's field changes (profile/name/dir/cmd/icon/color,
@@ -95,8 +136,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
     // depth(row) = depth(parent) + 1, parent looked up by Id; a single forward pass suffices
     // because a parent always precedes its children (forward-reference rule).
+    // axan #19: Depth is derived (never persisted), but each change raises Depth and
+    // IndentMargin, and the _hookEntry handler would re-run the O(N) _commit for each:
+    // O(N^2) for a rebuild/import/capture of a nested tree. Suspend commits for the pass;
+    // every caller that changed persisted state commits once afterwards.
     void StartupSessionsViewModel::_recomputeDepths()
     {
+        const auto wasSuspended = std::exchange(_suspendCommit, true);
+        const auto restore = wil::scope_exit([&]() noexcept { _suspendCommit = wasSuspended; });
         std::unordered_map<winrt::hstring, int32_t> depthById;
         for (const auto& vm : _Entries)
         {
@@ -123,33 +170,18 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         entries.reserve(_Entries.Size());
         for (const auto& vm : _Entries)
         {
-            Model::LaunchEntry e{};
-            e.Id(vm.Id());
-            e.ParentId(vm.ParentId());
-            e.Profile(vm.Profile());
-            e.Name(vm.Name());
-            e.Directory(vm.Directory());
-            e.Command(vm.Command());
-            e.Icon(vm.Icon());
-            e.Color(vm.Color());
-            e.ColorTarget(vm.ColorTarget());
-            // axan #3: separator fields. LaunchEntry::ToJson writes them sparsely and only
-            // on a separator, so a session row's on-disk shape is unchanged.
-            e.Kind(vm.Kind());
-            e.SeparatorStyle(vm.SeparatorStyle());
-            e.Height(vm.Height());
-            e.Placement(vm.Placement());
-            entries.push_back(e);
+            entries.push_back(_modelFromRow(vm));
         }
         _settings.GlobalSettings().StartupSessions(winrt::single_threaded_vector(std::move(entries)));
     }
 
     void StartupSessionsViewModel::AddEntry()
     {
-        const auto id = hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
-        auto vm = winrt::make<LaunchEntryViewModel>(id, hstring{}, hstring{}, hstring{}, hstring{}, hstring{}, hstring{}, hstring{});
+        Model::LaunchEntry e{};
+        e.Id(_newEntryId());
         // Default a new row to the default profile so it shows a real shell immediately.
-        vm.Profile(DefaultProfileGuid());
+        e.Profile(DefaultProfileGuid());
+        const auto vm = _rowFromModel(e);
         _Entries.Append(vm);
         _hookEntry(vm);
         _recomputeDepths();
@@ -162,12 +194,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     void StartupSessionsViewModel::AddSeparator()
     {
         namespace Wire = Axan::LaunchEntryWire;
-        const auto id = hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
-        auto vm = winrt::make<LaunchEntryViewModel>(id, hstring{}, hstring{}, hstring{}, hstring{}, hstring{}, hstring{}, hstring{});
-        vm.Kind(hstring{ Wire::KindSeparatorW });
-        vm.SeparatorStyle(hstring{ Wire::StyleLineW });
-        vm.Height(Wire::kSeparatorHeightDefault);
-        vm.Placement(hstring{ Wire::PlacementInlineW });
+        const auto id = _newEntryId();
+        Model::LaunchEntry e{};
+        e.Id(id);
+        e.Kind(hstring{ Wire::KindSeparatorW });
+        e.SeparatorStyle(hstring{ Wire::StyleLineW });
+        e.Height(Wire::kSeparatorHeightDefault);
+        e.Placement(hstring{ Wire::PlacementInlineW });
+        const auto vm = _rowFromModel(e);
         _Entries.Append(vm);
         _hookEntry(vm);
         _recomputeDepths();
@@ -210,14 +244,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
         // A fresh id (so links stay unambiguous); same profile + recipe, same parent → a sibling
         // right after the original. The common "second claude in the same dir" move.
-        const auto id = hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
-        auto copy = winrt::make<LaunchEntryViewModel>(id, vm.ParentId(), vm.Name(), vm.Directory(), vm.Command(), vm.Icon(), vm.Color(), vm.ColorTarget());
-        copy.Profile(vm.Profile());
-        // axan #3: a duplicated separator keeps its kind/style/height/placement.
-        copy.Kind(vm.Kind());
-        copy.SeparatorStyle(vm.SeparatorStyle());
-        copy.Height(vm.Height());
-        copy.Placement(vm.Placement());
+        // axan #19: a round trip through the model, so every field (incl. a separator's
+        // kind/style/height/placement) is copied by the two functions that own the field list.
+        auto model = _modelFromRow(vm);
+        model.Id(_newEntryId());
+        const auto copy = _rowFromModel(model);
         _Entries.InsertAt(index + 1, copy);
         _hookEntry(copy);
         _recomputeDepths();
@@ -540,9 +571,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             }
             const auto e = Wire::FromTomlTable(*t);
 
-            const auto idHstr = e.id.empty() ?
-                                    hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) } :
-                                    winrt::to_hstring(e.id);
+            const auto idHstr = e.id.empty() ? _newEntryId() : winrt::to_hstring(e.id);
 
             // axan #3: an unrecognized row kind (hand edit, or a newer build's kind) would be
             // imported as a default-profile shell and lose its kind on save — skip it loudly.
@@ -556,11 +585,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             // fields (FromTomlTable already normalized the height).
             if (e.IsSeparator())
             {
-                auto sep = winrt::make<LaunchEntryViewModel>(idHstr, winrt::to_hstring(e.parentId), hstring{}, hstring{}, hstring{}, hstring{}, hstring{}, hstring{});
-                sep.Kind(hstring{ Wire::KindSeparatorW });
-                sep.SeparatorStyle(winrt::to_hstring(e.style));
-                sep.Height(e.height);
-                sep.Placement(winrt::to_hstring(e.placement));
+                Model::LaunchEntry m{};
+                m.Id(idHstr);
+                m.ParentId(winrt::to_hstring(e.parentId));
+                m.Kind(hstring{ Wire::KindSeparatorW });
+                m.SeparatorStyle(winrt::to_hstring(e.style));
+                m.Height(e.height);
+                m.Placement(winrt::to_hstring(e.placement));
+                const auto sep = _rowFromModel(m);
                 rows.Append(sep);
                 _hookEntry(sep);
                 ++separators;
@@ -576,16 +608,17 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 Axan::Log::Warn("StartupSessionsViewModel", "import: unknown builtin: icon; using the default placeholder", { { "icon", e.icon }, { "entry", e.id } });
             }
 
-            auto vm = winrt::make<LaunchEntryViewModel>(
-                idHstr,
-                winrt::to_hstring(e.parentId),
-                winrt::to_hstring(e.name),
-                winrt::to_hstring(e.directory),
-                winrt::to_hstring(e.command),
-                hstring{ nativeIcon },
-                winrt::to_hstring(e.color),
-                winrt::to_hstring(e.colorTarget));
-            vm.Profile(_resolveImportedProfile(e.profile, e.profileName));
+            Model::LaunchEntry m{};
+            m.Id(idHstr);
+            m.ParentId(winrt::to_hstring(e.parentId));
+            m.Profile(_resolveImportedProfile(e.profile, e.profileName));
+            m.Name(winrt::to_hstring(e.name));
+            m.Directory(winrt::to_hstring(e.directory));
+            m.Command(winrt::to_hstring(e.command));
+            m.Icon(hstring{ nativeIcon });
+            m.Color(winrt::to_hstring(e.color));
+            m.ColorTarget(winrt::to_hstring(e.colorTarget));
+            const auto vm = _rowFromModel(m);
             rows.Append(vm);
             _hookEntry(vm);
         }

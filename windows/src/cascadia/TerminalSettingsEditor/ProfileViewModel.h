@@ -51,7 +51,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     struct LaunchEntryViewModel : LaunchEntryViewModelT<LaunchEntryViewModel>, ViewModelHelper<LaunchEntryViewModel>
     {
     public:
-        LaunchEntryViewModel(hstring id, hstring parentId, hstring name, hstring directory, hstring command, hstring icon, hstring color, hstring colorTarget);
+        // axan #19: Id only (it's get-only); every other field is set by
+        // StartupSessionsViewModel::_rowFromModel, the sole construction site.
+        explicit LaunchEntryViewModel(hstring id);
 
         hstring Id() const { return _Id; }
 

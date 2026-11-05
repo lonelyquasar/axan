@@ -45,7 +45,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void _rebuildFromSettings();
         // axan #3: one row from a model entry, carrying every field incl. the separator
         // ones — shared by the settings rebuild and the live capture (#14).
+        // axan #19: the ONLY LaunchEntryViewModel construction site; _modelFromRow is its
+        // inverse (used by _commit and DuplicateEntry). Together they own the field list.
         static Editor::LaunchEntryViewModel _rowFromModel(const Model::LaunchEntry& e);
+        static Model::LaunchEntry _modelFromRow(const Editor::LaunchEntryViewModel& vm);
         void _hookEntry(const Editor::LaunchEntryViewModel& vm);
         void _recomputeDepths();
         void _commit();
