@@ -1795,6 +1795,7 @@ namespace winrt::TerminalApp::implementation
         }
         MenuFlyout flyout{};
         _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
+        _AppendNeedsYouGroupToggle(flyout); // axan #34
         _sessionNodeMenu = flyout;
         flyout.Closed([weak = get_weak()](auto&&, auto&&) {
             if (auto p{ weak.get() })
@@ -3262,6 +3263,7 @@ namespace winrt::TerminalApp::implementation
             break;
         }
         Axan::Log::Info("TerminalPage", "applied sidebar state", { { "state", state == SidebarState::Minimized ? "minimized" : state == SidebarState::Collapsed ? "collapsed" : "expanded" } });
+        _RefreshNeedsYouGroup(); // axan #34: only shown in the expanded state
     }
 
     // ----- axan #30: session state ---------------------------------------------------------
@@ -3515,7 +3517,7 @@ namespace winrt::TerminalApp::implementation
                         if (headerVm->IsCollapsed())
                         {
                             ++collapsedHeaders;
-                            headerVm->SetSectionSummary(winrt::hstring{ L" · " + std::to_wstring(count) }, winrt::hstring{ _stateBadge(strongest, strongestCount) });
+                            headerVm->SetSectionSummary(winrt::hstring{ L" \u00B7 " + std::to_wstring(count) }, winrt::hstring{ _stateBadge(strongest, strongestCount) });
                         }
                         else
                         {
@@ -3581,6 +3583,7 @@ namespace winrt::TerminalApp::implementation
             };
         walk(SessionTree().RootNodes(), false);
         _ApplySeparatorContainerStates();
+        _RefreshNeedsYouGroup(); // axan #34: same trigger set (mutations, state transitions, focus)
         if (collapsedHeaders > 0)
         {
             Axan::Log::Debug("TerminalPage", "recomputed sections", { { "collapsedHeaders", std::to_string(collapsedHeaders) }, { "hiddenRows", std::to_string(hiddenRows) } });
@@ -3706,7 +3709,7 @@ namespace winrt::TerminalApp::implementation
         toggle.Text(vm->IsCollapsed() ? RS_(L"AxanMenuExpandSection") : RS_(L"AxanMenuCollapseSection"));
         FontIcon fi{};
         fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-        fi.Glyph(vm->IsCollapsed() ? winrt::hstring{ L"" } : winrt::hstring{ L"" });
+        fi.Glyph(vm->IsCollapsed() ? winrt::hstring{ L"\uE70D" } : winrt::hstring{ L"\uE76C" });
         toggle.Icon(fi);
         toggle.Click([header, weakThis{ get_weak() }](auto&&, auto&&) {
             if (const auto p{ weakThis.get() })
@@ -3720,6 +3723,7 @@ namespace winrt::TerminalApp::implementation
         flyout.Items().Append(toggle);
         flyout.Items().Append(MenuFlyoutSeparator{});
         _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
+        _AppendNeedsYouGroupToggle(flyout); // axan #34
         _sessionNodeMenu = flyout;
         flyout.Closed([weak = get_weak()](auto&&, auto&&) {
             if (auto p{ weak.get() })
@@ -3728,5 +3732,108 @@ namespace winrt::TerminalApp::implementation
             }
         });
         flyout.ShowAt(SessionTree(), position);
+    }
+
+    // ----- axan #34: hoisted "Needs you" group ---------------------------------------------
+
+    // Rebuild the small projection above the tree: every session node whose #30 state is
+    // needs-you / error / done-unseen, longest-waiting first (StateSince ascending). The
+    // list holds the SAME SessionNodeViewModel objects the tree shows (nothing duplicated in
+    // the model); it is rebuilt only when its membership or order changes. Hidden entirely
+    // when the setting is off, when it would be empty, or when the sidebar isn't expanded.
+    void TerminalPage::_RefreshNeedsYouGroup()
+    {
+        if (!SessionTree())
+        {
+            return;
+        }
+        if (!_needsYouItems)
+        {
+            _needsYouItems = winrt::single_threaded_observable_vector<winrt::TerminalApp::SessionNodeViewModel>();
+            NeedsYouList().ItemsSource(_needsYouItems);
+        }
+        const bool enabled = _settings && _settings.GlobalSettings().SidebarNeedsYouGroup();
+        std::vector<std::pair<winrt::Windows::Foundation::DateTime, winrt::TerminalApp::SessionNodeViewModel>> wanted;
+        if (enabled)
+        {
+            _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+                const auto vm = _nodeVM(node);
+                if (!vm || vm->IsSeparator())
+                {
+                    return;
+                }
+                const auto state = vm->State();
+                if (state == L"needs-you" || state == L"error" || state == L"done-unseen")
+                {
+                    wanted.emplace_back(vm->StateSince(), node.Content().as<winrt::TerminalApp::SessionNodeViewModel>());
+                }
+            });
+            std::stable_sort(wanted.begin(), wanted.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        }
+
+        bool same = wanted.size() == _needsYouItems.Size();
+        for (uint32_t i = 0; same && i < wanted.size(); ++i)
+        {
+            same = _needsYouItems.GetAt(i) == wanted[i].second;
+        }
+        if (!same)
+        {
+            std::vector<winrt::TerminalApp::SessionNodeViewModel> items;
+            items.reserve(wanted.size());
+            for (const auto& w : wanted)
+            {
+                items.push_back(w.second);
+            }
+            _needsYouItems.ReplaceAll(items);
+            Axan::Log::Debug("TerminalPage", "needs-you group refreshed", { { "rows", std::to_string(items.size()) } });
+        }
+        const bool show = enabled && !wanted.empty() && SessionTree().Visibility() == Visibility::Visible;
+        const auto vis = show ? Visibility::Visible : Visibility::Collapsed;
+        if (NeedsYouGroup().Visibility() != vis)
+        {
+            NeedsYouGroup().Visibility(vis);
+        }
+    }
+
+    void TerminalPage::_OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& /*sender*/,
+                                            const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args)
+    {
+        _SelectTabForNodeVM(args.ClickedItem().try_as<winrt::TerminalApp::SessionNodeViewModel>());
+    }
+
+    // The toggle (sidebar background / separator right-click menu). Persisted as the global
+    // `sidebar.needsYouGroup` setting.
+    void TerminalPage::_SetNeedsYouGroupEnabled(bool enabled)
+    {
+        if (!_settings || _settings.GlobalSettings().SidebarNeedsYouGroup() == enabled)
+        {
+            return;
+        }
+        _settings.GlobalSettings().SidebarNeedsYouGroup(enabled);
+        if (!_settings.WriteSettingsToDisk())
+        {
+            Axan::Log::Error("TerminalPage", "needs-you group toggle: WriteSettingsToDisk failed; applied live only");
+        }
+        Axan::Log::Info("TerminalPage", enabled ? "needs-you group enabled" : "needs-you group disabled");
+        _RefreshNeedsYouGroup();
+    }
+
+    // Shared by the background and section-header menus.
+    void TerminalPage::_AppendNeedsYouGroupToggle(const MenuFlyout& flyout)
+    {
+        ToggleMenuFlyoutItem item{};
+        item.Text(RS_(L"AxanMenuShowNeedsYouGroup"));
+        item.IsChecked(_settings && _settings.GlobalSettings().SidebarNeedsYouGroup());
+        item.Click([weakThis{ get_weak() }](auto&& sender, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                if (const auto t = sender.template try_as<ToggleMenuFlyoutItem>())
+                {
+                    p->_SetNeedsYouGroupEnabled(t.IsChecked());
+                }
+            }
+        });
+        flyout.Items().Append(MenuFlyoutSeparator{});
+        flyout.Items().Append(item);
     }
 }

@@ -44,6 +44,7 @@ Author(s):
     X(bool, UseAcrylicInTabRow, "useAcrylicInTabRow", false)                                                                                                                                          \
     X(bool, SidebarMatchesProfileTransparency, "sidebarMatchesProfileTransparency", false)                                                                                                            \
     X(int32_t, SidebarIdleAfterMinutes, "sidebar.idleAfterMinutes", 15)                                                                                                                              \
+    X(bool, SidebarNeedsYouGroup, "sidebar.needsYouGroup", false)                                                                                                                                    \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \

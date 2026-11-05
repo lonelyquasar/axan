@@ -71,6 +71,8 @@ namespace Microsoft.Terminal.Settings.Model
         // axan #31: an idle session's sidebar row is de-emphasised (dimmed, smaller) after
         // this many minutes without input/output. 0 turns de-emphasis off. Default 15.
         INHERITABLE_SETTING(Int32, SidebarIdleAfterMinutes);
+        // axan #34: show the hoisted "Needs you" group above the session tree. Off by default.
+        INHERITABLE_SETTING(Boolean, SidebarNeedsYouGroup);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

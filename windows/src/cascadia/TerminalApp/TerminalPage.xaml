@@ -462,8 +462,87 @@
                   Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
+
+                <!--
+                    axan #34: the hoisted "Needs you" group - a small list ABOVE the tree of
+                    the sessions in needs-you / error / done-unseen, longest-waiting first.
+                    Its items are the tree's own SessionNodeViewModels (a projection, not
+                    copies), so the dot / second line render exactly as in the tree. Off by
+                    default (sidebar.needsYouGroup, toggled from the sidebar right-click menu);
+                    hidden when empty. Populated by TerminalPage::_RefreshNeedsYouGroup.
+                -->
+                <StackPanel x:Name="NeedsYouGroup"
+                            Grid.Row="1"
+                            Margin="0,0,0,6"
+                            Visibility="Collapsed">
+                    <TextBlock x:Uid="AxanNeedsYouHeader"
+                               Margin="12,2,0,2"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Opacity="0.6" />
+                    <ListView x:Name="NeedsYouList"
+                              AutomationProperties.Name="Needs you"
+                              IsItemClickEnabled="True"
+                              ItemClick="_OnNeedsYouItemClick"
+                              SelectionMode="None">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="MinHeight" Value="0" />
+                                <Setter Property="Padding" Value="12,3,8,3" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:SessionNodeViewModel">
+                                <Grid ToolTipService.ToolTip="{x:Bind StateToolTip, Mode=OneWay}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Grid.Column="0"
+                                          Width="16"
+                                          Height="16"
+                                          Margin="0,0,8,0"
+                                          VerticalAlignment="Center">
+                                        <ContentPresenter Width="16"
+                                                          Height="16"
+                                                          Content="{x:Bind Icon, Mode=OneWay}" />
+                                        <Ellipse Width="9"
+                                                 Height="9"
+                                                 Margin="0,0,-4,-4"
+                                                 HorizontalAlignment="Right"
+                                                 VerticalAlignment="Bottom"
+                                                 Fill="{x:Bind StateDotFill, Mode=OneWay}"
+                                                 Stroke="{x:Bind StateDotStroke, Mode=OneWay}"
+                                                 StrokeThickness="1.5"
+                                                 Visibility="{x:Bind StateDotVisibility, Mode=OneWay}" />
+                                    </Grid>
+                                    <StackPanel Grid.Column="1"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Foreground="{x:Bind LabelBrush, Mode=OneWay}"
+                                                   Text="{x:Bind Label, Mode=OneWay}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap" />
+                                        <TextBlock FontSize="11"
+                                                   Foreground="{x:Bind LabelBrush, Mode=OneWay}"
+                                                   Opacity="0.7"
+                                                   Text="{x:Bind SubLabel, Mode=OneWay}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   TextWrapping="NoWrap"
+                                                   Visibility="{x:Bind SubLabelVisibility, Mode=OneWay}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <Rectangle Height="1"
+                               Margin="12,4,8,0"
+                               Fill="{ThemeResource TreeViewItemForeground}"
+                               Opacity="0.35" />
+                </StackPanel>
 
                 <!--
                     axan M8: the sidebar header. The save button stretches; the chevron at
@@ -570,7 +649,7 @@
                     IStringable::ToString, which returns the computed label.
                 -->
                 <mux:TreeView x:Name="SessionTree"
-                              Grid.Row="1"
+                              Grid.Row="2"
                               Margin="-16,0,0,0"
                               AutomationProperties.Name="Sessions"
                               ItemTemplate="{StaticResource ExpandedNodeTemplate}"
@@ -591,7 +670,7 @@
                 -->
                 <!--  axan #429: UIA name; row names come from the VM's IStringable (the label).  -->
                 <ListView x:Name="MinimizedList"
-                          Grid.Row="1"
+                          Grid.Row="2"
                           Padding="0"
                           AutomationProperties.Name="Sessions (minimized)"
                           Visibility="Collapsed"
@@ -650,7 +729,7 @@
                 -->
                 <Button x:Name="SidebarExpandStrip"
                         Grid.Row="0"
-                        Grid.RowSpan="2"
+                        Grid.RowSpan="3"
                         Padding="0"
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Stretch"
@@ -673,7 +752,7 @@
                 -->
                 <prim:Thumb x:Name="SidebarResizeThumb"
                             Grid.Row="0"
-                            Grid.RowSpan="2"
+                            Grid.RowSpan="3"
                             Width="6"
                             HorizontalAlignment="Right"
                             Visibility="Collapsed">

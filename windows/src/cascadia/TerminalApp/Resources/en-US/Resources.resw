@@ -1013,6 +1013,14 @@
   <data name="AxanMenuOpenProfileSettings" xml:space="preserve">
     <value>Open profile in Settings</value>
   </data>
+  <data name="AxanMenuShowNeedsYouGroup" xml:space="preserve">
+    <value>Show "Needs you" group</value>
+    <comment>axan #34: Sidebar context-menu toggle: list sessions that need attention (needs input, error, finished unseen) in a group above the session tree.</comment>
+  </data>
+  <data name="AxanNeedsYouHeader.Text" xml:space="preserve">
+    <value>Needs you</value>
+    <comment>axan #34: Heading of the sidebar group that lists sessions needing attention.</comment>
+  </data>
   <data name="AxanMenuCollapseSection" xml:space="preserve">
     <value>Collapse section</value>
     <comment>axan #33: Sidebar context-menu item on a labelled separator (section header): hide the rows below it up to the next separator.</comment>

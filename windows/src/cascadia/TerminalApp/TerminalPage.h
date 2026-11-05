@@ -569,6 +569,12 @@ namespace winrt::TerminalApp::implementation
         void _ExpandSectionsContaining(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const char* reason);
         void _ActivateSectionBadge(const Microsoft::UI::Xaml::Controls::TreeViewNode& header);
         void _ShowSectionHeaderMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& header, const winrt::Windows::Foundation::Point& position);
+        // axan #34: the hoisted "Needs you" group (a projection of the same node VMs).
+        void _RefreshNeedsYouGroup();
+        void _OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args);
+        void _SetNeedsYouGroupEnabled(bool enabled);
+        void _AppendNeedsYouGroupToggle(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout);
+        Windows::Foundation::Collections::IObservableVector<winrt::TerminalApp::SessionNodeViewModel> _needsYouItems{ nullptr };
         void _RealizeStartupSeparators();
         void _MarkStartupSpawnComplete();
         void _ReconcileSeparatorsWithSettings();
