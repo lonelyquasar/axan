@@ -4,6 +4,7 @@
 #include "pch.h"
 #include "AxanProfileToml.h"
 #include <AxanLaunchEntryWire.h> // shared LaunchEntry wire format: TOML/JSON keys, quoting, icon mapping (src/inc)
+#include <AxanHoistRule.h> // axan #34: per-entry hoist override
 
 #include <cctype>
 #include <cwctype>
@@ -321,6 +322,29 @@ namespace
                 entry.icon = wToU8(Wire::ExportIcon(u8ToW(jsonStr(e, Wire::JsonKey::Icon))));
                 entry.color = jsonStr(e, Wire::JsonKey::Color);
                 entry.colorTarget = jsonStr(e, Wire::JsonKey::ColorTarget);
+                // axan #34: "hoist" is "never" or an array of names (LaunchEntry::ToJson);
+                // carried in the canonical form, unknown names dropped.
+                const std::string hoistKey{ Wire::JsonKey::Hoist };
+                if (e.isMember(hoistKey))
+                {
+                    const auto& h = e[hoistKey];
+                    std::vector<std::wstring> names;
+                    if (h.isString())
+                    {
+                        entry.hoist = wToU8(Axan::HoistRule::Normalize(u8ToW(h.asString())));
+                    }
+                    else if (h.isArray())
+                    {
+                        for (const auto& v : h)
+                        {
+                            if (v.isString())
+                            {
+                                names.push_back(u8ToW(v.asString()));
+                            }
+                        }
+                        entry.hoist = wToU8(Axan::HoistRule::Format(Axan::HoistRule::FromMask(Axan::HoistRule::MaskFromNames(names))));
+                    }
+                }
                 entries.push_back(std::move(entry));
             }
         }

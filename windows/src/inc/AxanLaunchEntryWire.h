@@ -46,6 +46,10 @@
 //                                    #   (non-portable) icons carry verbatim
 //   color        = "blue"            # recolor token; SPARSE — omitted when empty
 //   color-target = "icon"            # "icon"|"text"|"both"; SPARSE — omitted when ""/both
+//   hoist        = "never"           # axan #34: "never" or a list of state names
+//                                    #   (["running", "blocked"]; AxanHoistRule.h); SPARSE —
+//                                    #   omitted = follow sidebar.hoistStates. Within the
+//                                    #   current version: readers skip unknown keys.
 //
 //   # axan #3 — a separator row (schema version 2). Spawns nothing; nests + orders like
 //   # a session. profile/name/directory/command/icon/color are absent.
@@ -144,6 +148,8 @@ namespace Axan::LaunchEntryWire
         inline constexpr std::string_view Placement{ "placement" };
         // axan #33: a separator's header label rides in "name"; "collapsed" is new.
         inline constexpr std::string_view Collapsed{ "collapsed" };
+        // axan #34: per-entry hoist override ("never" or an array of names; sparse).
+        inline constexpr std::string_view Hoist{ "hoist" };
         // The global tree's key on the settings.json root object (GlobalAppSettings).
         inline constexpr std::string_view StartupSessions{ "startupSessions" };
     }
@@ -169,6 +175,8 @@ namespace Axan::LaunchEntryWire
         inline constexpr std::string_view Placement{ "placement" };
         // axan #33: a separator's header label rides in "name"; "collapsed" is new.
         inline constexpr std::string_view Collapsed{ "collapsed" };
+        // axan #34: per-entry hoist override ("never" or an array of names; sparse).
+        inline constexpr std::string_view Hoist{ "hoist" };
     }
 
     // One startup-session entry in portable (TOML-side) form: UTF-8 strings, bare profile
@@ -193,6 +201,9 @@ namespace Axan::LaunchEntryWire
         // axan #33: on a separator, `name` is the section header label ("" = plain divider)
         // and `collapsed` whether the labelled section starts collapsed. Both sparse.
         bool collapsed{ false };
+        // axan #34 (sessions only): the hoist override in AxanHoistRule.h canonical form,
+        // UTF-8: "" = follow the global list, "never", or comma-joined names. Sparse.
+        std::string hoist;
 
         bool IsSeparator() const noexcept { return kind == KindSeparator; }
     };
@@ -334,6 +345,45 @@ namespace Axan::LaunchEntryWire
         {
             out += line(TomlKey::ColorTarget, e.colorTarget);
         }
+        // axan #34: "never" as a string, a custom list as an array of names.
+        if (!e.hoist.empty())
+        {
+            std::string kv{ TomlKey::Hoist };
+            kv.append(12 - TomlKey::Hoist.size(), ' ');
+            kv += " = ";
+            if (e.hoist == "never")
+            {
+                kv += TomlQuote(e.hoist);
+            }
+            else
+            {
+                kv += '[';
+                size_t start = 0;
+                bool first = true;
+                while (start <= e.hoist.size())
+                {
+                    const auto comma = e.hoist.find(',', start);
+                    const auto end = comma == std::string::npos ? e.hoist.size() : comma;
+                    if (end > start)
+                    {
+                        if (!first)
+                        {
+                            kv += ", ";
+                        }
+                        kv += TomlQuote(std::string_view{ e.hoist }.substr(start, end - start));
+                        first = false;
+                    }
+                    if (comma == std::string::npos)
+                    {
+                        break;
+                    }
+                    start = comma + 1;
+                }
+                kv += ']';
+            }
+            kv += '\n';
+            out += kv;
+        }
         out += '\n';
         return out;
     }
@@ -372,6 +422,32 @@ namespace Axan::LaunchEntryWire
             e.height = static_cast<double>(*hi);
         }
         e.collapsed = t[TomlKey::Collapsed].template value<bool>().value_or(false);
+        // axan #34: hoist = "never" | ["name", ...], joined raw here; the caller normalizes
+        // (AxanHoistRule.h Normalize drops unknown names). An empty array is "never".
+        if (const auto hs = t[TomlKey::Hoist].template value<std::string>())
+        {
+            e.hoist = *hs;
+        }
+        else if (const auto arr = t[TomlKey::Hoist].as_array())
+        {
+            bool any = false;
+            for (const auto& el : *arr)
+            {
+                if (const auto name = el.template value<std::string>())
+                {
+                    if (any)
+                    {
+                        e.hoist += ',';
+                    }
+                    e.hoist += *name;
+                    any = true;
+                }
+            }
+            if (!any)
+            {
+                e.hoist = "never";
+            }
+        }
         if (e.IsSeparator())
         {
             e.height = NormalizeSeparatorHeight(e.height);

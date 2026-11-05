@@ -82,6 +82,10 @@ namespace Microsoft.Terminal.Settings.Editor
         // axan #33 (separators only): a labelled separator (Name = the header text) is a
         // collapsible section header; Collapsed is whether it starts collapsed.
         Boolean Collapsed;
+        // axan #34 (sessions only): the hoist override in AxanHoistRule.h canonical form
+        // ("" = follow sidebar.hoistStates, "never", or comma-joined names). Not edited on
+        // this page (the sidebar's node editor sets it); carried so a commit round-trips it.
+        String Hoist;
         // Placement as a picker index (0 = inline, 1 = bottom). Backed by Placement.
         Int32 PlacementIndex;
         // Derived from Kind; re-notified when Kind changes. The two Visibility forms let

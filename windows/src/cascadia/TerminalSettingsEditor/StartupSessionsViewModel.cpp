@@ -15,6 +15,7 @@
 #include <unordered_set>
 #include <toml.hpp>
 #include <AxanLaunchEntryWire.h> // shared wire format: TOML keys, icon mapping, version (src/inc)
+#include <AxanHoistRule.h> // axan #34
 #include <AxanLog.h>
 
 using namespace winrt::Windows::Foundation::Collections;
@@ -87,6 +88,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         vm.Height(e.Height());
         vm.Placement(e.Placement());
         vm.Collapsed(e.Collapsed()); // axan #33
+        vm.Hoist(e.Hoist()); // axan #34
         return vm;
     }
 
@@ -111,6 +113,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         e.Height(vm.Height());
         e.Placement(vm.Placement());
         e.Collapsed(vm.Collapsed()); // axan #33 (the header label is Name, above)
+        e.Hoist(vm.IsSeparator() ? hstring{} : vm.Hoist()); // axan #34 (sessions only)
         return e;
     }
 
@@ -622,6 +625,16 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             m.Icon(hstring{ nativeIcon });
             m.Color(winrt::to_hstring(e.color));
             m.ColorTarget(winrt::to_hstring(e.colorTarget));
+            if (!e.hoist.empty()) // axan #34: normalized (unknown names dropped)
+            {
+                std::vector<std::wstring> unknown;
+                const auto hoist = Axan::HoistRule::Parse(std::wstring{ winrt::to_hstring(e.hoist) }, &unknown);
+                if (!unknown.empty())
+                {
+                    Axan::Log::Warn("StartupSessionsViewModel", "import: unknown hoist state name(s) ignored", { { "hoist", e.hoist }, { "entry", e.id } });
+                }
+                m.Hoist(hstring{ Axan::HoistRule::Format(hoist) });
+            }
             const auto vm = _rowFromModel(m);
             rows.Append(vm);
             _hookEntry(vm);

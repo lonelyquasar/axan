@@ -1025,6 +1025,14 @@
     <value>Needs you</value>
     <comment>axan #34: Heading of the sidebar group that lists sessions needing attention.</comment>
   </data>
+  <data name="AxanHoistGroupNeedsYou" xml:space="preserve">
+    <value>Needs you</value>
+    <comment>axan #34: Heading of the sidebar group while it lists only sessions needing attention (the default).</comment>
+  </data>
+  <data name="AxanHoistGroupHoisted" xml:space="preserve">
+    <value>Hoisted</value>
+    <comment>axan #34: Heading of the sidebar group when the user also hoists non-attention states (for example running).</comment>
+  </data>
   <data name="AxanMenuCollapseSection" xml:space="preserve">
     <value>Collapse section</value>
     <comment>axan #33: Sidebar context-menu item on a labelled separator (section header): hide the rows below it up to the next separator.</comment>

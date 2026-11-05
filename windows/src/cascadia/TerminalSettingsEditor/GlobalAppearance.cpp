@@ -10,6 +10,7 @@
 #include "..\WinRTUtils\inc\Utils.h" // axan: OpenImagePicker
 #include "AxanIconPicker.h" // axan: the shared icon picker flyout body
 #include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs defaults
+#include <AxanHoistRule.h> // axan #34: sidebar.hoistStates vocabulary
 
 using namespace winrt;
 using namespace winrt::Windows::UI::Xaml;
@@ -28,6 +29,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     void GlobalAppearance::OnNavigatedTo(const NavigationEventArgs& e)
     {
         _ViewModel = e.Parameter().as<Editor::GlobalAppearanceViewModel>();
+        _BuildHoistStateBoxes(); // axan #34
 
         TraceLoggingWrite(
             g_hTerminalSettingsEditorProvider,
@@ -36,6 +38,44 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             TraceLoggingValue("globalAppearance", "PageId", "The identifier of the page that was navigated to"),
             TraceLoggingKeyword(MICROSOFT_KEYWORD_MEASURES),
             TelemetryPrivacyDataTag(PDT_ProductAndServiceUsage));
+    }
+
+    // axan #34: one checkbox per hoist state name, labelled with the words the row's state
+    // slot uses. Each toggle writes sidebar.hoistStates at once.
+    void GlobalAppearance::_BuildHoistStateBoxes()
+    {
+        const auto panel = HoistStatesPanel();
+        const auto vm = _ViewModel;
+        if (!panel || !vm)
+        {
+            return;
+        }
+        panel.Children().Clear();
+        for (const auto name : Axan::HoistRule::kDisplayOrder)
+        {
+            CheckBox box;
+            box.MinWidth(0);
+            box.Margin(Thickness{ 0, 0, 16, 0 });
+            const winrt::hstring key{ name };
+            box.Content(winrt::box_value(winrt::hstring{ Axan::HoistRule::DisplayName(name) }));
+            box.IsChecked(vm.SidebarHoistStateEnabled(key));
+            box.Click([vm, key](const IInspectable& s, const RoutedEventArgs&) {
+                if (const auto b = s.try_as<CheckBox>())
+                {
+                    vm.SetSidebarHoistStateEnabled(key, b.IsChecked() && b.IsChecked().Value());
+                }
+            });
+            panel.Children().Append(box);
+        }
+    }
+
+    void GlobalAppearance::HoistStatesReset_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        if (_ViewModel)
+        {
+            _ViewModel.ResetSidebarHoistStates();
+            _BuildHoistStateBoxes();
+        }
     }
 
     // axan: the same picker the Startup page's icon button opens, led by a "Default" cell

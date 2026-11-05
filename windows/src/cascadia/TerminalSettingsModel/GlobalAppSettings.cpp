@@ -115,6 +115,15 @@ winrt::com_ptr<GlobalAppSettings> GlobalAppSettings::Copy() const
         }
         globals->_SidebarStateGlyphs = glyphs;
     }
+    // axan #34: sidebar.hoistStates is a vector; copy it so a settings clone never shares it.
+    if (_SidebarHoistStates && *_SidebarHoistStates)
+    {
+        globals->_SidebarHoistStates = winrt::single_threaded_vector<hstring>();
+        for (const auto& name : *_SidebarHoistStates)
+        {
+            globals->_SidebarHoistStates->Append(name);
+        }
+    }
     if (_DisabledProfileSources)
     {
         globals->_DisabledProfileSources = winrt::single_threaded_vector<hstring>();

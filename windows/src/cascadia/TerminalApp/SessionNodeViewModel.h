@@ -141,6 +141,11 @@ namespace winrt::TerminalApp::implementation
         // no EntryId is live-only (not persisted) — preserving the curated-startup vs.
         // currently-open split.
         winrt::hstring EntryId;
+        // axan #34: the node's hoist override (AxanHoistRule.h canonical form: "" = follow
+        // sidebar.hoistStates, "never", or comma-joined names). Seeded from its startup entry
+        // (and re-synced on settings reload), edited in the node editor, persisted through
+        // _PersistNodeToEntry and carried by Save current as startup.
+        winrt::hstring HoistOverride;
         // axan M7: the per-node icon override path ("" -> inherit the profile icon, else an
         // auto-assigned builtin glyph). The first link in the override -> profile -> auto
         // resolution chain. Empty for every node until an override picker/config round-trip
@@ -171,6 +176,9 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::Foundation::DateTime StateSince() const noexcept { return _stateSince; }
         hstring StateMessage() const noexcept { return _stateMessage; }
         hstring StateKind() const noexcept { return _stateKind; }
+        // axan #34: the right-edge slot's state (AxanSessionState.h SlotKey; "" = none), the
+        // key the hoisted group matches on.
+        hstring SlotKey() const noexcept { return _slotKey; }
         winrt::Windows::Foundation::DateTime LastActivity() const noexcept { return _lastActivity; }
         bool SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting = {});
         void SetLastActivity(winrt::Windows::Foundation::DateTime value);

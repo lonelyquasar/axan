@@ -33,6 +33,12 @@ All notable changes to axan are documented here.
 - Optional "Needs you" group above the session tree
   (`sidebar.needsYouGroup`, default off) listing sessions that are blocked,
   errored or finished and unseen, longest-waiting first. Windows only. (#34)
+- The group's states are configurable: `sidebar.hoistStates` (default
+  `["blocked", "error", "done"]`; add `running` to watch long commands), and
+  each startup session can follow it, opt out (`"hoist": "never"`) or set its
+  own list (Settings > Appearance for the global list, the sidebar's node
+  editor for one session). The heading reads "Hoisted" once non-attention states are included.
+  Windows only. (#34)
 - Separators with a label are now collapsible section headers; a collapsed
   header shows how many sessions it hides and the most urgent state among
   them. Windows only. (#33)

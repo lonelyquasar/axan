@@ -652,6 +652,18 @@
     <value>When a status-reporting program (such as Claude Code) is at rest and nothing else is on the row's second line, show its session name there, dimmed: the name it reports, or else its terminal title (Claude Code sets this from --name).</value>
     <comment>axan: A description for the "show the agent's session name" setting. Presented near "Globals_SidebarShowAgentName.Header".</comment>
   </data>
+  <data name="Globals_SidebarHoistStates.Header" xml:space="preserve">
+    <value>Hoist sessions in these states</value>
+    <comment>axan #34: Header for a set of checkboxes: which session states list a session in the group at the top of the sidebar.</comment>
+  </data>
+  <data name="Globals_SidebarHoistStates.HelpText" xml:space="preserve">
+    <value>When the hoisted group is on (sidebar right-click menu), a session in any checked state is also listed at the top of the sidebar, longest-waiting first. The group is titled "Needs you" while only attention states are checked, "Hoisted" otherwise. A session can override this from the sidebar's Edit node card.</value>
+    <comment>axan #34: A description for the "hoist sessions in these states" setting. Presented near "Globals_SidebarHoistStates.Header". "Needs you" and "Hoisted" are the group's titles.</comment>
+  </data>
+  <data name="Globals_SidebarHoistStatesReset.Content" xml:space="preserve">
+    <value>Reset to default (needs you, done, error)</value>
+    <comment>axan #34: Button that resets the hoisted-states checkboxes to the default set.</comment>
+  </data>
   <data name="Globals_SidebarStateGlyphNone" xml:space="preserve">
     <value>None</value>
     <comment>axan: Label for a sidebar state icon set to show nothing; also the name of the picker cell that chooses that.</comment>

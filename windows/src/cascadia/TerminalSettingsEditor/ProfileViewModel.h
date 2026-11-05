@@ -117,6 +117,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, ColorTarget);
         // axan #33 (separators only): the labelled section starts collapsed.
         VIEW_MODEL_OBSERVABLE_PROPERTY(bool, Collapsed, false);
+        // axan #34 (sessions only): the hoist override, carried through untouched.
+        VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, Hoist);
 
     private:
         hstring _Id;

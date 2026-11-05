@@ -48,6 +48,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         WINRT_PROPERTY(double, Height, 0.0);
         WINRT_PROPERTY(hstring, Placement);
         WINRT_PROPERTY(bool, Collapsed, false); // axan #33
+        WINRT_PROPERTY(hstring, Hoist); // axan #34: AxanHoistRule.h canonical form
 
     public:
         bool IsSeparator() const noexcept;

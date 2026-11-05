@@ -28,6 +28,7 @@
     <ClCompile Include="TilWinRtHelpersTests.cpp" />
     <ClCompile Include="AxanSessionStateTest.cpp" />
     <ClCompile Include="AxanLaunchEntryWireTest.cpp" />
+    <ClCompile Include="AxanHoistRuleTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\buffer\out\lib\bufferout.vcxproj">

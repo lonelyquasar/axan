@@ -500,7 +500,8 @@
                             Grid.Row="1"
                             Margin="0,0,0,6"
                             Visibility="Collapsed">
-                    <TextBlock x:Uid="AxanNeedsYouHeader"
+                    <TextBlock x:Name="NeedsYouHeader"
+                               x:Uid="AxanNeedsYouHeader"
                                Margin="12,2,0,2"
                                FontSize="12"
                                FontWeight="SemiBold"

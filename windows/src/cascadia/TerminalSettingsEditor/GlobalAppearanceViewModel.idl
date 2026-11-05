@@ -51,6 +51,14 @@ namespace Microsoft.Terminal.Settings.Editor
         String SidebarQuestionGlyphLabel { get; };
         String SidebarAuthGlyphLabel { get; };
 
+        // axan #34: sidebar.hoistStates, the states that put a session in the sidebar's
+        // hoisted group (AxanHoistRule.h names). Unset = ["blocked", "error", "done"].
+        // Summary is the expander's one-line current value.
+        Boolean SidebarHoistStateEnabled(String name);
+        void SetSidebarHoistStateEnabled(String name, Boolean enabled);
+        void ResetSidebarHoistStates();
+        String SidebarHoistStatesSummary { get; };
+
         Boolean InvertedDisableAnimations;
 
         void ShowTitlebarToggled(IInspectable sender, Windows.UI.Xaml.RoutedEventArgs args);

@@ -82,6 +82,10 @@ namespace Microsoft.Terminal.Settings.Model
         INHERITABLE_SETTING(Int32, SidebarIdleAfterMinutes);
         // axan #34: show the hoisted "Needs you" group above the session tree. Off by default.
         INHERITABLE_SETTING(Boolean, SidebarNeedsYouGroup);
+        // axan #34: the states that list a session in that group: names from
+        // src/inc/AxanHoistRule.h (idle / working / blocked / done / error / running, and the
+        // blocked kinds permission / question / auth). Unset = ["blocked", "error", "done"].
+        INHERITABLE_SETTING(IVector<String>, SidebarHoistStates);
         // axan: after a done/error session is seen, keep its last report on the row (muted)
         // or clear it. Default Keep. Either way it stops counting as needing attention.
         INHERITABLE_SETTING(SidebarStatusAfterSeen, SidebarStatusAfterSeen);

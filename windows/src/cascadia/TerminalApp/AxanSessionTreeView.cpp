@@ -38,6 +38,7 @@
 #include "SessionNodeViewModel.h"
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
+#include <AxanHoistRule.h> // axan #34: the hoisted group's match rule
 
 #include <shlobj.h>
 #include <array>
@@ -695,6 +696,7 @@ namespace winrt::TerminalApp::implementation
             vmImpl->TabRef = winrt::make_weak(tab.as<winrt::Windows::Foundation::IInspectable>());
             vmImpl->LabelTemplate = labelTemplate;
             vmImpl->EntryId = entryId; // #422: remember the source entry so a Save can persist back to it
+            vmImpl->HoistOverride = _HoistOverrideForEntry(entryId); // axan #34
             // axan M7/M13: seed the per-node icon override + recolor (persisted from a prior
             // run, or empty for a fresh tab), then resolve and store the icon path
             // (override -> profile -> auto-assigned glyph). The icon only changes when the
@@ -2158,6 +2160,7 @@ namespace winrt::TerminalApp::implementation
                 e.Icon(vm->IconOverride);
                 e.Color(vm->IconColor());
                 e.ColorTarget(vm->ColorTarget);
+                e.Hoist(vm->HoistOverride); // axan #34
                 found = true;
             }
             updated.push_back(e);
@@ -2268,6 +2271,7 @@ namespace winrt::TerminalApp::implementation
                 entry.Icon(vm->IconOverride);
                 entry.Color(vm->IconColor());
                 entry.ColorTarget(vm->ColorTarget);
+                entry.Hoist(vm->HoistOverride); // axan #34
                 captured.push_back(entry);
                 vm->EntryId = id;
                 for (const auto& child : node.Children())
@@ -2664,6 +2668,92 @@ namespace winrt::TerminalApp::implementation
         return section;
     }
 
+    // axan #34: "Hoisted group": Default (follow sidebar.hoistStates) / Never / Custom, the
+    // Custom list as the same state checkboxes as Settings > Appearance, shown inline only
+    // while Custom is chosen. Applied on Save, like the rest of the card.
+    StackPanel TerminalPage::_BuildNodeEditHoistSection()
+    {
+        using namespace Axan::HoistRule;
+        StackPanel section{};
+        section.Spacing(2);
+        section.Children().Append(_buildNodeEditSectionLabel(L"Hoisted group"));
+
+        ComboBox mode{};
+        mode.MinWidth(160);
+        mode.Items().Append(winrt::box_value(winrt::hstring{ L"Default" }));
+        mode.Items().Append(winrt::box_value(winrt::hstring{ L"Never" }));
+        mode.Items().Append(winrt::box_value(winrt::hstring{ L"Custom" }));
+        WUX::Automation::AutomationProperties::SetName(mode, L"Hoist in the sidebar");
+        ToolTipService::SetToolTip(mode, winrt::box_value(winrt::hstring{ L"Default follows Settings > Appearance; Never keeps this session out of the group; Custom picks its own states" }));
+        mode.SelectedIndex(static_cast<int32_t>(Parse(_nodeEditHoist).mode));
+
+        WUX::Controls::VariableSizedWrapGrid boxes{};
+        boxes.Orientation(Orientation::Horizontal);
+        boxes.Margin(WUX::Thickness{ 0, 6, 0, 0 });
+        std::vector<CheckBox> checks;
+        for (const auto name : kDisplayOrder)
+        {
+            CheckBox box{};
+            box.MinWidth(0);
+            box.Margin(WUX::Thickness{ 0, 0, 14, 0 });
+            box.Content(winrt::box_value(winrt::hstring{ DisplayName(name) }));
+            const winrt::hstring key{ name };
+            box.Click([weakThis{ get_weak() }, key](const winrt::Windows::Foundation::IInspectable& s, auto&&) {
+                if (auto p{ weakThis.get() })
+                {
+                    if (const auto b = s.try_as<CheckBox>())
+                    {
+                        const auto o = Parse(p->_nodeEditHoist);
+                        const Mask cur = o.mode == Mode::Custom ? o.mask : 0;
+                        const auto next = With(cur, key, b.IsChecked() && b.IsChecked().Value());
+                        // An emptied custom list stays Custom in the card (Save writes "never").
+                        p->_nodeEditHoist = next == 0 ? winrt::hstring{ kNever } : winrt::hstring{ Format(FromMask(next)) };
+                    }
+                }
+            });
+            boxes.Children().Append(box);
+            checks.push_back(box);
+        }
+        const auto sync = [checks, boxes](const winrt::hstring& hoist, bool custom) {
+            const auto o = Parse(hoist);
+            for (size_t i = 0; i < checks.size(); ++i)
+            {
+                checks[i].IsChecked(o.mode == Mode::Custom && Has(o.mask, kDisplayOrder[i]));
+            }
+            boxes.Visibility(custom ? Visibility::Visible : Visibility::Collapsed);
+        };
+        sync(_nodeEditHoist, Parse(_nodeEditHoist).mode == Mode::Custom);
+        mode.SelectionChanged([weakThis{ get_weak() }, sync](const winrt::Windows::Foundation::IInspectable& s, auto&&) {
+            auto p{ weakThis.get() };
+            const auto combo = s.try_as<ComboBox>();
+            if (!p || !combo || combo.SelectedIndex() < 0)
+            {
+                return;
+            }
+            const auto idx = combo.SelectedIndex();
+            if (idx == static_cast<int32_t>(Mode::Never))
+            {
+                p->_nodeEditHoist = winrt::hstring{ kNever };
+            }
+            else if (idx == static_cast<int32_t>(Mode::Custom))
+            {
+                if (Parse(p->_nodeEditHoist).mode != Mode::Custom)
+                {
+                    p->_nodeEditHoist = winrt::hstring{ Format(FromMask(kDefault)) }; // start from the default list
+                }
+            }
+            else
+            {
+                p->_nodeEditHoist = {};
+            }
+            sync(p->_nodeEditHoist, idx == static_cast<int32_t>(Mode::Custom));
+        });
+
+        section.Children().Append(mode);
+        section.Children().Append(boxes);
+        return section;
+    }
+
     // The Save / Cancel footer. Save commits the editor state to the node's VM, kicks the
     // async label recompute, applies the icon/recolor, and persists to the source entry.
     StackPanel TerminalPage::_BuildNodeEditFooter()
@@ -2696,6 +2786,8 @@ namespace winrt::TerminalApp::implementation
                             }
                         }
                         p->_ApplyNodeIcon(n, p->_nodeEditIconOverride, p->_nodeEditColor, p->_nodeEditColorTarget);
+                        v->HoistOverride = p->_nodeEditHoist; // axan #34
+                        p->_RefreshNeedsYouGroup();
                         // #422: persist the edit back to its curated startup entry so it survives
                         // a restart (no-op for a runtime session with no source entry).
                         p->_PersistNodeToEntry(n);
@@ -2744,6 +2836,7 @@ namespace winrt::TerminalApp::implementation
         _nodeEditColor = vm->IconColor();
         _nodeEditColorTarget = vm->ColorTarget.empty() ? winrt::hstring{ L"both" } : vm->ColorTarget;
         _nodeEditFallbackPath = _resolveNodeIconPath({}, _nodeTab(node));
+        _nodeEditHoist = vm->HoistOverride; // axan #34
         // Capture the sidebar's resolved theme so the swatches + preview resolve color NAMES
         // against the matching palette set (the same derivation _RefreshNodeLabelBrushes uses).
         _nodeEditIsDark = _SidebarIsDarkTheme();
@@ -2768,6 +2861,7 @@ namespace winrt::TerminalApp::implementation
         content.Children().Append(_buildNodeEditSectionLabel(L"Color"));
         content.Children().Append(_BuildNodeEditSwatchRow(accentBrush, neutralBrush));
         content.Children().Append(_BuildNodeEditApplyColorSection());
+        content.Children().Append(_BuildNodeEditHoistSection()); // axan #34
         content.Children().Append(_BuildNodeEditFooter());
 
         // axan #436 item 4: Escape dismisses the editor from ANY focused control — the
@@ -2877,6 +2971,7 @@ namespace winrt::TerminalApp::implementation
         _nodeEditColor = {};
         _nodeEditColorTarget = L"both";
         _nodeEditFallbackPath = {};
+        _nodeEditHoist = {};
     }
 
     // axan M13: spawn a new session from this node's profile and nest it under the node.
@@ -3861,6 +3956,32 @@ namespace winrt::TerminalApp::implementation
             NeedsYouList().ItemsSource(_needsYouItems);
         }
         const bool enabled = _settings && _settings.GlobalSettings().SidebarNeedsYouGroup();
+        // axan #34: the global list (sidebar.hoistStates; unset = blocked / error / done).
+        auto globalMask = Axan::HoistRule::kDefault;
+        if (_settings && _settings.GlobalSettings().HasSidebarHoistStates())
+        {
+            if (const auto names = _settings.GlobalSettings().SidebarHoistStates())
+            {
+                std::vector<std::wstring> unknown;
+                globalMask = Axan::HoistRule::MaskFromNames(names, &unknown);
+                static std::set<std::wstring> logged; // log each unknown name once per process
+                for (const auto& u : unknown)
+                {
+                    if (logged.insert(u).second)
+                    {
+                        Axan::Log::Warn("TerminalPage", "sidebar.hoistStates: unknown state name ignored", { { "name", winrt::to_string(u) } });
+                    }
+                }
+            }
+        }
+        {
+            const auto header = winrt::hstring{ Axan::HoistRule::IsAttentionOnly(globalMask) ? RS_(L"AxanHoistGroupNeedsYou") : RS_(L"AxanHoistGroupHoisted") };
+            if (NeedsYouHeader().Text() != header)
+            {
+                NeedsYouHeader().Text(header);
+                WUX::Automation::AutomationProperties::SetName(NeedsYouList(), header);
+            }
+        }
         std::vector<std::pair<winrt::Windows::Foundation::DateTime, winrt::TerminalApp::SessionNodeViewModel>> wanted;
         if (enabled)
         {
@@ -3870,8 +3991,11 @@ namespace winrt::TerminalApp::implementation
                 {
                     return;
                 }
-                const auto state = vm->State();
-                if (state == L"needs-you" || state == L"error" || state == L"done-unseen")
+                // Matched on the slot state + blocked kind (AxanHoistRule.h): blocked = any
+                // kind, done = an unseen report, idle = an agent at rest (never a plain shell).
+                const auto slot = vm->SlotKey();
+                const auto kind = vm->StateKind();
+                if (Axan::HoistRule::IsHoisted(slot, kind, Axan::HoistRule::Parse(vm->HoistOverride), globalMask))
                 {
                     wanted.emplace_back(vm->StateSince(), node.Content().as<winrt::TerminalApp::SessionNodeViewModel>());
                 }
@@ -3901,6 +4025,59 @@ namespace winrt::TerminalApp::implementation
         {
             NeedsYouGroup().Visibility(vis);
         }
+    }
+
+    // axan #34: the hoist override stored on a startup entry ("" when the entry is unknown,
+    // or for a runtime session with no entry).
+    winrt::hstring TerminalPage::_HoistOverrideForEntry(const winrt::hstring& entryId) const
+    {
+        if (entryId.empty() || !_settings)
+        {
+            return {};
+        }
+        if (const auto entries = _settings.GlobalSettings().StartupSessions())
+        {
+            for (const auto& e : entries)
+            {
+                if (e.Id() == entryId)
+                {
+                    return e.Hoist();
+                }
+            }
+        }
+        return {};
+    }
+
+    // axan #34: on settings reload, re-read every curated node's hoist override, so a change
+    // made on the Startup sessions page applies to the live tree. Runtime nodes (no entry id)
+    // keep their live-only value.
+    void TerminalPage::_SyncHoistOverridesFromSettings()
+    {
+        if (!SessionTree() || !_settings)
+        {
+            return;
+        }
+        std::map<winrt::hstring, winrt::hstring> hoists;
+        if (const auto entries = _settings.GlobalSettings().StartupSessions())
+        {
+            for (const auto& e : entries)
+            {
+                if (!e.IsSeparator() && !e.Id().empty())
+                {
+                    hoists[e.Id()] = e.Hoist();
+                }
+            }
+        }
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            if (const auto vm = _nodeVM(node); vm && !vm->IsSeparator() && !vm->EntryId.empty())
+            {
+                if (const auto it = hoists.find(vm->EntryId); it != hoists.end())
+                {
+                    vm->HoistOverride = it->second;
+                }
+            }
+        });
+        _RefreshNeedsYouGroup();
     }
 
     void TerminalPage::_OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& /*sender*/,

@@ -50,6 +50,12 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         winrt::hstring SidebarQuestionGlyphLabel() const { return _StateGlyphLabel(L"question"); }
         winrt::hstring SidebarAuthGlyphLabel() const { return _StateGlyphLabel(L"auth"); }
 
+        // axan #34: sidebar.hoistStates (see the idl)
+        bool SidebarHoistStateEnabled(const winrt::hstring& name) const;
+        void SetSidebarHoistStateEnabled(const winrt::hstring& name, bool enabled);
+        void ResetSidebarHoistStates();
+        winrt::hstring SidebarHoistStatesSummary() const;
+
         bool InvertedDisableAnimations();
         void InvertedDisableAnimations(bool value);
 

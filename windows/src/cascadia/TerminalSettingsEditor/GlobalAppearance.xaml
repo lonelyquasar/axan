@@ -82,6 +82,23 @@
                           Style="{StaticResource ToggleSwitchInExpanderStyle}" />
         </local:SettingContainer>
 
+        <!--
+            axan #34: sidebar.hoistStates, the states that list a session in the sidebar's
+            hoisted group (shown when sidebar.needsYouGroup is on). One checkbox per state,
+            built in code-behind (GlobalAppearance::_BuildHoistStateBoxes); a Startup sessions
+            entry can override the list.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarHoistStates"
+                                CurrentValue="{x:Bind ViewModel.SidebarHoistStatesSummary, Mode=OneWay}"
+                                Style="{StaticResource ExpanderSettingContainerStyle}">
+            <StackPanel Spacing="8">
+                <VariableSizedWrapGrid x:Name="HoistStatesPanel"
+                                       Orientation="Horizontal" />
+                <HyperlinkButton x:Uid="Globals_SidebarHoistStatesReset"
+                                 Click="HoistStatesReset_Click" />
+            </StackPanel>
+        </local:SettingContainer>
+
         <!--  axan: sidebar.showAgentName, an agent at rest shows its session name  -->
         <local:SettingContainer x:Uid="Globals_SidebarShowAgentName">
             <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarShowAgentName, Mode=TwoWay}"

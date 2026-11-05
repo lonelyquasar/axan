@@ -4062,6 +4062,8 @@ namespace winrt::TerminalApp::implementation
         // axan: rebuild the titlebar app menu too — its accelerator hints come from
         // the (possibly rebound) action map.
         _CreateAppMenuFlyout();
+        // axan #34: per-entry hoist overrides edited on the Startup sessions page apply live.
+        _SyncHoistOverridesFromSettings();
         // axan: sidebar.statusAfterSeen / stateGlyphs may have changed.
         _RecomputeAllNodeStates();
 

@@ -122,6 +122,7 @@ The curated startup tree — which shells to spawn, in what hierarchy — is a l
 | `placement` | separators only: `inline` (default, omitted) keeps its list position; `bottom` pins it below its siblings so sessions added later land above it |
 | `name` (on a separator) | separators only: an optional section-header label; `""` (omitted) = a plain divider |
 | `collapsed` | labelled separators only: `true` starts the section collapsed; sparse (omitted when `false`) |
+| `hoist` | sessions only: whether the session joins the sidebar's hoisted group. Omitted = follow `sidebar.hoistStates`; `"never"`; or its own list of state names (`["running"]`). Windows only |
 
 `command` is stored raw. The per-shell survival wrap that keeps a node alive after its command exits (Linux `$SHELL -c "…; exec $SHELL"`, pwsh `-NoExit -Command`, cmd `/k`, WSL `bash -ic "…; exec bash -i"`) is applied at spawn time, never stored, so the command ports across platforms. Malformed trees self-heal on load: orphans and dangling parents promote to root, missing UUIDs are backfilled. The tree is honored only when the CLI asks for no shells of its own — `--tab`, `--working-directory`, and positional commands take precedence.
 
@@ -199,11 +200,21 @@ When a tab has several records or panes, the strongest state wins: blocked, then
 | Key | Default | Meaning |
 |---|---|---|
 | `sidebar.idleAfterMinutes` | `15` | Minutes of no input or output, while idle, before a row is dimmed and shrunk. `0` turns it off. The focused row is never dimmed |
-| `sidebar.needsYouGroup` | `false` | Show a "Needs you" group above the session tree listing every session that is blocked, errored or done-unseen, longest-waiting first |
+| `sidebar.needsYouGroup` | `false` | Show the hoisted group above the session tree: every session in one of the `sidebar.hoistStates` states, longest-waiting first |
+| `sidebar.hoistStates` | `["blocked", "error", "done"]` | Which states put a session in that group (see below) |
 | `sidebar.statusAfterSeen` | `"keep"` | `"keep"` or `"clear"`: what a row does with a done/error report once you've seen it. Either way it stops counting as needing you |
 | `sidebar.stateGlyphs` | robot / bolt / play for `idle` / `working` / `running`, none for the rest | Per-state right-edge glyphs, as described above. Optional `permission` / `question` / `auth` override `blocked` (default: same as `blocked`) |
 | `sidebar.stateLabels` | `true` | Show the small state word next to the right-edge glyph |
 | `sidebar.showAgentName` | `true` | An agent at rest shows its session name as the muted second line |
+
+**The hoisted group.** With `sidebar.needsYouGroup` on, a small list above the tree repeats the sessions you'd want to see from anywhere in it; clicking one selects it. `sidebar.hoistStates` is a list of state names: `idle`, `working`, `blocked`, `done`, `error`, `running`, and the blocked kinds `permission`, `question`, `auth`. `blocked` matches a blocked session of any kind, while a kind name matches only that kind; `done` means a done report you haven't seen yet; `idle` means a status-reporting program at rest (a plain shell at its prompt has no state to match); unknown names are ignored. The group is titled "Needs you" while the list holds only `blocked`, the three kinds, `error` and `done`, and "Hoisted" otherwise. Hoisting `running` is the case for watching a long build from anywhere in the tree:
+
+```json
+"sidebar.needsYouGroup": true,
+"sidebar.hoistStates": ["blocked", "error", "done", "running"]
+```
+
+A startup entry can override the list with `"hoist": "never"` (never listed, for a session whose prompts you don't care about) or its own list (`"hoist": ["running", "error"]` hoists that build session while it runs or fails, and nothing else). Settings > Appearance has a checkbox per state. The per-session override is set in the sidebar's **Edit node** card (Hoisted group: Default / Never / Custom, where Custom shows the same checkboxes) and saved to the session's startup entry; for other entries, edit `settings.json` or the TOML. **Save current as startup** keeps each session's override.
 
 Section headers on separators (label, collapse, the summary badge) are covered under the launch-entry tree above; a collapsed header's badge summarises the states of the rows it hides.
 
@@ -257,6 +268,7 @@ command      = "claude"
 icon         = "builtin:terminal"
 color        = "blue"             # sparse
 color-target = "icon"             # sparse
+hoist        = ["blocked", "running"]  # sparse; or "never"; omitted = follow sidebar.hoistStates
 
 [[startup-sessions]]              # a separator (Windows only for now); makes the file version 2
 id           = "5f0c2a7e-…"

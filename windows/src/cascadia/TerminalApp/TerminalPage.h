@@ -340,6 +340,7 @@ namespace winrt::TerminalApp::implementation
         winrt::hstring _nodeEditColor;
         winrt::hstring _nodeEditColorTarget{ L"both" };
         winrt::hstring _nodeEditFallbackPath;
+        winrt::hstring _nodeEditHoist; // axan #34: AxanHoistRule.h canonical form
         // axan #422: the dialog's resolved theme (sidebar ActualTheme), captured on open. The
         // color swatches store palette NAMES but fill with the theme-resolved hex (WYSIWYG), and
         // the live preview resolves the same way, so both must know which palette set is active.
@@ -574,6 +575,9 @@ namespace winrt::TerminalApp::implementation
         void _OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args);
         void _SetNeedsYouGroupEnabled(bool enabled);
         void _AppendNeedsYouGroupToggle(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout);
+        // axan #34: per-entry hoist overrides, seeded from / re-synced with startupSessions.
+        winrt::hstring _HoistOverrideForEntry(const winrt::hstring& entryId) const;
+        void _SyncHoistOverridesFromSettings();
         // axan: the sidebar.statusAfterSeen menu toggle (appended by
         // _AppendNeedsYouGroupToggle) and the re-derive they (and a settings reload) trigger.
         void _SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply);
@@ -661,6 +665,7 @@ namespace winrt::TerminalApp::implementation
         Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditSwatchRow(const Windows::UI::Xaml::Media::SolidColorBrush& accentBrush, const Windows::UI::Xaml::Media::SolidColorBrush& neutralBrush);
         Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditApplyColorSection();
         Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditFooter();
+        Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditHoistSection(); // axan #34
         void _UpdateNodeEditPreview();
         void _HideNodeEditPanel();
         void _AddChildSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);

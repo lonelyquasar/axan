@@ -8,6 +8,7 @@
 
 #include <LibraryResources.h>
 #include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs keys / defaults / resolution
+#include <AxanHoistRule.h> // axan #34: sidebar.hoistStates
 
 using namespace winrt;
 using namespace winrt::Windows::UI::Xaml;
@@ -33,6 +34,52 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         INITIALIZE_BINDABLE_ENUM_SETTING(TabWidthMode, TabViewWidthMode, winrt::Microsoft::UI::Xaml::Controls::TabViewWidthMode, L"Globals_TabWidthMode", L"Content");
         INITIALIZE_BINDABLE_ENUM_SETTING(SidebarStatusAfterSeen, SidebarStatusAfterSeen, SidebarStatusAfterSeen, L"Globals_SidebarStatusAfterSeen", L"Content"); // axan
         _UpdateThemeList();
+    }
+
+    // ---- axan #34: sidebar.hoistStates ----
+    // Stored as an array of names; unset means the default list. The page writes the names
+    // in vocabulary order; unknown names a hand edit added are dropped on the first change.
+
+    static Axan::HoistRule::Mask _hoistMask(const Model::GlobalAppSettings& globals)
+    {
+        if (!globals.HasSidebarHoistStates() || !globals.SidebarHoistStates())
+        {
+            return Axan::HoistRule::kDefault;
+        }
+        return Axan::HoistRule::MaskFromNames(globals.SidebarHoistStates());
+    }
+
+    bool GlobalAppearanceViewModel::SidebarHoistStateEnabled(const winrt::hstring& name) const
+    {
+        return Axan::HoistRule::Has(_hoistMask(_GlobalSettings), name);
+    }
+
+    void GlobalAppearanceViewModel::SetSidebarHoistStateEnabled(const winrt::hstring& name, bool enabled)
+    {
+        const auto before = _hoistMask(_GlobalSettings);
+        const auto after = Axan::HoistRule::With(before, name, enabled);
+        if (after == before && _GlobalSettings.HasSidebarHoistStates())
+        {
+            return;
+        }
+        std::vector<winrt::hstring> names;
+        for (const auto n : Axan::HoistRule::NamesFromMask(after))
+        {
+            names.emplace_back(n);
+        }
+        _GlobalSettings.SidebarHoistStates(winrt::single_threaded_vector<winrt::hstring>(std::move(names)));
+        _NotifyChanges(L"SidebarHoistStatesSummary");
+    }
+
+    void GlobalAppearanceViewModel::ResetSidebarHoistStates()
+    {
+        _GlobalSettings.ClearSidebarHoistStates();
+        _NotifyChanges(L"SidebarHoistStatesSummary");
+    }
+
+    winrt::hstring GlobalAppearanceViewModel::SidebarHoistStatesSummary() const
+    {
+        return winrt::hstring{ Axan::HoistRule::Describe(_hoistMask(_GlobalSettings)) };
     }
 
     // ---- axan: sidebar.stateGlyphs ----

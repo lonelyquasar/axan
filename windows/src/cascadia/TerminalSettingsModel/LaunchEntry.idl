@@ -60,6 +60,11 @@ namespace Microsoft.Terminal.Settings.Model
         // axan #33 (separators only): the section header label is Name; Collapsed is
         // whether a labelled section starts collapsed. Sparse on disk.
         Boolean Collapsed;
+        // axan #34 (sessions only): whether this session joins the sidebar's hoisted group,
+        // in AxanHoistRule.h canonical form: "" = follow sidebar.hoistStates, "never", or
+        // comma-joined state names ("blocked,running"). On disk: absent, "never", or an
+        // array of names.
+        String Hoist;
         // True when Kind is "separator".
         Boolean IsSeparator { get; };
     }
