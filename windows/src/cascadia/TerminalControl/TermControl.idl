@@ -62,6 +62,8 @@ namespace Microsoft.Terminal.Control
         // snapshot). Raised on a background thread, outside the terminal lock; handlers
         // must marshal to the UI thread themselves.
         event Windows.Foundation.TypedEventHandler<Object, Object> ProgramStatusChanged;
+        // axan #30: ShellCommandRunning flipped (OSC 133 C/D/A). Background thread.
+        event Windows.Foundation.TypedEventHandler<Object, Object> ShellCommandChanged;
         event Windows.Foundation.TypedEventHandler<Object, NoticeEventArgs> RaiseNotice;
         event Windows.Foundation.TypedEventHandler<Object, Object> WarningBell;
         event Windows.Foundation.TypedEventHandler<Object, Object> HidePointerCursor;

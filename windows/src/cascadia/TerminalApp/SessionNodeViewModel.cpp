@@ -20,7 +20,7 @@ namespace winrt::TerminalApp::implementation
     // source that died first makes the revoke a harmless no-op.
     void SessionNodeViewModel::RevokeRecomputeSubscriptions()
     {
-        for (auto* revoker : { &RevokeTitleSubscription, &RevokeOutputIdleSubscription, &RevokeActivePaneSubscription })
+        for (auto* revoker : { &RevokeTitleSubscription, &RevokeOutputIdleSubscription, &RevokeActivePaneSubscription, &RevokeSessionStateSubscription })
         {
             if (*revoker)
             {
@@ -33,6 +33,36 @@ namespace winrt::TerminalApp::implementation
     SessionNodeViewModel::~SessionNodeViewModel()
     {
         RevokeRecomputeSubscriptions();
+    }
+
+    // axan #30: see the header. StateSince restarts only on a state/kind transition.
+    bool SessionNodeViewModel::SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now)
+    {
+        const bool transition = state != _state || kind != _stateKind;
+        if (transition)
+        {
+            _state = state;
+            _stateKind = kind;
+            _stateSince = now;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"State" });
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateKind" });
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateSince" });
+        }
+        if (message != _stateMessage)
+        {
+            _stateMessage = message;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateMessage" });
+        }
+        return transition;
+    }
+
+    void SessionNodeViewModel::SetLastActivity(winrt::Windows::Foundation::DateTime value)
+    {
+        if (value != _lastActivity)
+        {
+            _lastActivity = value;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LastActivity" });
+        }
     }
 
     // axan M13: parse a "#RRGGBB" or "#AARRGGBB" hex string into a Color. Returns nullopt for

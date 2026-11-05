@@ -480,3 +480,8 @@ void ConhostInternalGetSet::ProgramStatusPromptStarted()
 void ConhostInternalGetSet::ProgramStatusReset()
 {
 }
+
+// axan #30: the command lifecycle feeds axan's sidebar; nothing to do in conhost.
+void ConhostInternalGetSet::ShellCommandMark(const wchar_t /*mark*/, const std::optional<unsigned int> /*exitCode*/)
+{
+}

@@ -5515,6 +5515,12 @@ namespace winrt::TerminalApp::implementation
         _activated = activated;
         _updateThemeColors(activated ? "window activated" : "window deactivated");
 
+        // axan #30: returning to the window shows the focused session -> acknowledge it.
+        if (activated)
+        {
+            _AcknowledgeFocusedNode("window activated");
+        }
+
         // axan #3: a deactivated window never sees the Ctrl/Alt key-ups, so re-lock the
         // separator rows here rather than leave them unlocked until the next modifier event.
         if (!activated)

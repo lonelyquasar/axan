@@ -598,6 +598,17 @@ namespace winrt::TerminalApp::implementation
         // and the node editor's swatch/preview palette choice. themeOverride as in
         // _RefreshNodeLabelBrushes (#422: sidesteps ActualTheme's layout-pass lag).
         bool _SidebarIsDarkTheme(Windows::UI::Xaml::ElementTheme themeOverride = Windows::UI::Xaml::ElementTheme::Default);
+        // axan #30: per-node session state (AxanSessionState.h). _RecomputeNodeState gathers
+        // the tab's panes' OSC 7501 records / OSC 133 command state / bell and pushes the
+        // derived state onto the node's VM. _AcknowledgeNodeState marks the node's current
+        // done/error records as seen (node selected, its pane focused, or the window
+        // re-activated on it). _SessionStateClockTick is the ONE sidebar-wide 1s timer.
+        void _RecomputeNodeState(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        void _AcknowledgeNodeState(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const char* reason);
+        void _AcknowledgeFocusedNode(const char* reason);
+        void _EnsureSessionStateClock();
+        void _SessionStateClockTick();
+        Windows::UI::Xaml::DispatcherTimer _sessionStateClock{ nullptr };
 
         // axan M13: right-click a session node for its actions (rename label, set/clear icon,
         // recolor, duplicate, add child, close, open the profile in WT Settings). The menu is

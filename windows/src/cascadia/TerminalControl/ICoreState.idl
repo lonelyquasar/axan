@@ -101,6 +101,15 @@ namespace Microsoft.Terminal.Control
         IVector<ProgramStatusRecord> ProgramStatusRecords { get; };
         Boolean ProgramStatusEnabled;
 
+        // axan #30: session activity for the sidebar's state model. ShellCommandRunning is
+        // true between OSC 133;C and the next 133;D/133;A (ShellCommandChanged fires on each
+        // flip). LastInputTime / LastOutputTime stamp the last user input sent to the
+        // connection (terminal-generated replies excluded) and the last output received;
+        // the default (zero) DateTime means "never".
+        Boolean ShellCommandRunning { get; };
+        Windows.Foundation.DateTime LastInputTime { get; };
+        Windows.Foundation.DateTime LastOutputTime { get; };
+
         String CurrentWorkingDirectory { get; };
 
     };

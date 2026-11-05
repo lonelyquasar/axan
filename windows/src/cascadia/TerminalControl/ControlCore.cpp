@@ -122,6 +122,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         // axan #29: runs under the terminal write lock; just mark it and raise later.
         _terminal->SetProgramStatusChangedCallback([this] { _programStatusChangedPending.store(true, std::memory_order_relaxed); });
+        _terminal->SetShellCommandChangedCallback([this] { _shellCommandChangedPending.store(true, std::memory_order_relaxed); }); // axan #30
 
         auto pfnShowWindowChanged = [this](auto&& PH1) { _terminalShowWindowChanged(std::forward<decltype(PH1)>(PH1)); };
         _terminal->SetShowWindowCallback(pfnShowWindowChanged);
@@ -525,6 +526,9 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         }
         else
         {
+            // axan #30: user input (keys, chars, paste, mouse reports). Focus reports and
+            // parser replies go straight to _sendInputToConnection and are not stamped.
+            _lastInputTicks.store(winrt::clock::now().time_since_epoch().count(), std::memory_order_relaxed);
             _sendInputToConnection(wstr);
         }
     }
@@ -2236,6 +2240,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     {
         try
         {
+            _lastOutputTicks.store(winrt::clock::now().time_since_epoch().count(), std::memory_order_relaxed); // axan #30
             {
                 const auto lock = _terminal->LockForWriting();
                 _terminal->Write(hstr);
@@ -2254,6 +2259,10 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             }
 
             _raiseProgramStatusChangedIfPending(); // axan #29: outside the lock
+            if (_shellCommandChangedPending.exchange(false, std::memory_order_relaxed)) // axan #30
+            {
+                ShellCommandChanged.raise(*this, nullptr);
+            }
 
             // Start the throttled update of where our hyperlinks are.
             const auto shared = _shared.lock_shared();
@@ -2709,6 +2718,22 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             _terminal->SetProgramStatusEnabled(enabled);
         }
         _raiseProgramStatusChangedIfPending();
+    }
+
+    bool ControlCore::ShellCommandRunning() const
+    {
+        const auto lock = _terminal->LockForReading();
+        return _terminal->IsShellCommandRunning();
+    }
+
+    Windows::Foundation::DateTime ControlCore::LastInputTime() const noexcept
+    {
+        return winrt::clock::time_point{ winrt::clock::duration{ _lastInputTicks.load(std::memory_order_relaxed) } };
+    }
+
+    Windows::Foundation::DateTime ControlCore::LastOutputTime() const noexcept
+    {
+        return winrt::clock::time_point{ winrt::clock::duration{ _lastOutputTicks.load(std::memory_order_relaxed) } };
     }
 
     void ControlCore::_raiseProgramStatusChangedIfPending()

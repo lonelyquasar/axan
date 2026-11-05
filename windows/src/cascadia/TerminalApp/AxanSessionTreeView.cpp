@@ -33,12 +33,14 @@
 #include <LibraryResources.h>
 
 #include "AxanLabelTemplate.h"
+#include "AxanSessionState.h" // axan #30
 #include "SessionNodeViewModel.h"
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
 
 #include <shlobj.h>
 #include <array>
+#include <deque> // axan #30: stable string owners for the session-state inputs
 #include <map> // axan #3: startup-separator insert counters
 #include <unordered_set> // axan #14: captured-entry id dedup
 
@@ -742,9 +744,19 @@ namespace winrt::TerminalApp::implementation
 
         {
             const auto apToken = winrt::get_self<Tab>(tab)->ActivePaneChanged(
-                [hookActiveControlOutputIdle, recompute](auto&&, auto&&) {
+                [hookActiveControlOutputIdle, recompute, weakThis{ get_weak() }, weakNode, weakTab](auto&&, auto&&) {
                     hookActiveControlOutputIdle();
                     recompute(); // the newly-active pane's title/cwd are the label's inputs now
+                    // axan #30: a pane of the focused tab gained focus -> its done/error is seen.
+                    if (const auto page{ weakThis.get() })
+                    {
+                        const auto n = weakNode.get();
+                        const auto t = weakTab.get();
+                        if (n && t && t == page->_GetFocusedTab())
+                        {
+                            page->_AcknowledgeNodeState(n, "pane focused");
+                        }
+                    }
                 });
             vmImpl->RevokeActivePaneSubscription = [weakTab, apToken]() {
                 if (const auto t{ weakTab.get() })
@@ -775,6 +787,29 @@ namespace winrt::TerminalApp::implementation
                 }
             }
         });
+
+        // axan #30: session state. The tab raises AxanSessionStateChanged on the UI thread for
+        // every state input (7501 records, 133 command lifecycle, bell, connection, panes
+        // added/removed), so the node recomputes from all of its panes each time.
+        {
+            const auto stateToken = winrt::get_self<Tab>(tab)->AxanSessionStateChanged([weakThis{ get_weak() }, weakNode]() {
+                if (const auto page{ weakThis.get() })
+                {
+                    if (const auto n = weakNode.get())
+                    {
+                        page->_RecomputeNodeState(n);
+                    }
+                }
+            });
+            vmImpl->RevokeSessionStateSubscription = [weakTab, stateToken]() {
+                if (const auto t{ weakTab.get() })
+                {
+                    winrt::get_self<Tab>(t)->AxanSessionStateChanged(stateToken);
+                }
+            };
+        }
+        _RecomputeNodeState(node);
+        _EnsureSessionStateClock();
 
         // Kick the first templated recompute (async; replaces the placeholder set above).
         recompute();
@@ -3157,5 +3192,155 @@ namespace winrt::TerminalApp::implementation
             break;
         }
         Axan::Log::Info("TerminalPage", "applied sidebar state", { { "state", state == SidebarState::Minimized ? "minimized" : state == SidebarState::Collapsed ? "collapsed" : "expanded" } });
+    }
+
+    // ----- axan #30: session state ---------------------------------------------------------
+
+    // Gather the node's tab's panes into AxanSessionState inputs, derive, push onto the VM.
+    // UI thread. If the node's tab is the focused tab in an activated window, the user is
+    // looking at it, so its done/error records are acknowledged first (the bell rule: WT
+    // clears the bell indicator for a focused tab the same way).
+    void TerminalPage::_RecomputeNodeState(const MUX::Controls::TreeViewNode& node)
+    {
+        const auto vm = _nodeVM(node);
+        const auto tab = _nodeTab(node);
+        if (!vm || !tab || vm->IsSeparator())
+        {
+            return;
+        }
+        const auto tabImpl = winrt::get_self<Tab>(tab);
+
+        if (_activated && tab == _GetFocusedTab())
+        {
+            for (const auto& control : tabImpl->AxanTerminalControls())
+            {
+                uint64_t maxRevision = 0;
+                for (const auto& r : control.ProgramStatusRecords())
+                {
+                    maxRevision = std::max(maxRevision, r.Revision);
+                }
+                auto& seen = vm->SeenRevisions[control.ContentId()];
+                seen = std::max(seen, maxRevision);
+            }
+        }
+
+        // RecordInput holds string views; a deque keeps the owning hstrings at stable
+        // addresses while the inputs are built.
+        std::deque<winrt::hstring> texts;
+        std::vector<Axan::SessionState::PaneInput> panes;
+        for (const auto& control : tabImpl->AxanTerminalControls())
+        {
+            auto& pane = panes.emplace_back();
+            pane.commandRunning = control.ShellCommandRunning();
+            const auto records = control.ProgramStatusRecords();
+            const auto seenIt = vm->SeenRevisions.find(control.ContentId());
+            const uint64_t seenRevision = seenIt == vm->SeenRevisions.end() ? 0 : seenIt->second;
+            pane.records.reserve(records.Size());
+            for (const auto& r : records)
+            {
+                auto& in = pane.records.emplace_back();
+                in.isRoot = r.Id.empty();
+                in.state = static_cast<Axan::SessionState::RecordState>(r.State);
+                in.kind = static_cast<Axan::SessionState::RecordKind>(r.Kind);
+                in.revision = r.Revision;
+                in.seen = r.Revision <= seenRevision;
+                in.msg = texts.emplace_back(r.Msg);
+                in.title = texts.emplace_back(r.Title);
+            }
+        }
+
+        const auto result = Axan::SessionState::Derive(panes, tabImpl->AxanBellIndicator());
+        const auto now = winrt::clock::now();
+        if (vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now))
+        {
+            Axan::Log::Info("SessionState",
+                            "node state changed",
+                            { { "label", winrt::to_string(vm->Label()) },
+                              { "state", winrt::to_string(Axan::SessionState::Name(result.state)) },
+                              { "kind", winrt::to_string(result.kind) },
+                              { "source", std::string{ result.source } },
+                              { "panes", std::to_string(panes.size()) } });
+        }
+    }
+
+    // Mark everything the node currently shows as seen, then recompute. One-shot: called on
+    // selection / pane focus / window activation, never per keystroke.
+    void TerminalPage::_AcknowledgeNodeState(const MUX::Controls::TreeViewNode& node, const char* reason)
+    {
+        const auto vm = _nodeVM(node);
+        const auto tab = _nodeTab(node);
+        if (!vm || !tab)
+        {
+            return;
+        }
+        bool advanced = false;
+        for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
+        {
+            uint64_t maxRevision = 0;
+            for (const auto& r : control.ProgramStatusRecords())
+            {
+                maxRevision = std::max(maxRevision, r.Revision);
+            }
+            auto& seen = vm->SeenRevisions[control.ContentId()];
+            if (maxRevision > seen)
+            {
+                seen = maxRevision;
+                advanced = true;
+            }
+        }
+        if (advanced)
+        {
+            Axan::Log::Debug("SessionState", "node acknowledged", { { "label", winrt::to_string(vm->Label()) }, { "reason", reason } });
+        }
+        _RecomputeNodeState(node);
+    }
+
+    void TerminalPage::_AcknowledgeFocusedNode(const char* reason)
+    {
+        if (const auto tab = _GetFocusedTab())
+        {
+            if (const auto node = _FindNodeForTab(tab))
+            {
+                _AcknowledgeNodeState(node, reason);
+            }
+        }
+    }
+
+    // The ONE sidebar-wide 1s clock (#30 ambient activity; #32 ages and #31 idle
+    // de-emphasis hang off the same tick). Started lazily when the first node is created.
+    void TerminalPage::_EnsureSessionStateClock()
+    {
+        if (_sessionStateClock)
+        {
+            return;
+        }
+        _sessionStateClock = Windows::UI::Xaml::DispatcherTimer{};
+        _sessionStateClock.Interval(std::chrono::seconds{ 1 });
+        _sessionStateClock.Tick([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (const auto page{ weakThis.get() })
+            {
+                page->_SessionStateClockTick();
+            }
+        });
+        _sessionStateClock.Start();
+        Axan::Log::Debug("SessionState", "session state clock started");
+    }
+
+    void TerminalPage::_SessionStateClockTick()
+    {
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            const auto vm = _nodeVM(node);
+            const auto tab = _nodeTab(node);
+            if (!vm || !tab || vm->IsSeparator())
+            {
+                return;
+            }
+            winrt::Windows::Foundation::DateTime latest{};
+            for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
+            {
+                latest = std::max({ latest, control.LastInputTime(), control.LastOutputTime() });
+            }
+            vm->SetLastActivity(latest);
+        });
     }
 }

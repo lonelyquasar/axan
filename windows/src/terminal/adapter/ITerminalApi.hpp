@@ -105,5 +105,9 @@ namespace Microsoft::Console::VirtualTerminal
         virtual void ProgramStatusReport(const ProgramStatus::ParseResult& result) = 0;
         virtual void ProgramStatusPromptStarted() = 0;
         virtual void ProgramStatusReset() = 0;
+
+        // axan #30: OSC 133 command lifecycle. mark is 'A' (prompt start), 'C' (command
+        // executed) or 'D' (command finished; exitCode set when the shell sent one).
+        virtual void ShellCommandMark(const wchar_t mark, const std::optional<unsigned int> exitCode) = 0;
     };
 }

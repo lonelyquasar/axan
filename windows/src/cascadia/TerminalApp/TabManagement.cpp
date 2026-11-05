@@ -1023,6 +1023,9 @@ namespace winrt::TerminalApp::implementation
             }
 
             _adjustProcessPriorityThrottled->Run();
+
+            // axan #30: the user is now looking at this session -> its done/error is seen.
+            _AcknowledgeFocusedNode("tab selected");
         }
         CATCH_LOG();
     }

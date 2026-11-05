@@ -324,6 +324,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         _revokers.TabColorChanged = _core.TabColorChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleTabColorChanged });
         _revokers.TaskbarProgressChanged = _core.TaskbarProgressChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleSetTaskbarProgress });
         _revokers.ProgramStatusChanged = _core.ProgramStatusChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleProgramStatusChanged });
+        _revokers.ShellCommandChanged = _core.ShellCommandChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleShellCommandChanged }); // axan #30
         _revokers.ConnectionStateChanged = _core.ConnectionStateChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleConnectionStateChanged });
         _revokers.ShowWindowChanged = _core.ShowWindowChanged(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleShowWindowChanged });
         _revokers.CloseTerminalRequested = _core.CloseTerminalRequested(winrt::auto_revoke, { get_weak(), &TermControl::_bubbleCloseTerminalRequested });
@@ -4059,6 +4060,22 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     void TermControl::ProgramStatusEnabled(bool enabled)
     {
         _core.ProgramStatusEnabled(enabled);
+    }
+
+    // axan #30
+    bool TermControl::ShellCommandRunning() const
+    {
+        return _core.ShellCommandRunning();
+    }
+
+    Windows::Foundation::DateTime TermControl::LastInputTime() const
+    {
+        return _core.LastInputTime();
+    }
+
+    Windows::Foundation::DateTime TermControl::LastOutputTime() const
+    {
+        return _core.LastOutputTime();
     }
 
     void TermControl::SelectCommand(const bool goUp)

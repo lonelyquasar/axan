@@ -267,3 +267,35 @@ std::vector<Terminal::ProgramStatusRecord> Terminal::GetProgramStatusRecords() c
     }
     return out;
 }
+
+// axan #30: OSC 133 command lifecycle -> "is a shell command running". A plain shell's
+// sidebar state is running/idle from this; a non-zero exit is logged but deliberately
+// not surfaced as an error state (a failed `ls` isn't something to flag in the tree).
+bool Terminal::IsShellCommandRunning() const noexcept
+{
+    return _shellCommandRunning;
+}
+
+void Terminal::SetShellCommandChangedCallback(std::function<void()> pfn) noexcept
+{
+    _pfnShellCommandChanged.swap(pfn);
+}
+
+void Terminal::ShellCommandMark(const wchar_t mark, const std::optional<unsigned int> exitCode)
+{
+    _assertLocked();
+    const bool running = mark == L'C';
+    if (running == _shellCommandRunning)
+    {
+        return;
+    }
+    _shellCommandRunning = running;
+    Axan::Log::Debug(LogComponent,
+                     running ? "shell command started" : "shell command ended",
+                     { { "mark", std::string(1, static_cast<char>(mark)) },
+                       { "exitCode", exitCode ? std::to_string(*exitCode) : std::string{} } });
+    if (_pfnShellCommandChanged)
+    {
+        _pfnShellCommandChanged();
+    }
+}

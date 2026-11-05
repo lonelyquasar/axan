@@ -3664,6 +3664,24 @@ void AdaptDispatch::DoFinalTermAction(const std::wstring_view string)
         _api.ProgramStatusPromptStarted();
     }
 
+    // axan #30: command lifecycle for the sidebar's running/idle state. Also ahead of the
+    // scrollbar-marks gate: A (prompt) and D (finished) end a command, C (executed) starts
+    // one. B (end of prompt) carries no lifecycle change. D's exit code rides along.
+    if (!string.empty() && (string.size() == 1 || string[1] == L';'))
+    {
+        const auto mark = string.front();
+        if (mark == L'A' || mark == L'C' || mark == L'D')
+        {
+            std::optional<unsigned int> exitCode;
+            if (mark == L'D' && string.size() > 2)
+            {
+                unsigned int parsed = 0;
+                exitCode = Utils::StringToUint(string.substr(2, string.find(L';', 2) - 2), parsed) ? parsed : UINT_MAX;
+            }
+            _api.ShellCommandMark(mark, exitCode);
+        }
+    }
+
     if constexpr (!Feature_ScrollbarMarks::IsEnabled())
     {
         return;

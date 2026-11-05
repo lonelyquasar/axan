@@ -46,6 +46,9 @@ namespace TerminalCoreUnitTests
         TEST_METHOD(ProgramStatusQueryReply);
         TEST_METHOD(ProgramStatusRecords);
         TEST_METHOD(ProgramStatusRecordCap);
+
+        // axan #30: OSC 133 command lifecycle
+        TEST_METHOD(ShellCommandRunning);
     };
 };
 
@@ -666,4 +669,37 @@ void TerminalCoreUnitTests::TerminalApiTest::ProgramStatusRecordCap()
     stateMachine.ProcessString(Report(L"state=error:id=r2"));
     VERIFY_ARE_EQUAL(cap, term.GetProgramStatusRecords().size());
     VERIFY_IS_NOT_NULL(FindRecord(term.GetProgramStatusRecords(), L"r3"));
+}
+
+void TerminalCoreUnitTests::TerminalApiTest::ShellCommandRunning()
+{
+    Terminal term{ Terminal::TestDummyMarker{} };
+    DummyRenderer renderer{ &term };
+    term.Create({ 100, 100 }, 0, renderer);
+    size_t notifications = 0;
+    term.SetShellCommandChangedCallback([&]() { ++notifications; });
+    auto& stateMachine = *(term._stateMachine);
+
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    stateMachine.ProcessString(L"\x1b]133;A\x07\x1b]133;B\x07");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(0u, notifications);
+
+    stateMachine.ProcessString(L"\x1b]133;C\x07");
+    VERIFY_IS_TRUE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(1u, notifications);
+
+    Log::Comment(L"A non-zero exit just ends the command");
+    stateMachine.ProcessString(L"\x1b]133;D;1\x07");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(2u, notifications);
+
+    Log::Comment(L"A new prompt without D also ends it");
+    stateMachine.ProcessString(L"\x1b]133;C\x07\x1b]133;A\x07");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(4u, notifications);
+
+    Log::Comment(L"Repeated marks don't re-notify");
+    stateMachine.ProcessString(L"\x1b]133;D\x07\x1b]133;A\x07");
+    VERIFY_ARE_EQUAL(4u, notifications);
 }

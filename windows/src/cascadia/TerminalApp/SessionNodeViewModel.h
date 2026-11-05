@@ -7,6 +7,7 @@
 
 #include <atomic> // axan #430: LabelGeneration
 #include <functional> // axan #427: type-erased recompute unsubscribers
+#include <unordered_map> // axan #30: SeenRevisions
 
 namespace winrt::TerminalApp::implementation
 {
@@ -131,8 +132,27 @@ namespace winrt::TerminalApp::implementation
         std::function<void()> RevokeTitleSubscription;
         std::function<void()> RevokeOutputIdleSubscription;
         std::function<void()> RevokeActivePaneSubscription;
+        // axan #30: the tab's AxanSessionStateChanged subscription (same revoke-on-prune rule).
+        std::function<void()> RevokeSessionStateSubscription;
         void RevokeRecomputeSubscriptions();
         ~SessionNodeViewModel();
+
+        // axan #30: session state (see the idl and AxanSessionState.h). SetSessionState is
+        // called by TerminalPage on the UI thread; it raises PropertyChanged only for what
+        // changed and restarts StateSince only when the state or kind changes (a message
+        // update keeps the age). Returns true when the state or kind changed.
+        hstring State() const noexcept { return _state; }
+        winrt::Windows::Foundation::DateTime StateSince() const noexcept { return _stateSince; }
+        hstring StateMessage() const noexcept { return _stateMessage; }
+        hstring StateKind() const noexcept { return _stateKind; }
+        winrt::Windows::Foundation::DateTime LastActivity() const noexcept { return _lastActivity; }
+        bool SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now);
+        void SetLastActivity(winrt::Windows::Foundation::DateTime value);
+        // axan #30: "seen" bookkeeping. Per TermControl (keyed by its ContentId), the highest
+        // OSC 7501 record Revision the user has been shown. A done/error record with a
+        // revision at or below this is seen. Written only by TerminalPage's acknowledge
+        // path (node selected / pane focused / window activated), never per keystroke.
+        std::unordered_map<uint64_t, uint64_t> SeenRevisions;
         // axan #430 item 1: generation stamp for the async label recompute. Bumped on the UI
         // thread when a recompute is dispatched; the background expansion's result is applied
         // only if its generation is still current, so a stale (slower) expansion can never
@@ -160,6 +180,12 @@ namespace winrt::TerminalApp::implementation
         double _separatorHeight{ 1.0 };
         hstring _placement{ L"inline" };
         double _rowHeightPx{ 32.0 };
+        // axan #30: session state.
+        hstring _state{ L"idle" };
+        winrt::Windows::Foundation::DateTime _stateSince{};
+        hstring _stateMessage;
+        hstring _stateKind;
+        winrt::Windows::Foundation::DateTime _lastActivity{};
     };
 }
 

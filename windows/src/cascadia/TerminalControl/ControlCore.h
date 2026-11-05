@@ -191,6 +191,10 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         Windows::Foundation::Collections::IVector<Control::ProgramStatusRecord> ProgramStatusRecords() const;
         bool ProgramStatusEnabled() const;
         void ProgramStatusEnabled(bool enabled);
+        // axan #30
+        bool ShellCommandRunning() const;
+        Windows::Foundation::DateTime LastInputTime() const noexcept;
+        Windows::Foundation::DateTime LastOutputTime() const noexcept;
         void AddMark(const Control::ScrollMark& mark);
         void ClearMark();
         void ClearAllMarks();
@@ -295,6 +299,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         til::typed_event<IInspectable, Control::ScrollPositionChangedArgs> ScrollPositionChanged;
         til::typed_event<> TaskbarProgressChanged;
         til::typed_event<> ProgramStatusChanged; // axan #29: background thread, never under the terminal lock
+        til::typed_event<> ShellCommandChanged; // axan #30: same threading as ProgramStatusChanged
         til::typed_event<> ConnectionStateChanged;
         til::typed_event<> HoveredHyperlinkChanged;
         til::typed_event<IInspectable, IInspectable> RendererEnteredErrorState;
@@ -407,6 +412,11 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         std::atomic<bool> _programStatusChangedPending{ false };
         std::atomic<bool> _connectionEnded{ false };
         void _raiseProgramStatusChangedIfPending();
+        // axan #30: same deferral for the OSC 133 command lifecycle, plus the ambient
+        // activity stamps (winrt::clock ticks; 0 = never).
+        std::atomic<bool> _shellCommandChangedPending{ false };
+        std::atomic<int64_t> _lastInputTicks{ 0 };
+        std::atomic<int64_t> _lastOutputTicks{ 0 };
 
         // Font stuff.
         FontInfoDesired _desiredFont;

@@ -24,6 +24,10 @@ namespace winrt::TerminalApp::implementation
         void Initialize();
 
         winrt::Microsoft::Terminal::Control::TermControl GetActiveTerminalControl() const;
+        // axan #30: every terminal control in this tab (all panes), for the sidebar's
+        // per-node state, which is the strongest state across the tab's panes.
+        std::vector<winrt::Microsoft::Terminal::Control::TermControl> AxanTerminalControls() const;
+        bool AxanBellIndicator() const;
         winrt::Microsoft::Terminal::Settings::Model::Profile GetFocusedProfile() const noexcept;
         winrt::TerminalApp::IPaneContent GetActiveContent() const;
 
@@ -121,6 +125,10 @@ namespace winrt::TerminalApp::implementation
         til::typed_event<TerminalApp::Tab, IInspectable> ActivePaneChanged;
         til::event<winrt::delegate<>> TabRaiseVisualBell;
         til::typed_event<IInspectable, IInspectable> TaskbarProgressChanged;
+        // axan #30: something that feeds the sidebar's session state changed in one of
+        // this tab's panes (OSC 7501 records, OSC 133 command lifecycle, bell indicator,
+        // connection state, or a pane was added/removed). Always raised on the UI thread.
+        til::event<winrt::delegate<>> AxanSessionStateChanged;
 
         // The TabViewIndex is the index this Tab object resides in TerminalPage's _tabs vector.
         WINRT_PROPERTY(uint32_t, TabViewIndex, 0);
@@ -188,6 +196,10 @@ namespace winrt::TerminalApp::implementation
             winrt::Microsoft::Terminal::Control::TermControl::StringSent_revoker StringSent;
 
             winrt::TerminalApp::TerminalPaneContent::RestartTerminalRequested_revoker RestartTerminalRequested;
+
+            // axan #30: sidebar session-state inputs from a TermControl content.
+            winrt::Microsoft::Terminal::Control::TermControl::ProgramStatusChanged_revoker ProgramStatusChanged;
+            winrt::Microsoft::Terminal::Control::TermControl::ShellCommandChanged_revoker ShellCommandChanged;
         };
         std::unordered_map<uint32_t, ContentEventTokens> _contentEvents;
 

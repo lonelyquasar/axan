@@ -168,6 +168,7 @@ public:
     void ProgramStatusReport(const ::Microsoft::Console::VirtualTerminal::ProgramStatus::ParseResult& result) override;
     void ProgramStatusPromptStarted() override;
     void ProgramStatusReset() override;
+    void ShellCommandMark(const wchar_t mark, const std::optional<unsigned int> exitCode) override; // axan #30
 
 #pragma endregion
 
@@ -292,6 +293,11 @@ public:
     // raise UI events from inside it; ControlCore just sets a flag and raises later.
     void SetProgramStatusChangedCallback(std::function<void()> pfn) noexcept;
 
+    // axan #30: OSC 133 command lifecycle. Running between C (executed) and the next D
+    // (finished) or A (prompt). The callback runs under the write lock, like the 7501 one.
+    bool IsShellCommandRunning() const noexcept;
+    void SetShellCommandChangedCallback(std::function<void()> pfn) noexcept;
+
     // axan M11: public accessor for the alt-screen-buffer state, so the input-safety
     // guard can exclude full-screen TUI apps (vim/less/htop). Caller must hold the lock.
     bool IsInAlternateScreenBuffer() const noexcept { return _inAltBuffer(); }
@@ -394,6 +400,8 @@ private:
     std::function<void()> _pfnClearQuickFix;
     std::function<void(int32_t, int32_t)> _pfnWindowSizeChanged;
     std::function<void()> _pfnProgramStatusChanged; // axan #29
+    std::function<void()> _pfnShellCommandChanged; // axan #30
+    bool _shellCommandRunning{ false }; // axan #30
 
     // axan #29: OSC 7501 record store, keyed by id. std::map keeps ids ordered, so a
     // subtree ("a" and everything under "a/") is one contiguous range.

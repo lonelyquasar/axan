@@ -255,6 +255,13 @@ public:
         ++_programStatusResets;
     }
 
+    // axan #30
+    void ShellCommandMark(const wchar_t mark, const std::optional<unsigned int> exitCode) override
+    {
+        Log::Comment(L"ShellCommandMark MOCK called...");
+        _shellCommandMarks.emplace_back(mark, exitCode);
+    }
+
     void PrepData()
     {
         PrepData(CursorDirection::UP); // if called like this, the cursor direction doesn't matter.
@@ -309,6 +316,7 @@ public:
         _programStatusResults.clear();
         _programStatusPromptStarts = 0;
         _programStatusResets = 0;
+        _shellCommandMarks.clear();
     }
 
     void PrepCursor(CursorX xact, CursorY yact)
@@ -436,6 +444,7 @@ public:
     std::vector<ProgramStatus::ParseResult> _programStatusResults;
     size_t _programStatusPromptStarts = 0;
     size_t _programStatusResets = 0;
+    std::vector<std::pair<wchar_t, std::optional<unsigned int>>> _shellCommandMarks; // axan #30
 
 private:
     HANDLE _hCon;
@@ -4193,6 +4202,25 @@ public:
         VERIFY_ARE_EQUAL(0u, _testGetSet->_programStatusResets);
         _pDispatch->HardReset(true);
         VERIFY_ARE_EQUAL(1u, _testGetSet->_programStatusResets);
+    }
+
+    // axan #30: OSC 133 A/C/D reach the API as command-lifecycle marks; B does not.
+    TEST_METHOD(ShellCommandMarksReachTheApi)
+    {
+        _testGetSet->PrepData();
+        _stateMachine->ProcessString(L"\x1b]133;A\x07\x1b]133;B\x07\x1b]133;C\x07\x1b]133;D;0\x07");
+        _stateMachine->ProcessString(L"\x1b]133;C\x1b\\\x1b]133;D;127;aid=1\x1b\\\x1b]133;C\x07\x1b]133;D\x07\x1b]133;D;x\x07\x1b]133;CD\x07");
+        const auto& marks = _testGetSet->_shellCommandMarks;
+        VERIFY_ARE_EQUAL(8u, marks.size());
+        VERIFY_ARE_EQUAL(L'A', marks[0].first);
+        VERIFY_ARE_EQUAL(L'C', marks[1].first);
+        VERIFY_ARE_EQUAL(L'D', marks[2].first);
+        VERIFY_ARE_EQUAL(0u, marks[2].second.value_or(999u));
+        VERIFY_ARE_EQUAL(L'C', marks[3].first);
+        VERIFY_ARE_EQUAL(127u, marks[4].second.value_or(999u));
+        VERIFY_ARE_EQUAL(L'C', marks[5].first);
+        VERIFY_IS_FALSE(marks[6].second.has_value());
+        VERIFY_ARE_EQUAL(static_cast<unsigned int>(UINT_MAX), marks[7].second.value_or(999u));
     }
 
     TEST_METHOD(ProgramStatusParseFullReport)
