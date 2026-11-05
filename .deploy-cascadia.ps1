@@ -16,6 +16,21 @@
 # stale Dev-branding objects would otherwise mismatch the Release manifest's CLSIDs.
 param([switch]$Rebuild, [switch]$Launch)
 
+# Refuse to run from inside axan. The kill step below force-stops every axan.exe, and if
+# this script's own console is hosted by axan (a Claude Code session or a plain shell in an
+# axan tab), that kill takes the script down with it: the build never starts and the
+# driving session dies mid-turn. Happened 2026-09-17. Walk the parent chain and bail early.
+$ancestor = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
+while ($ancestor) {
+  if ($ancestor.Name -match '^axan(-cli)?\.exe$') {
+    Write-Error ("refusing to deploy: this shell is hosted by {0} (pid {1}). Deploying kills every axan " +
+      "instance, including the one running this script. Run the deploy from stock Windows Terminal " +
+      "or another non-axan console.") -f $ancestor.Name, $ancestor.ProcessId
+    exit 3
+  }
+  $ancestor = if ($ancestor.ParentProcessId) { Get-CimInstance Win32_Process -Filter "ProcessId=$($ancestor.ParentProcessId)" } else { $null }
+}
+
 $root = Join-Path $PSScriptRoot 'windows'
 $wrap = Join-Path $PSScriptRoot '.deploy-cascadia.log'
 $mlog = Join-Path $PSScriptRoot '.deploy-msbuild.log'
@@ -35,10 +50,13 @@ try {
   #
   # Force-kill directly. A graceful CloseMainWindow() was tried and verified NOT to work:
   # axan ignores WM_CLOSE (blocked by its close-confirmation path), so it only added an 8s
-  # wait before the same force-kill. Force-killing axan was harmless in testing — no
-  # orphaned-shell crashes, and the driving terminal survived. The real protection against
-  # taking this session down is the DETACHED relaunch below (axan is never a child of the
-  # deploy console) plus running this whole script backgrounded.
+  # wait before the same force-kill. Force-killing axan is harmless to OTHER terminals (no
+  # orphaned-shell crashes in testing); the only way it takes the driving session down is
+  # if that session is itself inside axan, which the ancestry guard at the top refuses.
+  # Beyond that, the protection is the DETACHED relaunch below (axan is never a child of
+  # the deploy console) plus running this whole script backgrounded. Note that with axan as
+  # the daily driver, this step closes every open axan session, so the caller must have
+  # confirmed nothing live is in them.
   $running = Get-Process axan,axan-cli -ErrorAction SilentlyContinue
   if ($running) {
     Note ("stopping running axan instances: " + ($running.Id -join ', '))
