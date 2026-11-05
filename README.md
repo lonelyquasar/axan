@@ -177,11 +177,12 @@ Receivers are strict about the parts that identify and bound a report, and forgi
 | `done`, not yet seen | Half-strength dot; second line `message · age` (`done · age` with no message) |
 | `done`, after you've opened it | No dot. With `sidebar.statusAfterSeen` = `keep` (the default) the report stays as a muted second line with its age until it is replaced or cleared; with `clear` the row returns to plain |
 | `error`, not yet seen | Red dot; second line `message · age` (`error · age` with no message); after it's seen it follows the same keep/clear rule as `done` |
-| `working` | Lightning-bolt glyph at the right edge; the second line is the message, with no age |
-| Agent present at rest | A small robot glyph at the right edge whenever a pane has any 7501 record and none of the above owns that slot (`sidebar.showAgentPresence`) |
-| Shell command running (OSC 133) | Play glyph at the right edge |
-| `idle` | Plain row (dimmed and smaller after `sidebar.idleAfterMinutes`) |
+| `working` | Lightning-bolt glyph in the right-edge slot; the second line is the message, with no age |
+| `idle` | Robot glyph in the right-edge slot whenever a status-reporting program is present and at rest, including a done or error report you've already seen; no glyph when no program has reported. The row is dimmed and smaller after `sidebar.idleAfterMinutes` |
+| running (shell, OSC 133) | Play glyph in the right-edge slot. Only for a pane with no 7501 records |
 | `clear` | Removes the records, so the row falls back to the next source |
+
+The right-edge slot always shows the node's current state. `blocked`, `done` and `error` show no slot glyph by default; the attention dot on the icon carries them. The glyphs are customizable with `sidebar.stateGlyphs`, an object with the keys `idle`, `working`, `blocked`, `done`, `error` and `running`, each using the same icon vocabulary as node icons; `""` means no glyph. (`sidebar.stateGlyphs` is being added in a follow-up commit and may not be in your build yet.)
 
 Messages on the second line are cut at 24 characters so the age stays visible; the row tooltip has the full message, the state and kind, and the local time it began. Ages read `<1m`, `5m`, `2h`, `3d`. Nothing in the sidebar animates.
 
@@ -196,7 +197,7 @@ When a tab has several records or panes, the strongest state wins: blocked, then
 | `sidebar.idleAfterMinutes` | `15` | Minutes of no input or output, while idle, before a row is dimmed and shrunk. `0` turns it off. The focused row is never dimmed |
 | `sidebar.needsYouGroup` | `false` | Show a "Needs you" group above the session tree listing every session that is blocked, errored or done-unseen, longest-waiting first |
 | `sidebar.statusAfterSeen` | `"keep"` | `"keep"` or `"clear"`: what a row does with a done/error report once you've seen it. Either way it stops counting as needing you |
-| `sidebar.showAgentPresence` | `true` | The robot glyph on rows where a status-reporting program lives |
+| `sidebar.stateGlyphs` | robot / bolt / play for `idle` / `working` / `running`, none for the rest | Per-state right-edge glyphs, as described above (follow-up commit) |
 
 Section headers on separators (label, collapse, the summary badge) are covered under the launch-entry tree above; a collapsed header's badge summarises the states of the rows it hides.
 

@@ -16,9 +16,9 @@ All notable changes to axan are documented here.
   it began. A done or error report counts as unread until you open the tab.
   Windows only. (#30, #32)
 - `sidebar.statusAfterSeen` (`keep` by default, or `clear`) sets whether an
-  opened tab keeps its last report as a muted line. `sidebar.showAgentPresence`
-  (default on) adds a small robot glyph to rows where a status-reporting
-  program lives. Windows only.
+  opened tab keeps its last report as a muted line. A robot glyph at the right
+  edge marks rows where a status-reporting program is present and at rest, and
+  `sidebar.stateGlyphs` customizes the per-state glyphs. Windows only.
 - Idle rows are dimmed and shrunk after `sidebar.idleAfterMinutes` (default 15;
   `0` turns it off); the focused row is never dimmed. Windows only. (#31)
 - Optional "Needs you" group above the session tree
