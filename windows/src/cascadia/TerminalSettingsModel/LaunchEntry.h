@@ -47,6 +47,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         WINRT_PROPERTY(hstring, SeparatorStyle);
         WINRT_PROPERTY(double, Height, 0.0);
         WINRT_PROPERTY(hstring, Placement);
+        WINRT_PROPERTY(bool, Collapsed, false); // axan #33
 
     public:
         bool IsSeparator() const noexcept;

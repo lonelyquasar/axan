@@ -49,7 +49,8 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Visibility SessionVisibility() const noexcept;
         winrt::Windows::UI::Xaml::Visibility SeparatorVisibility() const noexcept;
         winrt::Windows::UI::Xaml::Visibility SeparatorLineVisibility() const noexcept;
-        double SeparatorPixelHeight() const noexcept { return _separatorHeight * _rowHeightPx; }
+        // axan #33: a labelled header is never shorter than its label needs.
+        double SeparatorPixelHeight() const noexcept { return std::max(_separatorHeight * _rowHeightPx, _separatorLabel.empty() ? 0.0 : 24.0); }
         void ConfigureSeparator(const hstring& style, double height, const hstring& placement, double rowHeightPx);
 
         // WINRT_OBSERVABLE_PROPERTY leaves the access region non-public; restore it so the
@@ -176,6 +177,25 @@ namespace winrt::TerminalApp::implementation
         void SetRowHeightPx(double px);
         // Re-evaluate against the threshold (0 = off). Returns true if the flag flipped.
         bool UpdateDeEmphasis(winrt::Windows::Foundation::DateTime now, int32_t idleAfterMinutes);
+
+        // axan #33: section headers (see the idl).
+        hstring SeparatorLabel() const noexcept { return _separatorLabel; }
+        bool HasSectionHeader() const noexcept { return _isSeparator && !_separatorLabel.empty(); }
+        winrt::Windows::UI::Xaml::Visibility SeparatorHeaderVisibility() const noexcept;
+        winrt::Windows::UI::Xaml::Visibility SeparatorHeaderLineVisibility() const noexcept;
+        bool IsCollapsed() const noexcept { return _collapsed; }
+        hstring CollapseGlyph() const noexcept;
+        hstring SectionSummary() const noexcept { return _sectionSummary; }
+        hstring SectionBadge() const noexcept { return _sectionBadge; }
+        winrt::Windows::UI::Xaml::Visibility SectionBadgeVisibility() const noexcept;
+        void ActivateSectionBadge();
+        bool IsSectionHidden() const noexcept { return _sectionHidden; }
+        void SetSeparatorLabel(const hstring& label);
+        void SetCollapsed(bool collapsed);
+        void SetSectionSummary(const hstring& summary, const hstring& badge);
+        bool SetSectionHidden(bool hidden); // returns true if it changed
+        // Invoked by ActivateSectionBadge; the page sets it on header VMs (expand + select).
+        std::function<void()> OnSectionBadgeActivated;
         // axan #30: "seen" bookkeeping. Per TermControl (keyed by its ContentId), the highest
         // OSC 7501 record Revision the user has been shown. A done/error record with a
         // revision at or below this is seen. Written only by TerminalPage's acknowledge
@@ -219,6 +239,12 @@ namespace winrt::TerminalApp::implementation
         hstring _subLabelMessage;
         // axan #31
         bool _deEmphasised{ false };
+        // axan #33
+        hstring _separatorLabel;
+        bool _collapsed{ false };
+        bool _sectionHidden{ false };
+        hstring _sectionSummary;
+        hstring _sectionBadge;
         void _setDeEmphasised(bool value);
         winrt::Windows::UI::Color _textColor() const;
         hstring _computeSubLabel(winrt::Windows::Foundation::DateTime now) const;

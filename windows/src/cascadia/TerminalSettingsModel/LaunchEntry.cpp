@@ -30,6 +30,7 @@ static constexpr std::string_view KindKey{ Axan::LaunchEntryWire::JsonKey::Kind 
 static constexpr std::string_view StyleKey{ Axan::LaunchEntryWire::JsonKey::Style };
 static constexpr std::string_view HeightKey{ Axan::LaunchEntryWire::JsonKey::Height };
 static constexpr std::string_view PlacementKey{ Axan::LaunchEntryWire::JsonKey::Placement };
+static constexpr std::string_view CollapsedKey{ Axan::LaunchEntryWire::JsonKey::Collapsed }; // axan #33
 
 namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 {
@@ -50,6 +51,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         JsonUtils::GetValueForKey(json, StyleKey, result->_SeparatorStyle);
         JsonUtils::GetValueForKey(json, HeightKey, result->_Height);
         JsonUtils::GetValueForKey(json, PlacementKey, result->_Placement);
+        JsonUtils::GetValueForKey(json, CollapsedKey, result->_Collapsed); // axan #33
         if (result->IsSeparator())
         {
             result->_Height = Axan::LaunchEntryWire::NormalizeSeparatorHeight(result->_Height);
@@ -84,6 +86,15 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             if (!_Placement.empty() && _Placement != Axan::LaunchEntryWire::PlacementInlineW)
             {
                 JsonUtils::SetValueForKey(json, PlacementKey, _Placement);
+            }
+            // axan #33: the header label (in "name") and collapsed state, both sparse.
+            if (!_Name.empty())
+            {
+                JsonUtils::SetValueForKey(json, NameKey, _Name);
+            }
+            if (_Collapsed)
+            {
+                JsonUtils::SetValueForKey(json, CollapsedKey, _Collapsed);
             }
             return json;
         }
@@ -125,6 +136,7 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         entry->_SeparatorStyle = _SeparatorStyle;
         entry->_Height = _Height;
         entry->_Placement = _Placement;
+        entry->_Collapsed = _Collapsed;
         return *entry;
     }
 }

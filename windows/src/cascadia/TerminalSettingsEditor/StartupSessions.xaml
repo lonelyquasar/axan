@@ -232,6 +232,22 @@
                                       Glyph="&#xE738;" />
                             <TextBlock VerticalAlignment="Center"
                                        Text="Separator" />
+                            <!--
+                                axan #33: an optional header label turns the separator into a
+                                collapsible section header in the sidebar; Collapsed is whether
+                                the section starts collapsed (only meaningful with a label).
+                            -->
+                            <TextBox Width="140"
+                                     AutomationProperties.Name="Separator label"
+                                     PlaceholderText="Label (optional)"
+                                     Text="{x:Bind Name, Mode=TwoWay}"
+                                     ToolTipService.ToolTip="A label makes this separator a section header in the sidebar; click it to collapse the rows below it up to the next separator" />
+                            <CheckBox MinWidth="0"
+                                      VerticalAlignment="Center"
+                                      AutomationProperties.Name="Start collapsed"
+                                      Content="Collapsed"
+                                      IsChecked="{x:Bind Collapsed, Mode=TwoWay}"
+                                      ToolTipService.ToolTip="Start this labelled section collapsed" />
                             <ComboBox Width="100"
                                       AutomationProperties.Name="Separator style"
                                       SelectedIndex="{x:Bind SeparatorStyleIndex, Mode=TwoWay}"

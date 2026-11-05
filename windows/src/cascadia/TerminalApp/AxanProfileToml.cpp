@@ -304,6 +304,10 @@ namespace
                         entry.height = e[heightKey].asDouble();
                     }
                     entry.height = Wire::NormalizeSeparatorHeight(entry.height);
+                    // axan #33: header label + collapsed.
+                    entry.name = jsonStr(e, Wire::JsonKey::Name);
+                    const std::string collapsedKey{ Wire::JsonKey::Collapsed };
+                    entry.collapsed = e.isMember(collapsedKey) && e[collapsedKey].isBool() && e[collapsedKey].asBool();
                     entries.push_back(std::move(entry));
                     continue;
                 }

@@ -57,6 +57,9 @@ namespace Microsoft.Terminal.Settings.Model
         // "bottom" pins the separator to the bottom of its sibling scope (its parent's
         // children, or the root) so sessions added later still land above it.
         String Placement;
+        // axan #33 (separators only): the section header label is Name; Collapsed is
+        // whether a labelled section starts collapsed. Sparse on disk.
+        Boolean Collapsed;
         // True when Kind is "separator".
         Boolean IsSeparator { get; };
     }

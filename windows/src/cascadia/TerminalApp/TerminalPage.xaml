@@ -140,6 +140,63 @@
                                Fill="{ThemeResource TreeViewItemForeground}"
                                Opacity="0.35"
                                Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorLineVisibility, Mode=OneWay}" />
+                    <!--
+                        axan #33: a labelled separator is a section header: chevron, muted
+                        label, (collapsed) the hidden-row count and the strongest hidden state
+                        as a clickable badge, then the rule for the "line" style. Clicking the
+                        row toggles the section (ItemInvoked); the badge button expands it and
+                        selects the row it names.
+                    -->
+                    <Grid Margin="0,0,8,0"
+                          VerticalAlignment="Center"
+                          Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorHeaderVisibility, Mode=OneWay}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0"
+                                   Margin="0,0,6,0"
+                                   VerticalAlignment="Center"
+                                   FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                                   FontSize="10"
+                                   Opacity="0.6"
+                                   Text="{x:Bind ((local:SessionNodeViewModel)Content).CollapseGlyph, Mode=OneWay}" />
+                        <TextBlock Grid.Column="1"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Opacity="0.6"
+                                   Text="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorLabel, Mode=OneWay}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="2"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Opacity="0.6"
+                                   Text="{x:Bind ((local:SessionNodeViewModel)Content).SectionSummary, Mode=OneWay}" />
+                        <Button Grid.Column="3"
+                                MinWidth="0"
+                                MinHeight="0"
+                                Margin="4,0,0,0"
+                                Padding="5,0,5,1"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="Show the row that needs attention"
+                                BorderThickness="0"
+                                Click="{x:Bind ((local:SessionNodeViewModel)Content).ActivateSectionBadge}"
+                                FontSize="11"
+                                Content="{x:Bind ((local:SessionNodeViewModel)Content).SectionBadge, Mode=OneWay}"
+                                Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SectionBadgeVisibility, Mode=OneWay}" />
+                        <Rectangle Grid.Column="4"
+                                   Height="1"
+                                   Margin="8,0,0,0"
+                                   HorizontalAlignment="Stretch"
+                                   VerticalAlignment="Center"
+                                   Fill="{ThemeResource TreeViewItemForeground}"
+                                   Opacity="0.35"
+                                   Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorHeaderLineVisibility, Mode=OneWay}" />
+                    </Grid>
                 </Grid>
             </Grid>
         </DataTemplate>

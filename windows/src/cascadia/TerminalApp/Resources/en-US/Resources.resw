@@ -1013,6 +1013,14 @@
   <data name="AxanMenuOpenProfileSettings" xml:space="preserve">
     <value>Open profile in Settings</value>
   </data>
+  <data name="AxanMenuCollapseSection" xml:space="preserve">
+    <value>Collapse section</value>
+    <comment>axan #33: Sidebar context-menu item on a labelled separator (section header): hide the rows below it up to the next separator.</comment>
+  </data>
+  <data name="AxanMenuExpandSection" xml:space="preserve">
+    <value>Expand section</value>
+    <comment>axan #33: Sidebar context-menu item on a collapsed section header: show its rows again.</comment>
+  </data>
   <data name="AxanMenuCloseSession" xml:space="preserve">
     <value>Close session</value>
   </data>

@@ -120,10 +120,14 @@ The curated startup tree — which shells to spawn, in what hierarchy — is a l
 | `style` | separators only: `line` (default, omitted) draws a rule; `space` leaves an open gap |
 | `height` | separators only: height in session-row units, tenths, `0.1`–`10`; sparse (omitted when `1.0`) |
 | `placement` | separators only: `inline` (default, omitted) keeps its list position; `bottom` pins it below its siblings so sessions added later land above it |
+| `name` (on a separator) | separators only: an optional section-header label; `""` (omitted) = a plain divider |
+| `collapsed` | labelled separators only: `true` starts the section collapsed; sparse (omitted when `false`) |
 
 `command` is stored raw. The per-shell survival wrap that keeps a node alive after its command exits (Linux `$SHELL -c "…; exec $SHELL"`, pwsh `-NoExit -Command`, cmd `/k`, WSL `bash -ic "…; exec bash -i"`) is applied at spawn time, never stored, so the command ports across platforms. Malformed trees self-heal on load: orphans and dangling parents promote to root, missing UUIDs are backfilled. The tree is honored only when the CLI asks for no shells of its own — `--tab`, `--working-directory`, and positional commands take precedence.
 
 **Separators in the sidebar (Windows):** add one with **Add separator** on the Startup sessions settings page, where its style, height and placement are edited; it appears in the sidebar at its place in the tree on the next launch, and deleting it there removes it from the sidebar when the settings save. Separator rows are **locked by default** — they take no click, focus or drag, so ordinary sidebar use can't disturb them. Hold **Ctrl+Alt** (both keys) to unlock every separator for the native drag-and-drop: drag one to reorder it or drop it onto a session to nest it under that session; releasing either key locks them again. AltGr on international layouts does not count as Ctrl+Alt. Right-clicking a separator shows the same menu as empty sidebar space. **Save current as startup** captures separators along with the sessions, in their current order.
+
+**Section headers (Windows):** give a separator a **label** on the Startup sessions page and it becomes a section header: a muted label with a chevron. Clicking the header (or **Collapse section** in its right-click menu) hides the rows after it up to the next separator at the same depth, without moving anything in the tree. A collapsed header shows how many sessions it hides and the most urgent state among them (`Work · 5 · 1 needs you`); clicking that badge expands the section and selects the row. The session you're on stays visible even inside a collapsed section, and a row dropped into a collapsed section expands it. **Collapsed** on the settings page sets how a section starts; **Save current as startup** records each header's current state. Headers aren't keyboard-focusable (they stay out of the tab order like other separators), so there's no Left/Right toggle; use the click or the menu.
 
 **Where the tree lives natively:**
 
@@ -166,6 +170,8 @@ kind         = "separator"
 style        = "space"            # sparse; default "line"
 height       = 0.5                # session-row units; sparse when 1.0
 placement    = "bottom"           # sparse; default "inline"
+name         = "Work"             # sparse; a labelled separator is a section header
+collapsed    = true               # sparse; labelled separators only
 ```
 
 **Whole profiles** export as per-profile `<uuid>.toml` mirrors with two layers: a portable core (`[profile]` — `uuid`, `name`, and the entry tree) that round-trips across platforms, and an opaque native passthrough (`[profile.native.linux]` / `[profile.native.windows]`) carrying each platform's remaining settings verbatim in their native casing (gschema kebab / WT camelCase). The importing platform applies the block matching its own OS and ignores the other — a Linux→Windows import drops Linux appearance scalars by design rather than mistranslating them.

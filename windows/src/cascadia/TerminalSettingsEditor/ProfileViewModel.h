@@ -115,6 +115,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // The color's target ("icon"/"text"/"both"/""), #422; the color itself is the
         // custom-setter property above.
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, ColorTarget);
+        // axan #33 (separators only): the labelled section starts collapsed.
+        VIEW_MODEL_OBSERVABLE_PROPERTY(bool, Collapsed, false);
 
     private:
         hstring _Id;

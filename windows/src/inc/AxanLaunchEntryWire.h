@@ -56,6 +56,11 @@
 //   style        = "space"           # "line" (default; SPARSE) | "space"
 //   height       = 0.5               # in session-row units, tenths; SPARSE when 1.0
 //   placement    = "bottom"          # "inline" (default; SPARSE) | "bottom"
+//   name         = "Work"            # axan #33: section header label; SPARSE when ""
+//   collapsed    = true              # axan #33: labelled section starts collapsed; SPARSE
+//                                    #   when false. Both keys stay within version 2:
+//                                    #   readers skip unknown keys, so an older version-2
+//                                    #   reader just shows an unlabelled separator.
 //
 // Version rule: a file is written as version 1 unless it contains a separator, in which
 // case it is version 2 — so a tree without separators still round-trips with a
@@ -137,6 +142,8 @@ namespace Axan::LaunchEntryWire
         inline constexpr std::string_view Style{ "style" };
         inline constexpr std::string_view Height{ "height" };
         inline constexpr std::string_view Placement{ "placement" };
+        // axan #33: a separator's header label rides in "name"; "collapsed" is new.
+        inline constexpr std::string_view Collapsed{ "collapsed" };
         // The global tree's key on the settings.json root object (GlobalAppSettings).
         inline constexpr std::string_view StartupSessions{ "startupSessions" };
     }
@@ -160,6 +167,8 @@ namespace Axan::LaunchEntryWire
         inline constexpr std::string_view Style{ "style" };
         inline constexpr std::string_view Height{ "height" };
         inline constexpr std::string_view Placement{ "placement" };
+        // axan #33: a separator's header label rides in "name"; "collapsed" is new.
+        inline constexpr std::string_view Collapsed{ "collapsed" };
     }
 
     // One startup-session entry in portable (TOML-side) form: UTF-8 strings, bare profile
@@ -181,6 +190,9 @@ namespace Axan::LaunchEntryWire
         std::string style; // "line" (default) | "space"; sparse
         double height{ 0.0 }; // session-row units; 0 = unset -> 1.0; sparse when 1.0
         std::string placement; // "inline" (default) | "bottom"; sparse
+        // axan #33: on a separator, `name` is the section header label ("" = plain divider)
+        // and `collapsed` whether the labelled section starts collapsed. Both sparse.
+        bool collapsed{ false };
 
         bool IsSeparator() const noexcept { return kind == KindSeparator; }
     };
@@ -288,6 +300,17 @@ namespace Axan::LaunchEntryWire
             {
                 out += line(TomlKey::Placement, e.placement);
             }
+            if (!e.name.empty())
+            {
+                out += line(TomlKey::Name, e.name);
+            }
+            if (e.collapsed)
+            {
+                std::string kv{ TomlKey::Collapsed };
+                kv.append(12 - TomlKey::Collapsed.size(), ' ');
+                kv += " = true\n";
+                out += kv;
+            }
             out += '\n';
             return out;
         }
@@ -348,6 +371,7 @@ namespace Axan::LaunchEntryWire
         {
             e.height = static_cast<double>(*hi);
         }
+        e.collapsed = t[TomlKey::Collapsed].template value<bool>().value_or(false);
         if (e.IsSeparator())
         {
             e.height = NormalizeSeparatorHeight(e.height);

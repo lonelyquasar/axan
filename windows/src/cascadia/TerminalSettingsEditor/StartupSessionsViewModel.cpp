@@ -86,6 +86,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         vm.SeparatorStyle(e.SeparatorStyle());
         vm.Height(e.Height());
         vm.Placement(e.Placement());
+        vm.Collapsed(e.Collapsed()); // axan #33
         return vm;
     }
 
@@ -109,6 +110,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         e.SeparatorStyle(vm.SeparatorStyle());
         e.Height(vm.Height());
         e.Placement(vm.Placement());
+        e.Collapsed(vm.Collapsed()); // axan #33 (the header label is Name, above)
         return e;
     }
 
@@ -592,6 +594,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 m.SeparatorStyle(winrt::to_hstring(e.style));
                 m.Height(e.height);
                 m.Placement(winrt::to_hstring(e.placement));
+                m.Name(winrt::to_hstring(e.name)); // axan #33: header label
+                m.Collapsed(e.collapsed);
                 const auto sep = _rowFromModel(m);
                 rows.Append(sep);
                 _hookEntry(sep);

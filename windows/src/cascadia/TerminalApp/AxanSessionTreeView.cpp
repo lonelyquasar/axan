@@ -415,15 +415,27 @@ namespace winrt::TerminalApp::implementation
     // normalized style/height/placement, and no TabRef — so every Tab-resolving path sees
     // null and skips it. EntryId is kept so "Save current as startup" round-trips the row. The
     // node isn't parented here; the caller inserts it at its resolved position.
-    MUX::Controls::TreeViewNode TerminalPage::_CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement)
+    MUX::Controls::TreeViewNode TerminalPage::_CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement, const winrt::hstring& label, bool collapsed)
     {
         auto vm = winrt::make<winrt::TerminalApp::implementation::SessionNodeViewModel>();
         const auto vmImpl = winrt::get_self<winrt::TerminalApp::implementation::SessionNodeViewModel>(vm);
         vmImpl->EntryId = entryId;
         vmImpl->ConfigureSeparator(style, height, placement, _SessionRowHeightPx());
+        // axan #33: a label makes it a collapsible section header.
+        vmImpl->SetSeparatorLabel(label);
+        vmImpl->SetCollapsed(collapsed);
 
         MUX::Controls::TreeViewNode node;
         node.Content(vm);
+        vmImpl->OnSectionBadgeActivated = [weakThis{ get_weak() }, weakNode = winrt::make_weak(node)]() {
+            if (const auto page{ weakThis.get() })
+            {
+                if (const auto n = weakNode.get())
+                {
+                    page->_ActivateSectionBadge(n);
+                }
+            }
+        };
         Axan::Log::Debug("TerminalPage", "created separator node", { { "entryId", winrt::to_string(entryId) }, { "style", winrt::to_string(vmImpl->SeparatorStyle()) }, { "height", std::to_string(vmImpl->SeparatorHeight()) }, { "placement", winrt::to_string(vmImpl->Placement()) }, { "pixelHeight", std::to_string(vmImpl->SeparatorPixelHeight()) } });
         return node;
     }
@@ -504,7 +516,7 @@ namespace winrt::TerminalApp::implementation
                 ++appended;
             }
 
-            const auto node = _CreateSeparatorNode(sep.id, sep.style, sep.height, sep.placement);
+            const auto node = _CreateSeparatorNode(sep.id, sep.style, sep.height, sep.placement, sep.label, sep.collapsed);
             container.InsertAt(insertAt, node);
             if (parentNode)
             {
@@ -551,6 +563,7 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         std::set<winrt::hstring> persisted;
+        std::map<winrt::hstring, winrt::hstring> labels; // axan #33: live label edits
         if (const auto entries = _settings.GlobalSettings().StartupSessions())
         {
             for (const auto& entry : entries)
@@ -558,9 +571,21 @@ namespace winrt::TerminalApp::implementation
                 if (entry.IsSeparator() && !entry.Id().empty())
                 {
                     persisted.insert(entry.Id());
+                    labels[entry.Id()] = entry.Name();
                 }
             }
         }
+        // axan #33: a header label edited on the Startup sessions page applies live (the
+        // collapsed flag is the startup state, so it is left to the next launch).
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            if (const auto vm = _nodeVM(node); vm && vm->IsSeparator() && !vm->EntryId.empty())
+            {
+                if (const auto it = labels.find(vm->EntryId); it != labels.end())
+                {
+                    vm->SetSeparatorLabel(it->second);
+                }
+            }
+        });
         std::vector<MUX::Controls::TreeViewNode> stale;
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             const auto vm = _nodeVM(node);
@@ -652,6 +677,8 @@ namespace winrt::TerminalApp::implementation
         {
             Axan::Log::Debug("TerminalPage", "sank bottom-placed separators", { { "moved", std::to_string(moved) } });
         }
+        // axan #33: every tree mutation funnels through here, so re-derive the sections.
+        _RecomputeSections();
     }
 
     // axan M6: build a sidebar node for `tab` whose Content is a SessionNodeViewModel (the
@@ -1104,6 +1131,11 @@ namespace winrt::TerminalApp::implementation
         }
         if (_nodeIsSeparator(node))
         {
+            // axan #33: clicking a section header toggles its section.
+            if (const auto vm = _nodeVM(node); vm && vm->HasSectionHeader())
+            {
+                _SetSectionCollapsed(node, !vm->IsCollapsed(), "header click");
+            }
             // axan #3: separators activate nothing (and _SelectTabForNodeVM would no-op anyway) —
             // but the click that got here just made the separator the tree's selection.
             _ResetSeparatorSelection("separator invoked");
@@ -1130,6 +1162,7 @@ namespace winrt::TerminalApp::implementation
                                                         const MUX::Controls::TreeViewDragItemsCompletedEventArgs& args)
     {
         _separatorDragActive = false;
+        std::vector<MUX::Controls::TreeViewNode> droppedNodes; // axan #33
         const auto items = args.Items();
         if (items)
         {
@@ -1140,6 +1173,7 @@ namespace winrt::TerminalApp::implementation
                 {
                     continue;
                 }
+                droppedNodes.push_back(node); // axan #33
                 auto parent = node.Parent();
                 if (parent && parent.Depth() >= 0 && _nodeIsSeparator(parent))
                 {
@@ -1182,6 +1216,14 @@ namespace winrt::TerminalApp::implementation
                     container.GlyphOpacity(1.0);
                 }
                 Axan::Log::Info("TerminalPage", "drag-drop reparent: expanded new parent", { { "wasExpanded", wasExpanded ? "1" : "0" }, { "childCount", std::to_string(parent.Children().Size()) }, { "isSeparator", _nodeIsSeparator(node) ? "1" : "0" } });
+            }
+        }
+        // axan #33: a row dropped into a collapsed section was put there on purpose; show it.
+        for (const auto& dropped : droppedNodes)
+        {
+            if (!_nodeIsSeparator(dropped))
+            {
+                _ExpandSectionsContaining(dropped, "dropped into section");
             }
         }
         _SinkBottomSeparators();
@@ -1348,17 +1390,26 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
-        _ApplySeparatorContainerState(container, _nodeIsSeparator(node));
+        const auto vm = _nodeVM(node); // axan #33: header + section-hidden state too
+        _ApplySeparatorContainerState(container, _nodeIsSeparator(node), vm && vm->HasSectionHeader(), vm && vm->IsSectionHidden());
     }
 
     // Push the lock state onto one container. A session container only has its flags
     // RESTORED (a recycled container may have last hosted a locked separator) — nothing a
     // session already has is disturbed.
-    void TerminalPage::_ApplySeparatorContainerState(const MUX::Controls::TreeViewItem& container, bool isSeparator)
+    void TerminalPage::_ApplySeparatorContainerState(const MUX::Controls::TreeViewItem& container, bool isSeparator, bool isSectionHeader, bool sectionHidden)
     {
         if (!container)
         {
             return;
+        }
+        // axan #33: a row hidden by a collapsed section keeps its place in the tree (and in
+        // TreeViewList's flat list, so the #28 check is unaffected); only its container
+        // collapses to zero size.
+        const auto wantVisibility = sectionHidden ? Visibility::Collapsed : Visibility::Visible;
+        if (container.Visibility() != wantVisibility)
+        {
+            container.Visibility(wantVisibility);
         }
         if (isSeparator)
         {
@@ -1369,7 +1420,10 @@ namespace winrt::TerminalApp::implementation
             // separator into "insert after it". Outside a drag the lock is unchanged.
             const bool unlocked = _separatorsUnlocked;
             const bool dragInFlight = _sessionTreeDragInFlight;
-            container.IsEnabled(unlocked || dragInFlight);
+            // axan #33: a section header stays enabled so a click can toggle it (ItemInvoked)
+            // and its badge button works; it still can't be dragged unless unlocked, and it
+            // stays out of the tab order like every separator.
+            container.IsEnabled(unlocked || dragInFlight || isSectionHeader);
             container.IsTabStop(false);
             container.AllowDrop(dragInFlight);
             container.CanDrag(unlocked);
@@ -1411,7 +1465,8 @@ namespace winrt::TerminalApp::implementation
             }
             if (const auto container = SessionTree().ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>())
             {
-                _ApplySeparatorContainerState(container, isSeparator);
+                const auto vm = _nodeVM(node);
+                _ApplySeparatorContainerState(container, isSeparator, vm && vm->HasSectionHeader(), vm && vm->IsSectionHidden());
             }
         });
         if (separators > 0)
@@ -1570,6 +1625,13 @@ namespace winrt::TerminalApp::implementation
             // "create a session here" surface — offer the New session split row.
             Axan::Log::Debug("TerminalPage", "sidebar right-tap: no node under pointer; showing background menu");
             _ShowSidebarBackgroundContextMenu(args.GetPosition(SessionTree()));
+            args.Handled(true);
+            return;
+        }
+        if (const auto vm = _nodeVM(node); vm && vm->HasSectionHeader())
+        {
+            // axan #33: a section header offers Collapse/Expand ahead of the background items.
+            _ShowSectionHeaderMenu(node, args.GetPosition(SessionTree()));
             args.Handled(true);
             return;
         }
@@ -2149,6 +2211,8 @@ namespace winrt::TerminalApp::implementation
                     entry.SeparatorStyle(vm->SeparatorStyle());
                     entry.Height(vm->SeparatorHeight());
                     entry.Placement(vm->Placement());
+                    entry.Name(vm->SeparatorLabel()); // axan #33: header label + live collapsed state
+                    entry.Collapsed(vm->IsCollapsed());
                     captured.push_back(entry);
                     vm->EntryId = id;
                     for (const auto& child : node.Children())
@@ -3259,6 +3323,7 @@ namespace winrt::TerminalApp::implementation
         const auto now = winrt::clock::now();
         if (vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now))
         {
+            _RecomputeSections(); // axan #33: a collapsed header's badge summarises hidden states
             Axan::Log::Info("SessionState",
                             "node state changed",
                             { { "label", winrt::to_string(vm->Label()) },
@@ -3309,6 +3374,7 @@ namespace winrt::TerminalApp::implementation
             {
                 _AcknowledgeNodeState(node, reason);
             }
+            _RecomputeSections(); // axan #33: the focused row is exempt from section hiding
         }
     }
 
@@ -3356,5 +3422,311 @@ namespace winrt::TerminalApp::implementation
                 Axan::Log::Debug("SessionState", vm->IsDeEmphasised() ? "row de-emphasised: idle" : "row promoted", { { "label", winrt::to_string(vm->Label()) }, { "idleAfterMinutes", std::to_string(idleAfterMinutes) } });
             }
         });
+    }
+
+    // ----- axan #33: section headers ---------------------------------------------------------
+
+    static int _stateRank(const winrt::hstring& state) noexcept
+    {
+        if (state == L"needs-you")
+        {
+            return 5;
+        }
+        if (state == L"error")
+        {
+            return 4;
+        }
+        if (state == L"done-unseen")
+        {
+            return 3;
+        }
+        if (state == L"working")
+        {
+            return 2;
+        }
+        if (state == L"running")
+        {
+            return 1;
+        }
+        return 0;
+    }
+
+    static std::wstring _stateBadge(int rank, uint32_t count)
+    {
+        const auto n = std::to_wstring(count);
+        switch (rank)
+        {
+        case 5:
+            return n + L" needs you";
+        case 4:
+            return n + (count == 1 ? L" error" : L" errors");
+        case 3:
+            return n + L" done";
+        case 2:
+            return n + L" working";
+        case 1:
+            return n + L" running";
+        default:
+            return {};
+        }
+    }
+
+    // Recompute which rows a collapsed section hides and what each collapsed header
+    // summarises. The model never changes shape: a hidden row keeps its place among its
+    // siblings and only its VM's IsSectionHidden (mapped onto the container's Visibility by
+    // _ApplySeparatorContainerState) flips. A section is the run of siblings after a
+    // labelled separator up to the next separator at that depth; a hidden row's children
+    // hide with it. The focused session (and its ancestors) is exempt: collapsing the section
+    // you're working in keeps your row visible under the header instead of hiding it, and
+    // it isn't counted in the header's summary. It hides once you move elsewhere.
+    void TerminalPage::_RecomputeSections()
+    {
+        if (!SessionTree())
+        {
+            return;
+        }
+        std::vector<MUX::Controls::TreeViewNode> activeChain;
+        if (const auto tab = _GetFocusedTab())
+        {
+            for (auto n = _FindNodeForTab(tab); n && n.Depth() >= 0; n = n.Parent())
+            {
+                activeChain.push_back(n);
+            }
+        }
+        const auto isActive = [&](const MUX::Controls::TreeViewNode& node) {
+            return std::find(activeChain.begin(), activeChain.end(), node) != activeChain.end();
+        };
+
+        size_t hiddenRows = 0;
+        size_t collapsedHeaders = 0;
+        const std::function<void(const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>&, bool)> walk =
+            [&](const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>& container, bool parentHidden) {
+                if (!container)
+                {
+                    return;
+                }
+                winrt::com_ptr<winrt::TerminalApp::implementation::SessionNodeViewModel> headerVm;
+                uint32_t count = 0;
+                int strongest = 0;
+                uint32_t strongestCount = 0;
+                const auto finish = [&]() {
+                    if (headerVm)
+                    {
+                        if (headerVm->IsCollapsed())
+                        {
+                            ++collapsedHeaders;
+                            headerVm->SetSectionSummary(winrt::hstring{ L" · " + std::to_wstring(count) }, winrt::hstring{ _stateBadge(strongest, strongestCount) });
+                        }
+                        else
+                        {
+                            headerVm->SetSectionSummary({}, {});
+                        }
+                    }
+                    headerVm = nullptr;
+                    count = 0;
+                    strongest = 0;
+                    strongestCount = 0;
+                };
+                const std::function<void(const MUX::Controls::TreeViewNode&)> tally = [&](const MUX::Controls::TreeViewNode& n) {
+                    if (const auto v = _nodeVM(n); v && !v->IsSeparator())
+                    {
+                        ++count;
+                        const auto rank = _stateRank(v->State());
+                        if (rank > strongest)
+                        {
+                            strongest = rank;
+                            strongestCount = 1;
+                        }
+                        else if (rank == strongest && rank > 0)
+                        {
+                            ++strongestCount;
+                        }
+                    }
+                    for (const auto& c : n.Children())
+                    {
+                        tally(c);
+                    }
+                };
+
+                for (const auto& node : container)
+                {
+                    const auto vm = _nodeVM(node);
+                    if (!vm)
+                    {
+                        continue;
+                    }
+                    const bool exempt = isActive(node);
+                    if (vm->IsSeparator())
+                    {
+                        finish();
+                        headerVm = vm->HasSectionHeader() ? vm : nullptr;
+                        vm->SetSectionHidden(parentHidden);
+                        walk(node.Children(), parentHidden);
+                        continue;
+                    }
+                    const bool bySection = headerVm && headerVm->IsCollapsed() && !exempt;
+                    const bool hidden = (parentHidden && !exempt) || bySection;
+                    vm->SetSectionHidden(hidden);
+                    if (hidden)
+                    {
+                        ++hiddenRows;
+                    }
+                    if (bySection)
+                    {
+                        tally(node);
+                    }
+                    walk(node.Children(), hidden);
+                }
+                finish();
+            };
+        walk(SessionTree().RootNodes(), false);
+        _ApplySeparatorContainerStates();
+        if (collapsedHeaders > 0)
+        {
+            Axan::Log::Debug("TerminalPage", "recomputed sections", { { "collapsedHeaders", std::to_string(collapsedHeaders) }, { "hiddenRows", std::to_string(hiddenRows) } });
+        }
+    }
+
+    void TerminalPage::_SetSectionCollapsed(const MUX::Controls::TreeViewNode& header, bool collapsed, const char* reason)
+    {
+        const auto vm = _nodeVM(header);
+        if (!vm || !vm->HasSectionHeader() || vm->IsCollapsed() == collapsed)
+        {
+            return;
+        }
+        vm->SetCollapsed(collapsed);
+        Axan::Log::Info("TerminalPage", collapsed ? "section collapsed" : "section expanded", { { "label", winrt::to_string(vm->SeparatorLabel()) }, { "reason", reason } });
+        _RecomputeSections();
+    }
+
+    // The section header a row sits under (nearest preceding separator among its siblings),
+    // or nullptr when it isn't in a labelled section.
+    MUX::Controls::TreeViewNode TerminalPage::_SectionHeaderFor(const MUX::Controls::TreeViewNode& node)
+    {
+        Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode> container{ nullptr };
+        uint32_t index = 0;
+        if (!_locateNodeContainer(SessionTree().RootNodes(), node, container, index))
+        {
+            return nullptr;
+        }
+        for (uint32_t i = index; i-- > 0;)
+        {
+            const auto sibling = container.GetAt(i);
+            if (const auto vm = _nodeVM(sibling); vm && vm->IsSeparator())
+            {
+                return vm->HasSectionHeader() ? sibling : nullptr;
+            }
+        }
+        return nullptr;
+    }
+
+    // Expand every collapsed section that hides `node` (its own, and its ancestors').
+    void TerminalPage::_ExpandSectionsContaining(const MUX::Controls::TreeViewNode& node, const char* reason)
+    {
+        bool changed = false;
+        for (auto n = node; n && n.Depth() >= 0; n = n.Parent())
+        {
+            if (const auto header = _SectionHeaderFor(n))
+            {
+                if (const auto vm = _nodeVM(header); vm && vm->IsCollapsed())
+                {
+                    vm->SetCollapsed(false);
+                    changed = true;
+                    Axan::Log::Info("TerminalPage", "section expanded", { { "label", winrt::to_string(vm->SeparatorLabel()) }, { "reason", reason } });
+                }
+            }
+        }
+        if (changed)
+        {
+            _RecomputeSections();
+        }
+    }
+
+    // The badge: expand the section and select the hidden row with the strongest state
+    // (on a tie, the one that has been in that state longest).
+    void TerminalPage::_ActivateSectionBadge(const MUX::Controls::TreeViewNode& header)
+    {
+        Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode> container{ nullptr };
+        uint32_t index = 0;
+        if (!_locateNodeContainer(SessionTree().RootNodes(), header, container, index))
+        {
+            return;
+        }
+        MUX::Controls::TreeViewNode target{ nullptr };
+        int bestRank = 0;
+        winrt::Windows::Foundation::DateTime bestSince{};
+        const std::function<void(const MUX::Controls::TreeViewNode&)> scan = [&](const MUX::Controls::TreeViewNode& n) {
+            if (const auto v = _nodeVM(n); v && !v->IsSeparator())
+            {
+                const auto rank = _stateRank(v->State());
+                if (rank > bestRank || (rank == bestRank && rank > 0 && v->StateSince() < bestSince))
+                {
+                    bestRank = rank;
+                    bestSince = v->StateSince();
+                    target = n;
+                }
+            }
+            for (const auto& c : n.Children())
+            {
+                scan(c);
+            }
+        };
+        for (uint32_t i = index + 1; i < container.Size(); ++i)
+        {
+            const auto sibling = container.GetAt(i);
+            if (_nodeIsSeparator(sibling))
+            {
+                break;
+            }
+            scan(sibling);
+        }
+        _SetSectionCollapsed(header, false, "badge");
+        if (target)
+        {
+            _SelectTabForNodeVM(target.Content().try_as<winrt::TerminalApp::SessionNodeViewModel>());
+        }
+    }
+
+    // Right-click on a section header: Collapse / Expand. Headers are not keyboard focusable
+    // (separators keep IsTabStop(false) under the #3 lock), so this and the row click are the
+    // two ways to toggle; there is no Left/Right-on-focused-header binding.
+    void TerminalPage::_ShowSectionHeaderMenu(const MUX::Controls::TreeViewNode& header, const winrt::Windows::Foundation::Point& position)
+    {
+        if (_sessionNodeMenu && _sessionNodeMenu.IsOpen())
+        {
+            return;
+        }
+        const auto vm = _nodeVM(header);
+        if (!vm)
+        {
+            return;
+        }
+        MenuFlyout flyout{};
+        MenuFlyoutItem toggle{};
+        toggle.Text(vm->IsCollapsed() ? RS_(L"AxanMenuExpandSection") : RS_(L"AxanMenuCollapseSection"));
+        FontIcon fi{};
+        fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
+        fi.Glyph(vm->IsCollapsed() ? winrt::hstring{ L"" } : winrt::hstring{ L"" });
+        toggle.Icon(fi);
+        toggle.Click([header, weakThis{ get_weak() }](auto&&, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                if (const auto v = _nodeVM(header))
+                {
+                    p->_SetSectionCollapsed(header, !v->IsCollapsed(), "context menu");
+                }
+            }
+        });
+        flyout.Items().Append(toggle);
+        flyout.Items().Append(MenuFlyoutSeparator{});
+        _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
+        _sessionNodeMenu = flyout;
+        flyout.Closed([weak = get_weak()](auto&&, auto&&) {
+            if (auto p{ weak.get() })
+            {
+                p->_UpdateSeparatorUnlockFromKeyboard("section menu closed");
+            }
+        });
+        flyout.ShowAt(SessionTree(), position);
     }
 }

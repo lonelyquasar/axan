@@ -561,7 +561,14 @@ namespace winrt::TerminalApp::implementation
         // startup entries. Startup separators are inserted once every startup session node
         // exists; "bottom" placement sinks a separator to the end of its sibling scope after
         // every tree mutation. Definitions in AxanSessionTreeView.cpp.
-        Microsoft::UI::Xaml::Controls::TreeViewNode _CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement);
+        Microsoft::UI::Xaml::Controls::TreeViewNode _CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement, const winrt::hstring& label = {}, bool collapsed = false);
+        // axan #33: section headers (labelled separators). See AxanSessionTreeView.cpp.
+        void _RecomputeSections();
+        void _SetSectionCollapsed(const Microsoft::UI::Xaml::Controls::TreeViewNode& header, bool collapsed, const char* reason);
+        Microsoft::UI::Xaml::Controls::TreeViewNode _SectionHeaderFor(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        void _ExpandSectionsContaining(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const char* reason);
+        void _ActivateSectionBadge(const Microsoft::UI::Xaml::Controls::TreeViewNode& header);
+        void _ShowSectionHeaderMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& header, const winrt::Windows::Foundation::Point& position);
         void _RealizeStartupSeparators();
         void _MarkStartupSpawnComplete();
         void _ReconcileSeparatorsWithSettings();
@@ -570,7 +577,7 @@ namespace winrt::TerminalApp::implementation
         double _SessionRowHeightPx();
         void _HookSessionTreeList();
         void _OnSessionTreeContainerContentChanging(const Windows::UI::Xaml::Controls::ListViewBase& sender, const Windows::UI::Xaml::Controls::ContainerContentChangingEventArgs& args);
-        void _ApplySeparatorContainerState(const Microsoft::UI::Xaml::Controls::TreeViewItem& container, bool isSeparator);
+        void _ApplySeparatorContainerState(const Microsoft::UI::Xaml::Controls::TreeViewItem& container, bool isSeparator, bool isSectionHeader = false, bool sectionHidden = false);
         void _ApplySeparatorContainerStates();
         // axan #28: after a drop, check TreeViewList's flat item list against RootNodes and
         // rebuild the view from RootNodes if they've desynced.

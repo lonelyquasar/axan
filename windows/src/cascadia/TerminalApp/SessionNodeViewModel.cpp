@@ -591,7 +591,96 @@ namespace winrt::TerminalApp::implementation
     // same height.
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SeparatorLineVisibility() const noexcept
     {
-        return (_isSeparator && _separatorStyle == L"line") ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+        // axan #33: a labelled header draws its own rule after the label instead.
+        return (_isSeparator && _separatorStyle == L"line" && _separatorLabel.empty()) ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    // ----- axan #33: section headers ---------------------------------------------------------
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SeparatorHeaderVisibility() const noexcept
+    {
+        return HasSectionHeader() ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SeparatorHeaderLineVisibility() const noexcept
+    {
+        return (HasSectionHeader() && _separatorStyle == L"line") ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    // Chevron down when expanded, chevron right when collapsed (Segoe Fluent / MDL2).
+    hstring SessionNodeViewModel::CollapseGlyph() const noexcept
+    {
+        return _collapsed ? hstring{ L"\uE76C" } : hstring{ L"\uE70D" };
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SectionBadgeVisibility() const noexcept
+    {
+        return (_collapsed && !_sectionBadge.empty()) ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    void SessionNodeViewModel::ActivateSectionBadge()
+    {
+        if (OnSectionBadgeActivated)
+        {
+            OnSectionBadgeActivated();
+        }
+    }
+
+    void SessionNodeViewModel::SetSeparatorLabel(const hstring& label)
+    {
+        if (label == _separatorLabel)
+        {
+            return;
+        }
+        _separatorLabel = label;
+        if (_separatorLabel.empty())
+        {
+            _collapsed = false; // an unlabelled separator has no section to collapse
+        }
+        for (const auto name : { L"SeparatorLabel", L"SeparatorHeaderVisibility", L"SeparatorHeaderLineVisibility", L"SeparatorLineVisibility", L"SeparatorPixelHeight", L"IsCollapsed", L"CollapseGlyph", L"SectionBadgeVisibility" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    void SessionNodeViewModel::SetCollapsed(bool collapsed)
+    {
+        collapsed = collapsed && HasSectionHeader();
+        if (collapsed == _collapsed)
+        {
+            return;
+        }
+        _collapsed = collapsed;
+        for (const auto name : { L"IsCollapsed", L"CollapseGlyph", L"SectionBadgeVisibility" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    void SessionNodeViewModel::SetSectionSummary(const hstring& summary, const hstring& badge)
+    {
+        if (summary != _sectionSummary)
+        {
+            _sectionSummary = summary;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SectionSummary" });
+        }
+        if (badge != _sectionBadge)
+        {
+            _sectionBadge = badge;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SectionBadge" });
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SectionBadgeVisibility" });
+        }
+    }
+
+    bool SessionNodeViewModel::SetSectionHidden(bool hidden)
+    {
+        if (hidden == _sectionHidden)
+        {
+            return false;
+        }
+        _sectionHidden = hidden;
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IsSectionHidden" });
+        return true;
     }
 
     // axan #3: flip this VM into separator mode. Called once by the page when it mints a

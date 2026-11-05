@@ -178,6 +178,8 @@ namespace Axan
                 sep.style = entry.SeparatorStyle() == Axan::LaunchEntryWire::StyleSpaceW ? winrt::hstring{ Axan::LaunchEntryWire::StyleSpaceW } : winrt::hstring{ Axan::LaunchEntryWire::StyleLineW };
                 sep.height = Axan::LaunchEntryWire::NormalizeSeparatorHeight(entry.Height());
                 sep.placement = entry.Placement() == Axan::LaunchEntryWire::PlacementBottomW ? winrt::hstring{ Axan::LaunchEntryWire::PlacementBottomW } : winrt::hstring{ Axan::LaunchEntryWire::PlacementInlineW };
+                sep.label = entry.Name(); // axan #33
+                sep.collapsed = entry.Collapsed() && !entry.Name().empty();
                 sep.parentSpawnIndex = resolveParent(entry);
                 if (const auto it = lastSessionInScope.find(sep.parentSpawnIndex); it != lastSessionInScope.end())
                 {
