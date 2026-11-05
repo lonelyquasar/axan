@@ -19,6 +19,39 @@ using MenuFlyoutItemClick = void (*)(IInspectable const&, RoutedEventArgs const&
 
 constexpr auto NullSymbol = static_cast<Symbol>(0);
 
+namespace
+{
+    // axan: CopySelectionToClipboard / CutSelectionToClipboard / PasteFromClipboard throw
+    // CLIPBRD_E_CANT_OPEN when another process (a screenshot tool, a clipboard manager)
+    // is holding the clipboard open. Escaping a XAML Click handler, that hresult_error
+    // becomes a stowed-exception fail-fast (Windows.UI.Xaml ErrorHelper::ProcessUnhandledError).
+    // Retry briefly like TerminalPage's clipboard::open does, then give up quietly.
+    template<typename F>
+    void tryClipboard(F&& action) noexcept
+    {
+        for (DWORD sleep = 10;; sleep *= 2)
+        {
+            try
+            {
+                action();
+                return;
+            }
+            catch (...)
+            {
+                const auto hr = wil::ResultFromCaughtException();
+                // 10+20+40+80+160 ms: long enough to outlast a screenshot tool's
+                // grab, short enough not to freeze the UI thread noticeably.
+                if (hr != CLIPBRD_E_CANT_OPEN || sleep > 160)
+                {
+                    LOG_HR(hr);
+                    return;
+                }
+            }
+            Sleep(sleep);
+        }
+    }
+}
+
 namespace winrt::Microsoft::Terminal::UI::implementation
 {
 #pragma warning(suppress : 26455) // Default constructor should not throw. Declare it 'noexcept' (f.6).
@@ -104,7 +137,7 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         }
         if (const auto control = target.try_as<TextBox>())
         {
-            control.CutSelectionToClipboard();
+            tryClipboard([&] { control.CutSelectionToClipboard(); });
         }
     }
 
@@ -122,15 +155,15 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         }
         if (const auto control = target.try_as<TextBlock>())
         {
-            control.CopySelectionToClipboard();
+            tryClipboard([&] { control.CopySelectionToClipboard(); });
         }
         else if (const auto control = target.try_as<TextBox>())
         {
-            control.CopySelectionToClipboard();
+            tryClipboard([&] { control.CopySelectionToClipboard(); });
         }
         else if (const auto control = target.try_as<RichTextBlock>())
         {
-            control.CopySelectionToClipboard();
+            tryClipboard([&] { control.CopySelectionToClipboard(); });
         }
     }
 
@@ -148,7 +181,7 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         }
         if (const auto control = target.try_as<TextBox>())
         {
-            control.PasteFromClipboard();
+            tryClipboard([&] { control.PasteFromClipboard(); });
         }
     }
 
