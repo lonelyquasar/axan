@@ -528,6 +528,14 @@
     <value>Paint the session sidebar with the focused profile's background and opacity, and leave the backdrop behind the terminal clear, so the whole window shares one transparency. Set the opacity per profile under Appearance &gt; Transparency.</value>
     <comment>axan #2: A description for what the "sidebar matches profile transparency" setting does. Presented near "Globals_SidebarMatchesProfileTransparency.Header".</comment>
   </data>
+  <data name="Globals_SidebarIdleAfterMinutes.Header" xml:space="preserve">
+    <value>De-emphasise idle sessions after (minutes)</value>
+    <comment>axan #31: Header for a number box: minutes of inactivity before an idle session's sidebar row is dimmed and drawn smaller.</comment>
+  </data>
+  <data name="Globals_SidebarIdleAfterMinutes.HelpText" xml:space="preserve">
+    <value>An idle session with no input or output for this long is drawn dimmed and smaller in the sidebar, so the sessions you're working with stand out. Sessions that need you, finished unseen, or errored are never de-emphasised. Set to 0 to turn this off.</value>
+    <comment>axan #31: A description for the "de-emphasise idle sessions" setting. Presented near "Globals_SidebarIdleAfterMinutes.Header".</comment>
+  </data>
   <data name="Globals_ShowTitleInTitlebar.Header" xml:space="preserve">
     <value>Use active terminal title as application title</value>
     <comment>Header for a control to toggle whether the terminal's title is shown as the application title, or not.</comment>

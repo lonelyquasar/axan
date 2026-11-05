@@ -68,6 +68,9 @@ namespace Microsoft.Terminal.Settings.Model
         // axan #2: sidebar takes the focused profile's background brush (color + opacity),
         // content backdrop goes fully clear. Overrides the theme's sidebar/content keys.
         INHERITABLE_SETTING(Boolean, SidebarMatchesProfileTransparency);
+        // axan #31: an idle session's sidebar row is de-emphasised (dimmed, smaller) after
+        // this many minutes without input/output. 0 turns de-emphasis off. Default 15.
+        INHERITABLE_SETTING(Int32, SidebarIdleAfterMinutes);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

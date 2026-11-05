@@ -53,6 +53,11 @@ namespace winrt::TerminalApp::implementation
             _stateMessage = message;
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateMessage" });
         }
+        // axan #31: anything but idle promotes the row immediately.
+        if (transition && _state != L"idle")
+        {
+            _setDeEmphasised(false);
+        }
         if (transition || message != _subLabelMessage)
         {
             _subLabelMessage = message;
@@ -191,8 +196,63 @@ namespace winrt::TerminalApp::implementation
                 what = L"error";
             }
         }
+        // Cap the message so the age stays visible at normal sidebar widths (the TextBlock
+        // would otherwise ellipsize the age away); the full message is in the tooltip.
+        constexpr size_t kMaxMessageChars = 24;
+        if (what.size() > kMaxMessageChars)
+        {
+            what.resize(kMaxMessageChars);
+            if (what.back() >= 0xD800 && what.back() <= 0xDBFF)
+            {
+                what.pop_back(); // don't split a surrogate pair
+            }
+            while (!what.empty() && what.back() == L' ')
+            {
+                what.pop_back();
+            }
+            what += L"\u2026";
+        }
         const auto age = now > _stateSince ? now - _stateSince : winrt::Windows::Foundation::TimeSpan{ 0 };
         return hstring{ what + L" \u00B7 " + std::wstring{ FormatAge(age) } };
+    }
+
+    // ----- axan #31: idle de-emphasis ------------------------------------------------------
+
+    void SessionNodeViewModel::SetRowHeightPx(double px)
+    {
+        if (px > 0.0 && px != _rowHeightPx)
+        {
+            _rowHeightPx = px;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"RowMinHeight" });
+        }
+    }
+
+    void SessionNodeViewModel::_setDeEmphasised(bool value)
+    {
+        if (value == _deEmphasised)
+        {
+            return;
+        }
+        _deEmphasised = value;
+        for (const auto name : { L"IsDeEmphasised", L"LabelFontSize", L"RowOpacity", L"RowMinHeight" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    // Idle long enough = no input/output since the threshold AND idle state for that long
+    // (a session that just went idle after working isn't shrunk the moment it settles).
+    bool SessionNodeViewModel::UpdateDeEmphasis(winrt::Windows::Foundation::DateTime now, int32_t idleAfterMinutes)
+    {
+        bool want = false;
+        if (!_isSeparator && idleAfterMinutes > 0 && _state == L"idle")
+        {
+            const auto since = std::max(_lastActivity, _stateSince);
+            want = since != winrt::Windows::Foundation::DateTime{} && now - since >= std::chrono::minutes{ idleAfterMinutes };
+        }
+        const bool flipped = want != _deEmphasised;
+        _setDeEmphasised(want);
+        return flipped;
     }
 
     void SessionNodeViewModel::RefreshAge(winrt::Windows::Foundation::DateTime now)

@@ -30,6 +30,7 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, ShowTabsInTitlebar);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, UseAcrylicInTabRow);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarMatchesProfileTransparency);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Int32, SidebarIdleAfterMinutes); // axan #31
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, ShowTitleInTitlebar);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AlwaysOnTop);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AutoHideWindow);

@@ -813,6 +813,7 @@ namespace winrt::TerminalApp::implementation
                 }
             };
         }
+        vmImpl->SetRowHeightPx(_SessionRowHeightPx()); // axan #31: the full-size row floor
         _RecomputeNodeState(node);
         _EnsureSessionStateClock();
 
@@ -3334,6 +3335,8 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_SessionStateClockTick()
     {
         const auto now = winrt::clock::now();
+        const auto idleAfterMinutes = _settings ? _settings.GlobalSettings().SidebarIdleAfterMinutes() : 0; // axan #31
+        const auto focusedTab = _GetFocusedTab(); // axan #31: the row being looked at is never de-emphasised
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             const auto vm = _nodeVM(node);
             const auto tab = _nodeTab(node);
@@ -3348,6 +3351,10 @@ namespace winrt::TerminalApp::implementation
             }
             vm->SetLastActivity(latest);
             vm->RefreshAge(now); // axan #32: only rows showing an age ever change
+            if (vm->UpdateDeEmphasis(now, tab == focusedTab ? 0 : idleAfterMinutes)) // axan #31
+            {
+                Axan::Log::Debug("SessionState", vm->IsDeEmphasised() ? "row de-emphasised: idle" : "row promoted", { { "label", winrt::to_string(vm->Label()) }, { "idleAfterMinutes", std::to_string(idleAfterMinutes) } });
+            }
         });
     }
 }

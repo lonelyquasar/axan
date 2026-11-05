@@ -51,6 +51,19 @@
                           Style="{StaticResource ToggleSwitchInExpanderStyle}" />
         </local:SettingContainer>
 
+        <!--
+            axan #31: minutes before an idle session's sidebar row is de-emphasised (dimmed,
+            smaller). 0 turns it off. Rows that need attention are never de-emphasised.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarIdleAfterMinutes">
+            <muxc:NumberBox LargeChange="15"
+                            Maximum="1440"
+                            Minimum="0"
+                            SmallChange="1"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarIdleAfterMinutes, Mode=TwoWay}" />
+        </local:SettingContainer>
+
         <!--  Position of new tab  -->
         <local:SettingContainer x:Uid="Globals_NewTabPosition">
             <ComboBox AutomationProperties.AccessibilityView="Content"

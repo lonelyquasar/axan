@@ -60,8 +60,9 @@
                 it reads as a divider rather than a row, and "space" leaves the gap empty.
             -->
             <Grid>
-                <Grid MinHeight="{ThemeResource TreeViewItemMinHeight}"
+                <Grid MinHeight="{x:Bind ((local:SessionNodeViewModel)Content).RowMinHeight, Mode=OneWay}"
                       VerticalAlignment="Center"
+                      Opacity="{x:Bind ((local:SessionNodeViewModel)Content).RowOpacity, Mode=OneWay}"
                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SessionVisibility, Mode=OneWay}">
                     <!--
                         axan #32: icon column with the state dot overlaid on its bottom-right
@@ -106,7 +107,8 @@
                     </Grid>
                     <StackPanel Grid.Column="1"
                                 VerticalAlignment="Center">
-                        <TextBlock Text="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}"
+                        <TextBlock FontSize="{x:Bind ((local:SessionNodeViewModel)Content).LabelFontSize, Mode=OneWay}"
+                                   Text="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}"
                                    Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
                                    TextTrimming="CharacterEllipsis"
                                    TextWrapping="NoWrap" />

@@ -166,6 +166,16 @@ namespace winrt::TerminalApp::implementation
         bool ShowsAge() const noexcept;
         // "<1m", "4m", "2h", "3d" - the compact age the second line shows.
         static hstring FormatAge(winrt::Windows::Foundation::TimeSpan age);
+
+        // axan #31: idle de-emphasis (see the idl).
+        bool IsDeEmphasised() const noexcept { return _deEmphasised; }
+        double LabelFontSize() const noexcept { return _deEmphasised ? 12.0 : 14.0; }
+        double RowOpacity() const noexcept { return _deEmphasised ? 0.55 : 1.0; }
+        double RowMinHeight() const noexcept { return _deEmphasised ? std::round(_rowHeightPx * 0.75) : _rowHeightPx; }
+        // The full-size row floor (TreeViewItemMinHeight), pushed by the page at creation.
+        void SetRowHeightPx(double px);
+        // Re-evaluate against the threshold (0 = off). Returns true if the flag flipped.
+        bool UpdateDeEmphasis(winrt::Windows::Foundation::DateTime now, int32_t idleAfterMinutes);
         // axan #30: "seen" bookkeeping. Per TermControl (keyed by its ContentId), the highest
         // OSC 7501 record Revision the user has been shown. A done/error record with a
         // revision at or below this is seen. Written only by TerminalPage's acknowledge
@@ -207,6 +217,9 @@ namespace winrt::TerminalApp::implementation
         // axan #32
         hstring _subLabel;
         hstring _subLabelMessage;
+        // axan #31
+        bool _deEmphasised{ false };
+        void _setDeEmphasised(bool value);
         winrt::Windows::UI::Color _textColor() const;
         hstring _computeSubLabel(winrt::Windows::Foundation::DateTime now) const;
         void _raiseStatePresentation();

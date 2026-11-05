@@ -95,5 +95,15 @@ namespace TerminalApp
         Windows.UI.Xaml.Visibility SubLabelVisibility { get; };
         String StateToolTip { get; };
         Windows.UI.Xaml.Visibility StateToolTipVisibility { get; };
+
+        // axan #31: idle de-emphasis. An idle node with no input/output for the configured
+        // sidebar.idleAfterMinutes renders dimmed (RowOpacity), with a smaller label
+        // (LabelFontSize 12 vs 14) and a shorter row floor (RowMinHeight). needs-you /
+        // done-unseen / error are never de-emphasised; any activity or a working/running
+        // state promotes the row back on the next update. No animation.
+        Boolean IsDeEmphasised { get; };
+        Double LabelFontSize { get; };
+        Double RowOpacity { get; };
+        Double RowMinHeight { get; };
     }
 }
