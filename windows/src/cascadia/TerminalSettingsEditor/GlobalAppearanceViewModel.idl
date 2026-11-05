@@ -25,6 +25,26 @@ namespace Microsoft.Terminal.Settings.Editor
         IInspectable CurrentSidebarStatusAfterSeen;
         Windows.Foundation.Collections.IObservableVector<Microsoft.Terminal.Settings.Editor.EnumEntry> SidebarStatusAfterSeenList { get; };
 
+        // axan: sidebar.stateGlyphs. key = a slot state (AxanStateGlyphs.h kKeys). Set takes the
+        // NATIVE icon string the picker produced ("" = show nothing); Reset drops the key so
+        // the state goes back to its default. Preview / Label are per-key properties so the
+        // page binds them (PropertyChanged fires for all of them on any change).
+        String SidebarStateGlyphText(String key);
+        void SetSidebarStateGlyph(String key, String nativeIcon);
+        void ResetSidebarStateGlyph(String key);
+        Windows.UI.Xaml.Controls.IconElement SidebarIdleGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarWorkingGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarBlockedGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarDoneGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarErrorGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarRunningGlyphPreview { get; };
+        String SidebarIdleGlyphLabel { get; };
+        String SidebarWorkingGlyphLabel { get; };
+        String SidebarBlockedGlyphLabel { get; };
+        String SidebarDoneGlyphLabel { get; };
+        String SidebarErrorGlyphLabel { get; };
+        String SidebarRunningGlyphLabel { get; };
+
         Boolean InvertedDisableAnimations;
 
         void ShowTitlebarToggled(IInspectable sender, Windows.UI.Xaml.RoutedEventArgs args);
@@ -35,7 +55,6 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, UseAcrylicInTabRow);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarMatchesProfileTransparency);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Int32, SidebarIdleAfterMinutes); // axan #31
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarShowAgentPresence); // axan
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, ShowTitleInTitlebar);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AlwaysOnTop);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AutoHideWindow);

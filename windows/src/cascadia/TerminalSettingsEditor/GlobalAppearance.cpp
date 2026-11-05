@@ -7,6 +7,9 @@
 
 #include <LibraryResources.h>
 #include <WtExeUtils.h>
+#include "..\WinRTUtils\inc\Utils.h" // axan: OpenImagePicker
+#include "AxanIconPicker.h" // axan: the shared icon picker flyout body
+#include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs defaults
 
 using namespace winrt;
 using namespace winrt::Windows::UI::Xaml;
@@ -33,5 +36,70 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             TraceLoggingValue("globalAppearance", "PageId", "The identifier of the page that was navigated to"),
             TraceLoggingKeyword(MICROSOFT_KEYWORD_MEASURES),
             TelemetryPrivacyDataTag(PDT_ProductAndServiceUsage));
+    }
+
+    // axan: the same picker the Startup page's icon button opens, led by a "Default" cell
+    // (the state's built-in glyph; removes the key). "No icon" stores "" (show nothing for
+    // that state). Every choice applies immediately and dismisses.
+    void GlobalAppearance::StateGlyphFlyout_Opening(const IInspectable& sender, const IInspectable& /*args*/)
+    {
+        const auto flyout = sender.try_as<Flyout>();
+        const auto vm = _ViewModel;
+        if (!flyout || !vm)
+        {
+            return;
+        }
+        const auto anchor = flyout.Target() ? flyout.Target().try_as<FrameworkElement>() : nullptr;
+        const auto key = anchor ? winrt::unbox_value_or<winrt::hstring>(anchor.Tag(), winrt::hstring{}) : winrt::hstring{};
+        if (!Axan::StateGlyphs::IsKey(key))
+        {
+            return;
+        }
+        // The Default cell shows the state's default glyph, or Undo when the default is none.
+        const auto fallback = Axan::StateGlyphs::DefaultFor(key);
+        const winrt::hstring defaultGlyph{ fallback.empty() ? std::wstring_view{ L"\uE7A7" } : fallback };
+        auto weakFlyout = winrt::make_weak(flyout);
+        const auto hide = [weakFlyout]() {
+            if (const auto f = weakFlyout.get())
+            {
+                f.Hide();
+            }
+        };
+
+        AxanIconPicker::Options options;
+        options.leading.push_back({ defaultGlyph, RS_(L"Globals_SidebarStateGlyphDefault"), [vm, key, hide]() {
+                                       vm.ResetSidebarStateGlyph(key);
+                                       hide();
+                                   } });
+        options.noneName = RS_(L"Globals_SidebarStateGlyphNone");
+        options.currentText = vm.SidebarStateGlyphText(key);
+        options.onPick = [vm, key, hide](const winrt::hstring& icon) {
+            vm.SetSidebarStateGlyph(key, icon);
+            hide();
+        };
+        options.onBrowse = [weak = get_weak(), key, weakFlyout]() {
+            if (const auto self = weak.get())
+            {
+                self->_PickStateGlyphImage(key, weakFlyout);
+            }
+        };
+        flyout.Content(AxanIconPicker::Build(options));
+    }
+
+    safe_void_coroutine GlobalAppearance::_PickStateGlyphImage(winrt::hstring key, winrt::weak_ref<Flyout> weakFlyout)
+    {
+        auto lifetime = get_strong();
+
+        // OpenImagePicker is the shared image-file dialog the Profiles page's icon Browse uses.
+        const auto parentHwnd{ ::GetActiveWindow() };
+        const auto file = co_await OpenImagePicker(parentHwnd);
+        if (!file.empty() && _ViewModel)
+        {
+            _ViewModel.SetSidebarStateGlyph(key, file);
+        }
+        if (const auto f = weakFlyout.get())
+        {
+            f.Hide();
+        }
     }
 }

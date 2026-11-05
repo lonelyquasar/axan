@@ -552,13 +552,65 @@
     <value>Clear status after opening</value>
     <comment>axan: An option for the "after opening a finished session" setting: the row goes back to plain once opened.</comment>
   </data>
-  <data name="Globals_SidebarShowAgentPresence.Header" xml:space="preserve">
-    <value>Show an icon on sessions with an agent</value>
-    <comment>axan: Header for a toggle: show a small icon on sidebar rows where a status-reporting program (such as Claude Code) is running.</comment>
+  <data name="Globals_SidebarStateGlyphIdle.Header" xml:space="preserve">
+    <value>Idle (agent at rest)</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "idle" state.</comment>
   </data>
-  <data name="Globals_SidebarShowAgentPresence.HelpText" xml:space="preserve">
-    <value>Marks sidebar rows where a program that reports its status to the terminal (such as Claude Code) is running, even while it is idle. The working and running icons take its place while they apply.</value>
-    <comment>axan: A description for the "show an icon on sessions with an agent" setting. Presented near "Globals_SidebarShowAgentPresence.Header".</comment>
+  <data name="Globals_SidebarStateGlyphIdle.HelpText" xml:space="preserve">
+    <value>Idle: a status-reporting program is present and waiting at its prompt. Also shown once you have opened a finished or errored session. Default: a robot.</value>
+    <comment>axan: A description for the "idle" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphIdle.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphWorking.Header" xml:space="preserve">
+    <value>Working</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "working" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphWorking.HelpText" xml:space="preserve">
+    <value>Working: the agent is running a turn. Default: a lightning bolt.</value>
+    <comment>axan: A description for the "working" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphWorking.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphBlocked.Header" xml:space="preserve">
+    <value>Blocked</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "blocked" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphBlocked.HelpText" xml:space="preserve">
+    <value>Blocked: the program is waiting for you (permission, an answer or a login). Default: none; the dot on the icon already marks it.</value>
+    <comment>axan: A description for the "blocked" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphBlocked.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDone.Header" xml:space="preserve">
+    <value>Done</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "done" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDone.HelpText" xml:space="preserve">
+    <value>Done: finished and not yet looked at. Default: none; the dot on the icon already marks it.</value>
+    <comment>axan: A description for the "done" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphDone.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphError.Header" xml:space="preserve">
+    <value>Error</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "error" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphError.HelpText" xml:space="preserve">
+    <value>Error: the program reported an error. Default: none; the red dot on the icon already marks it.</value>
+    <comment>axan: A description for the "error" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphError.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphRunning.Header" xml:space="preserve">
+    <value>Running (shell command)</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "running" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphRunning.HelpText" xml:space="preserve">
+    <value>Running: a shell command is executing (needs shell integration; only for a pane with no status-reporting program). Default: a play triangle.</value>
+    <comment>axan: A description for the "running" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphRunning.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDefault" xml:space="preserve">
+    <value>Default</value>
+    <comment>axan: Label for a sidebar state icon that uses its built-in icon; also the name of the picker cell that restores it.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDefaultNone" xml:space="preserve">
+    <value>Default (none)</value>
+    <comment>axan: Label for a sidebar state icon whose built-in default is to show nothing.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphNone" xml:space="preserve">
+    <value>None</value>
+    <comment>axan: Label for a sidebar state icon set to show nothing; also the name of the picker cell that chooses that.</comment>
   </data>
   <data name="Globals_ShowTitleInTitlebar.Header" xml:space="preserve">
     <value>Use active terminal title as application title</value>

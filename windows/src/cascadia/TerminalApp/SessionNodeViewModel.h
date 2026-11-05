@@ -28,14 +28,17 @@ namespace winrt::TerminalApp::implementation
     // axan: the resting details of a node's state (AxanSessionState.h Result), pushed with
     // the state itself. retainedWhat is "done" / "error" when a seen report is kept on the
     // row (sidebar.statusAfterSeen = keep), else "". reportKey identifies the done/error
-    // report the age counts from ("" = none). showPresence = an OSC 7501 program lives in
-    // the session AND sidebar.showAgentPresence is on.
+    // report the age counts from ("" = none). slotKey is the right-edge slot's state
+    // (AxanSessionState.h SlotKey: idle / working / blocked / done / error / running, "" =
+    // none) and slotGlyph its resolved sidebar.stateGlyphs value (AxanStateGlyphs.h), ""
+    // = nothing.
     struct SessionRestingState
     {
         hstring retainedWhat;
         hstring retainedMessage;
         hstring reportKey;
-        bool showPresence{ false };
+        hstring slotKey;
+        hstring slotGlyph;
     };
 
     struct SessionNodeViewModel : SessionNodeViewModelT<SessionNodeViewModel, winrt::Windows::Foundation::IStringable>
@@ -169,6 +172,9 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Media::Brush StateDotStroke() const;
         hstring StateGlyph() const noexcept;
         winrt::Windows::UI::Xaml::Visibility StateGlyphVisibility() const noexcept;
+        // axan: StateGlyph rendered as a fresh IconElement (glyph, emoji or image), minted per
+        // get for the same reason Icon() is; null when the slot is empty.
+        winrt::Windows::UI::Xaml::Controls::IconElement StateGlyphIcon();
         hstring SubLabel() const noexcept { return _subLabel; }
         winrt::Windows::UI::Xaml::Visibility SubLabelVisibility() const noexcept;
         // axan: a kept (seen) report renders more muted than a live one.
@@ -253,14 +259,16 @@ namespace winrt::TerminalApp::implementation
         // axan #32
         hstring _subLabel;
         hstring _subLabelMessage;
-        // axan: statusAfterSeen = keep / agent presence (see SessionRestingState). _reportSince
+        // axan: statusAfterSeen = keep (see SessionRestingState). _reportSince
         // is when the report named by _reportKey first appeared; it survives acknowledgement,
         // so a kept "done" shows how long ago it finished, not how long ago it was opened.
         hstring _retainedWhat;
         hstring _retainedMessage;
         hstring _reportKey;
         winrt::Windows::Foundation::DateTime _reportSince{};
-        bool _showPresence{ false };
+        // axan: the glyph slot (see SessionRestingState).
+        hstring _slotKey;
+        hstring _slotGlyph;
         // axan #31
         bool _deEmphasised{ false };
         // axan #33

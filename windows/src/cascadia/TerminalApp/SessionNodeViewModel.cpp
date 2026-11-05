@@ -66,12 +66,13 @@ namespace winrt::TerminalApp::implementation
             _reportKey = resting.reportKey;
             _reportSince = _reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
         }
-        const bool restingChanged = reportChanged || resting.retainedWhat != _retainedWhat || resting.retainedMessage != _retainedMessage || resting.showPresence != _showPresence;
+        const bool restingChanged = reportChanged || resting.retainedWhat != _retainedWhat || resting.retainedMessage != _retainedMessage || resting.slotKey != _slotKey || resting.slotGlyph != _slotGlyph;
         if (restingChanged)
         {
             _retainedWhat = resting.retainedWhat;
             _retainedMessage = resting.retainedMessage;
-            _showPresence = resting.showPresence;
+            _slotKey = resting.slotKey;
+            _slotGlyph = resting.slotGlyph;
         }
         if (transition || message != _subLabelMessage || restingChanged)
         {
@@ -86,7 +87,7 @@ namespace winrt::TerminalApp::implementation
 
     void SessionNodeViewModel::_raiseStatePresentation()
     {
-        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"SubLabel", L"SubLabelVisibility", L"SubLabelOpacity", L"StateToolTip", L"StateToolTipVisibility" })
+        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"StateGlyphIcon", L"SubLabel", L"SubLabelVisibility", L"SubLabelOpacity", L"StateToolTip", L"StateToolTipVisibility" })
         {
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
         }
@@ -134,31 +135,55 @@ namespace winrt::TerminalApp::implementation
         return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ _isDarkTheme ? Color{ 255, 0x1C, 0x1C, 0x1C } : Color{ 255, 0xFF, 0xFF, 0xFF } };
     }
 
-    // Static Segoe Fluent / MDL2 glyphs, never animated: lightning bolt for an agent
-    // working (OSC 7501), play for a shell command running (OSC 133), and otherwise, when an
-    // OSC 7501 program lives in the session and sidebar.showAgentPresence is on, the Robot
-    // glyph (U+E99A) for "an agent is here, at rest". Robot rather than a circle or another
+    // The right-edge slot, static and never animated: the sidebar.stateGlyphs glyph for the
+    // node's slot state, resolved by the page (AxanStateGlyphs.h). By default a lightning
+    // bolt for an agent working (OSC 7501), play for a shell command running (OSC 133), and
+    // the Robot glyph (U+E99A) for idle, i.e. a status-reporting program present and at rest
+    // (including a done/error report already seen). Robot rather than a circle or another
     // play-like shape: it can't be mistaken for running, and it says "agent", not "state".
+    // blocked / done / error default to nothing: the attention dot on the icon carries them.
     hstring SessionNodeViewModel::StateGlyph() const noexcept
     {
-        if (_state == L"working")
-        {
-            return hstring{ L"\uE945" };
-        }
-        if (_state == L"running")
-        {
-            return hstring{ L"\uE768" };
-        }
-        if (_showPresence)
-        {
-            return hstring{ L"\uE99A" };
-        }
-        return {};
+        return _isSeparator ? hstring{} : _slotGlyph;
     }
 
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateGlyphVisibility() const noexcept
     {
-        return !_isSeparator && (_state == L"working" || _state == L"running" || _showPresence) ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+        return StateGlyph().empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    // 12px like the old TextBlock glyph. IconWUX gives a glyph / emoji a 12pt FontIconSource
+    // (Segoe Fluent for the PUA range, Segoe UI otherwise), tinted here with the label brush;
+    // an image (bitmap / exe / dll icon) has no intrinsic small size, so it is boxed to 12x12.
+    winrt::Windows::UI::Xaml::Controls::IconElement SessionNodeViewModel::StateGlyphIcon()
+    {
+        const auto glyph = StateGlyph();
+        if (glyph.empty())
+        {
+            return nullptr;
+        }
+        const auto icon{ winrt::Microsoft::Terminal::UI::IconPathConverter::IconWUX(glyph) };
+        if (!icon)
+        {
+            return nullptr;
+        }
+        const auto brush = LabelBrush();
+        winrt::Windows::UI::Xaml::Controls::FontIconSource font{ nullptr };
+        if (const auto ise = icon.try_as<winrt::Windows::UI::Xaml::Controls::IconSourceElement>())
+        {
+            font = ise.IconSource().try_as<winrt::Windows::UI::Xaml::Controls::FontIconSource>();
+        }
+        if (font)
+        {
+            font.Foreground(brush);
+            icon.Foreground(brush);
+        }
+        else
+        {
+            icon.Width(12);
+            icon.Height(12);
+        }
+        return icon;
     }
 
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SubLabelVisibility() const noexcept
@@ -559,7 +584,8 @@ namespace winrt::TerminalApp::implementation
         _isDarkTheme = isDarkTheme;
         // A theme switch flips which palette set a stored color NAME resolves against, so both
         // the label brush and the glyph tint can change — raise Icon too, not just LabelBrush.
-        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" });
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" }); // axan: + StateGlyphIcon (tinted with it)
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateGlyphIcon" });
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"Icon" });
         // axan #32: the state dot is derived from the theme text colour too.
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateDotFill" });
@@ -632,7 +658,8 @@ namespace winrt::TerminalApp::implementation
         _iconColor = color;
         ColorTarget = target.empty() ? winrt::hstring{ L"both" } : target;
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"Icon" });
-        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" });
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" }); // axan: + StateGlyphIcon (tinted with it)
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateGlyphIcon" });
     }
 
     // axan #3: the shared ExpandedNodeTemplate holds BOTH a session Grid and a separator Grid

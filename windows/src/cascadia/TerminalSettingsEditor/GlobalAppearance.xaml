@@ -76,10 +76,147 @@
                       Style="{StaticResource ComboBoxSettingStyle}" />
         </local:SettingContainer>
 
-        <!--  axan: a static glyph on rows where an agent (an OSC 7501 program) lives  -->
-        <local:SettingContainer x:Uid="Globals_SidebarShowAgentPresence">
-            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarShowAgentPresence, Mode=TwoWay}"
-                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        <!--
+            axan: sidebar.stateGlyphs. The right-edge icon a row shows for its slot state: the
+            same picker as the Startup page's icon button, plus a Default cell. The text beside
+            the button says Default / None / the chosen value.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphIdle">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarIdleGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the idle (agent at rest) icon"
+                        Tag="idle"
+                        ToolTipService.ToolTip="Idle: a status-reporting program is present and waiting at its prompt. Also shown once you have opened a finished or errored session. Default: a robot.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarIdleGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphWorking">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarWorkingGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the working icon"
+                        Tag="working"
+                        ToolTipService.ToolTip="Working: the agent is running a turn. Default: a lightning bolt.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarWorkingGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphBlocked">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarBlockedGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the blocked icon"
+                        Tag="blocked"
+                        ToolTipService.ToolTip="Blocked: the program is waiting for you (permission, an answer or a login). Default: none; the dot on the icon already marks it.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarBlockedGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphDone">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarDoneGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the done icon"
+                        Tag="done"
+                        ToolTipService.ToolTip="Done: finished and not yet looked at. Default: none; the dot on the icon already marks it.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarDoneGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphError">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarErrorGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the error icon"
+                        Tag="error"
+                        ToolTipService.ToolTip="Error: the program reported an error. Default: none; the red dot on the icon already marks it.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarErrorGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphRunning">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarRunningGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the running (shell command) icon"
+                        Tag="running"
+                        ToolTipService.ToolTip="Running: a shell command is executing (needs shell integration; only for a pane with no status-reporting program). Default: a play triangle.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarRunningGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
         </local:SettingContainer>
 
         <!--  Position of new tab  -->

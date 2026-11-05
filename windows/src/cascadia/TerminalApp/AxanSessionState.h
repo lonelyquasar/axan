@@ -37,9 +37,11 @@
 // showing the last report, muted, while the node rests (idle / running). It goes away when
 // the record is rewritten (a new report) or cleared, or the pane closes.
 //
-// Presence (`sidebar.showAgentPresence`): Result.agentPresent is true when any pane has any
-// OSC 7501 record, i.e. a status-reporting program (Claude Code) lives in the session. The
-// row shows a static "agent here" glyph for it unless working / running own the glyph slot.
+// Slot: Result.slot is the state the row's right-edge glyph slot shows (setting
+// `sidebar.stateGlyphs`, keyed by SlotKey): blocked / error / done / working / running map
+// straight from the node state; an idle node is `idle` only when some pane has an OSC 7501
+// record (a status-reporting program such as Claude Code is present and at rest, including
+// a done/error report already seen), and None otherwise (a plain shell at its prompt).
 
 #include <cstdint>
 #include <span>
@@ -101,6 +103,41 @@ namespace Axan::SessionState
     };
 
     // A seen done/error report kept on display (keep mode, node idle / running).
+    // What the right-edge glyph slot shows (see the header comment). None = no slot state.
+    enum class Slot : uint8_t
+    {
+        None = 0,
+        Idle,
+        Working,
+        Blocked,
+        Done,
+        Error,
+        Running,
+    };
+
+    // The sidebar.stateGlyphs key for a slot state; "" for None.
+    constexpr std::wstring_view SlotKey(Slot s) noexcept
+    {
+        switch (s)
+        {
+        case Slot::Idle:
+            return L"idle";
+        case Slot::Working:
+            return L"working";
+        case Slot::Blocked:
+            return L"blocked";
+        case Slot::Done:
+            return L"done";
+        case Slot::Error:
+            return L"error";
+        case Slot::Running:
+            return L"running";
+        case Slot::None:
+        default:
+            return L"";
+        }
+    }
+
     struct Retained
     {
         bool present{ false };
@@ -114,7 +151,7 @@ namespace Axan::SessionState
         std::wstring message; // 7501 msg (or title when msg is empty), "bell", or ""
         std::wstring kind; // "permission" / "question" / "auth" for needs-you, else ""
         std::string_view source{ "none" }; // "osc7501" / "osc133" / "bell" / "none"
-        bool agentPresent{ false }; // any pane has any OSC 7501 record
+        Slot slot{ Slot::None }; // the glyph slot's state (see the header comment)
         Retained retained; // keep mode only; set only while the node is idle / running
         // Identity of the done/error report the row's age counts from: "<paneId>:<id>:<state>"
         // for an unseen done/error that decided the state, or for the retained report; ""
@@ -198,12 +235,13 @@ namespace Axan::SessionState
         const RecordInput* bestRecord = nullptr;
         const PaneInput* bestPane = nullptr;
         bool haveBest = false;
+        bool anyRecords = false; // a status-reporting program is present (idle slot)
 
         for (const auto& pane : panes)
         {
             if (!pane.records.empty())
             {
-                best.agentPresent = true;
+                anyRecords = true;
                 for (const auto& r : pane.records)
                 {
                     const auto s = FromRecord(r);
@@ -292,6 +330,28 @@ namespace Axan::SessionState
                 best.retained.message.assign(!kept->msg.empty() ? kept->msg : kept->title);
                 best.reportKey = ReportKey(*keptPane, *kept);
             }
+        }
+        switch (best.state)
+        {
+        case State::NeedsYou:
+            best.slot = Slot::Blocked;
+            break;
+        case State::Error:
+            best.slot = Slot::Error;
+            break;
+        case State::DoneUnseen:
+            best.slot = Slot::Done;
+            break;
+        case State::Working:
+            best.slot = Slot::Working;
+            break;
+        case State::Running:
+            best.slot = Slot::Running;
+            break;
+        case State::Idle:
+        default:
+            best.slot = anyRecords ? Slot::Idle : Slot::None;
+            break;
         }
         return best;
     }

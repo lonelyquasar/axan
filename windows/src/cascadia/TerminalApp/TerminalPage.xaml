@@ -121,15 +121,17 @@
                                    TextWrapping="NoWrap"
                                    Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SubLabelVisibility, Mode=OneWay}" />
                     </StackPanel>
-                    <TextBlock Grid.Column="2"
-                               Margin="6,0,8,0"
-                               VerticalAlignment="Center"
-                               FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                               FontSize="12"
-                               Opacity="0.75"
-                               Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
-                               Text="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyph, Mode=OneWay}"
-                               Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphVisibility, Mode=OneWay}" />
+                    <!--
+                        axan: sidebar.stateGlyphs makes the slot a glyph, emoji or image, so it
+                        is an icon element (minted per get, tinted with the label brush in the
+                        view model), not a symbol-font TextBlock.
+                    -->
+                    <ContentPresenter Grid.Column="2"
+                                      Margin="6,0,8,0"
+                                      VerticalAlignment="Center"
+                                      Content="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphIcon, Mode=OneWay}"
+                                      Opacity="0.75"
+                                      Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphVisibility, Mode=OneWay}" />
                 </Grid>
                 <Grid Height="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorPixelHeight, Mode=OneWay}"
                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorVisibility, Mode=OneWay}">

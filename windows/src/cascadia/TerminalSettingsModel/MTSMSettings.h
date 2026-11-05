@@ -15,6 +15,10 @@ Author(s):
 --*/
 #pragma once
 
+// axan: a string -> string map setting type (sidebar.stateGlyphs). An alias because a
+// template argument list's comma would split the X-macro's arguments.
+using IAxanStringMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring>;
+
 // Macro format (defaultArgs are optional):
 // (type, name, jsonKey, defaultArgs)
 
@@ -46,7 +50,7 @@ Author(s):
     X(int32_t, SidebarIdleAfterMinutes, "sidebar.idleAfterMinutes", 15)                                                                                                                              \
     X(bool, SidebarNeedsYouGroup, "sidebar.needsYouGroup", false)                                                                                                                                    \
     X(Model::SidebarStatusAfterSeen, SidebarStatusAfterSeen, "sidebar.statusAfterSeen", Model::SidebarStatusAfterSeen::Keep)                                                                         \
-    X(bool, SidebarShowAgentPresence, "sidebar.showAgentPresence", true)                                                                                                                             \
+    X(IAxanStringMap, SidebarStateGlyphs, "sidebar.stateGlyphs", nullptr)                                                                                                                            \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \

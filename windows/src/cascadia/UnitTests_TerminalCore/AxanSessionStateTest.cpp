@@ -8,6 +8,10 @@
 #include <WexTestClass.h>
 
 #include "../TerminalApp/AxanSessionState.h"
+#include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs resolution
+
+#include <map>
+#include <optional>
 
 using namespace WEX::Logging;
 using namespace Axan::SessionState;
@@ -194,12 +198,12 @@ namespace TerminalCoreUnitTests
             panes[0].records[0] = Rec(RecordState::Idle, true, 6);
             VERIFY_IS_FALSE(Derive(panes, false, keep).retained.present);
 
-            Log::Comment(L"Cleared (no records): nothing retained, no presence");
+            Log::Comment(L"Cleared (no records): nothing retained, no slot glyph");
             panes[0].records.clear();
             r = Derive(panes, false, keep);
             Expect(r, State::Idle);
             VERIFY_IS_FALSE(r.retained.present);
-            VERIFY_IS_FALSE(r.agentPresent);
+            VERIFY_IS_TRUE(r.slot == Slot::None);
         }
 
         TEST_METHOD(KeepOnlyShowsWhileTheNodeRests)
@@ -255,49 +259,126 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_NOT_EQUAL(first.reportKey, Derive(panes, false).reportKey);
         }
 
-        // ----- agent presence -----------------------------------------------------------
+        // ----- glyph slot state ----------------------------------------------------------
 
-        TEST_METHOD(PresenceWithIdleAndSeenRecords)
+        TEST_METHOD(SlotIdleOnlyWithAProgramPresent)
         {
             std::vector<PaneInput> panes(2);
-            VERIFY_IS_FALSE(Derive(panes, false).agentPresent);
-            Log::Comment(L"A plain running shell is not an agent");
+            VERIFY_IS_TRUE(Derive(panes, false).slot == Slot::None);
+            Log::Comment(L"A plain running shell: running");
             panes[1].commandRunning = true;
-            VERIFY_IS_FALSE(Derive(panes, false).agentPresent);
+            VERIFY_IS_TRUE(Derive(panes, false).slot == Slot::Running);
 
-            Log::Comment(L"Claude Code at its prompt (idle record): present, idle");
+            Log::Comment(L"Claude Code at its prompt (idle record): idle");
             panes[1].commandRunning = false;
             panes[0].records.push_back(Rec(RecordState::Idle));
             auto r = Derive(panes, false);
             Expect(r, State::Idle);
-            VERIFY_IS_TRUE(r.agentPresent);
+            VERIFY_IS_TRUE(r.slot == Slot::Idle);
 
-            Log::Comment(L"Done and seen: present, idle (clear and keep alike)");
+            Log::Comment(L"Done and seen: idle (clear and keep alike)");
             panes[0].records[0] = Rec(RecordState::Done, true, 2, L"ok", RecordKind::None, true);
-            VERIFY_IS_TRUE(Derive(panes, false).agentPresent);
-            VERIFY_IS_TRUE(Derive(panes, false, Options{ .keepAfterSeen = true }).agentPresent);
+            VERIFY_IS_TRUE(Derive(panes, false).slot == Slot::Idle);
+            VERIFY_IS_TRUE(Derive(panes, false, Options{ .keepAfterSeen = true }).slot == Slot::Idle);
         }
 
-        TEST_METHOD(PresenceDoesNotChangeStatePrecedence)
+        TEST_METHOD(SlotFollowsTheNodeState)
         {
-            // Presence is a flag beside the state, never a state: working and running still
-            // decide the node (and so own the glyph slot), and attention states still win.
+            // The slot shows the node's derived state: working and running decide it over an
+            // idle record elsewhere, and attention states map to their own keys.
             std::vector<PaneInput> panes(2);
             panes[0].records.push_back(Rec(RecordState::Idle));
             panes[1].commandRunning = true;
             auto r = Derive(panes, false);
             Expect(r, State::Running);
-            VERIFY_IS_TRUE(r.agentPresent);
+            VERIFY_IS_TRUE(r.slot == Slot::Running);
 
             panes[0].records[0] = Rec(RecordState::Working, true, 2, L"thinking");
             r = Derive(panes, false);
             Expect(r, State::Working, L"thinking");
-            VERIFY_IS_TRUE(r.agentPresent);
+            VERIFY_IS_TRUE(r.slot == Slot::Working);
 
             panes[0].records[0] = Rec(RecordState::Blocked, true, 3, L"Allow?", RecordKind::Permission);
             r = Derive(panes, false);
             Expect(r, State::NeedsYou, L"Allow?", L"permission");
-            VERIFY_IS_TRUE(r.agentPresent);
+            VERIFY_IS_TRUE(r.slot == Slot::Blocked);
+
+            panes[0].records[0] = Rec(RecordState::Done, true, 4, L"ok");
+            VERIFY_IS_TRUE(Derive(panes, false).slot == Slot::Done);
+            panes[0].records[0] = Rec(RecordState::Error, true, 5, L"boom");
+            VERIFY_IS_TRUE(Derive(panes, false).slot == Slot::Error);
+
+            VERIFY_ARE_EQUAL(std::wstring{ L"blocked" }, std::wstring{ SlotKey(Slot::Blocked) });
+            VERIFY_ARE_EQUAL(std::wstring{}, std::wstring{ SlotKey(Slot::None) });
+        }
+
+        // ---- axan: sidebar.stateGlyphs (src/inc/AxanStateGlyphs.h) ----
+
+        static std::wstring GlyphFrom(std::wstring_view key, const std::map<std::wstring, std::wstring>& configured)
+        {
+            return Axan::StateGlyphs::GlyphFor(key, [&](std::wstring_view k) -> std::optional<std::wstring> {
+                if (const auto it = configured.find(std::wstring{ k }); it != configured.end())
+                {
+                    return it->second;
+                }
+                return std::nullopt;
+            });
+        }
+
+        TEST_METHOD(StateGlyphsDefaultWhenUnset)
+        {
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE99A }), GlyphFrom(L"idle", {}));
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE945 }), GlyphFrom(L"working", {}));
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE768 }), GlyphFrom(L"running", {}));
+            Log::Comment(L"blocked / done / error default to nothing (the attention dot carries them)");
+            VERIFY_ARE_EQUAL(std::wstring{}, GlyphFrom(L"blocked", {}));
+            VERIFY_ARE_EQUAL(std::wstring{}, GlyphFrom(L"done", {}));
+            VERIFY_ARE_EQUAL(std::wstring{}, GlyphFrom(L"error", {}));
+            Log::Comment(L"No slot state (a plain shell at rest) shows nothing");
+            VERIFY_ARE_EQUAL(std::wstring{}, GlyphFrom(SlotKey(Slot::None), {}));
+        }
+
+        TEST_METHOD(StateGlyphsEmptyShowsNothingPerKey)
+        {
+            const std::map<std::wstring, std::wstring> cfg{ { L"idle", L"" }, { L"running", L"   " } };
+            Log::Comment(L"Only the configured keys change; whitespace-only counts as empty");
+            VERIFY_ARE_EQUAL(std::wstring{}, GlyphFrom(L"idle", cfg));
+            VERIFY_ARE_EQUAL(std::wstring{}, GlyphFrom(L"running", cfg));
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE945 }), GlyphFrom(L"working", cfg));
+        }
+
+        TEST_METHOD(StateGlyphsUseTheNodeIconVocabulary)
+        {
+            const std::map<std::wstring, std::wstring> cfg{
+                { L"working", L"builtin:build" },
+                { L"blocked", L"\U0001F64B" },
+                { L"done", L" C:\\icons\\done.png " },
+                { L"error", L"builtin:nope" },
+                { L"idle", std::wstring(1, wchar_t{ 0xE768 }) },
+            };
+            Log::Comment(L"builtin:NAME maps to the registry glyph (build = wrench U+E90F)");
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE90F }), GlyphFrom(L"working", cfg));
+            Log::Comment(L"An emoji (a surrogate pair) passes through");
+            VERIFY_ARE_EQUAL(std::wstring{ L"\U0001F64B" }, GlyphFrom(L"blocked", cfg));
+            Log::Comment(L"A path passes through, trimmed");
+            VERIFY_ARE_EQUAL(std::wstring{ L"C:\\icons\\done.png" }, GlyphFrom(L"done", cfg));
+            Log::Comment(L"An unknown builtin: name stays verbatim; a literal glyph passes through");
+            VERIFY_ARE_EQUAL(std::wstring{ L"builtin:nope" }, GlyphFrom(L"error", cfg));
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE768 }), GlyphFrom(L"idle", cfg));
+        }
+
+        TEST_METHOD(StateGlyphsIgnoreUnknownKeys)
+        {
+            const std::map<std::wstring, std::wstring> cfg{ { L"Idle", L"" }, { L"presence", L"builtin:git" } };
+            Log::Comment(L"Keys are exact (case-sensitive) and unknown ones don't leak into any state");
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE99A }), GlyphFrom(L"idle", cfg));
+            VERIFY_ARE_EQUAL(std::wstring{}, GlyphFrom(L"presence", cfg));
+            VERIFY_IS_FALSE(Axan::StateGlyphs::IsKey(L"presence"));
+            Log::Comment(L"Every slot key is a stateGlyphs key");
+            for (const auto slot : { Slot::Idle, Slot::Working, Slot::Blocked, Slot::Done, Slot::Error, Slot::Running })
+            {
+                VERIFY_IS_TRUE(Axan::StateGlyphs::IsKey(SlotKey(slot)));
+            }
         }
     };
 }

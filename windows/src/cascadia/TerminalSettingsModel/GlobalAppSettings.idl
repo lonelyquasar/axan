@@ -3,6 +3,8 @@
 
 #include "IInheritable.idl.h"
 
+#define COMMA , // axan: sidebar.stateGlyphs (an IMap inside INHERITABLE_SETTING)
+
 import "Theme.idl";
 import "ColorScheme.idl";
 import "ActionMap.idl";
@@ -83,9 +85,11 @@ namespace Microsoft.Terminal.Settings.Model
         // axan: after a done/error session is seen, keep its last report on the row (muted)
         // or clear it. Default Keep. Either way it stops counting as needing attention.
         INHERITABLE_SETTING(SidebarStatusAfterSeen, SidebarStatusAfterSeen);
-        // axan: a static "agent here" glyph on rows whose pane has a live OSC 7501 program
-        // (e.g. Claude Code at rest). Default true.
-        INHERITABLE_SETTING(Boolean, SidebarShowAgentPresence);
+        // axan: the right-edge glyph per slot state, keys idle / working / blocked / done /
+        // error / running, each in the node icon vocabulary ("" = nothing; a missing key =
+        // the default glyph). See
+        // src/inc/AxanStateGlyphs.h. Unset by default.
+        INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA String>, SidebarStateGlyphs);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

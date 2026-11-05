@@ -8,7 +8,7 @@
 #include <LibraryResources.h>
 #include "..\WinRTUtils\inc\Utils.h"
 #include "../../types/inc/utils.hpp" // GuidToString
-#include <AxanIconRegistry.h> // builtin glyph vocabulary for the icon picker flyout (#438)
+#include "AxanIconPicker.h" // the shared icon picker flyout body (#438)
 #include <AxanSessionPalette.h> // shared session color palette for the color picker flyout (#13)
 
 using namespace winrt::Windows::UI::Xaml;
@@ -170,71 +170,21 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             }
         };
 
-        Controls::StackPanel root;
-        root.Spacing(8);
-        root.MaxWidth(260);
-
-        // Row 1: the glyph grid — a "none" cell, then the 11 builtins.
-        Controls::VariableSizedWrapGrid grid;
-        grid.Orientation(Controls::Orientation::Horizontal);
-        grid.MaximumRowsOrColumns(6);
-        grid.ItemWidth(40);
-        grid.ItemHeight(40);
-
-        const auto addCell = [&](const winrt::hstring& glyph, const winrt::hstring& name, const winrt::hstring& storedValue) {
-            Controls::Button cell;
-            Controls::FontIcon icon;
-            icon.FontSize(16);
-            icon.Glyph(glyph);
-            cell.Content(icon);
-            cell.HorizontalAlignment(HorizontalAlignment::Stretch);
-            cell.VerticalAlignment(VerticalAlignment::Stretch);
-            Automation::AutomationProperties::SetName(cell, name);
-            Controls::ToolTipService::SetToolTip(cell, winrt::box_value(name));
-            cell.Click([vm, storedValue, hide](auto&&, auto&&) {
-                vm.Icon(storedValue);
-                hide();
-            });
-            grid.Children().Append(cell);
+        // The shared picker body (AxanIconPicker.h): grid (none + the 11 builtins), image
+        // browse, free text. A pick applies and dismisses.
+        AxanIconPicker::Options options;
+        options.currentText = vm.IconPortable();
+        options.onPick = [vm, hide](const winrt::hstring& icon) {
+            vm.Icon(icon);
+            hide();
         };
-
-        addCell(L"\uE711", L"No icon", L"" /* clear -> the neutral placeholder */);
-        for (const auto& builtin : Axan::IconRegistry::Builtins())
-        {
-            const winrt::hstring glyph{ std::wstring_view{ &builtin.glyph, 1 } };
-            addCell(glyph, winrt::hstring{ builtin.name }, glyph);
-        }
-        root.Children().Append(grid);
-
-        // Row 2: browse for an image file.
-        Controls::Button browse;
-        browse.Content(winrt::box_value(L"Browse for an image…"));
-        browse.HorizontalAlignment(HorizontalAlignment::Stretch);
-        browse.Click([weak = get_weak(), vm, weakFlyout](auto&&, auto&&) {
+        options.onBrowse = [weak = get_weak(), vm, weakFlyout]() {
             if (const auto self = weak.get())
             {
                 self->_PickIconImage(vm, weakFlyout);
             }
-        });
-        root.Children().Append(browse);
-
-        // Row 3: free text (emoji, a builtin:NAME token, or any literal path). Enter applies.
-        Controls::TextBox freeText;
-        freeText.PlaceholderText(L"emoji or builtin:NAME — Enter applies");
-        freeText.Text(vm.IconPortable());
-        Automation::AutomationProperties::SetName(freeText, L"Icon text");
-        freeText.KeyDown([vm, hide](const IInspectable& s, const Input::KeyRoutedEventArgs& e) {
-            if (e.Key() == Windows::System::VirtualKey::Enter)
-            {
-                if (const auto box = s.try_as<Controls::TextBox>())
-                {
-                    vm.IconPortable(box.Text());
-                }
-                e.Handled(true);
-                hide();
-            }
-        });
-        root.Children().Append(freeText);
+        };
+        const auto root = AxanIconPicker::Build(options);
 
         flyout.Content(root);
     }

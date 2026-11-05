@@ -4062,7 +4062,7 @@ namespace winrt::TerminalApp::implementation
         // axan: rebuild the titlebar app menu too — its accelerator hints come from
         // the (possibly rebound) action map.
         _CreateAppMenuFlyout();
-        // axan: sidebar.statusAfterSeen / showAgentPresence may have changed.
+        // axan: sidebar.statusAfterSeen / stateGlyphs may have changed.
         _RecomputeAllNodeStates();
 
         // Reload the current value of alwaysOnTop from the settings file. This

@@ -105,6 +105,16 @@ winrt::com_ptr<GlobalAppSettings> GlobalAppSettings::Copy() const
             globals->_StartupSessions->Append(get_self<LaunchEntry>(entry)->Copy());
         }
     }
+    // axan: sidebar.stateGlyphs is a map; copy it so a settings clone never shares it.
+    if (_SidebarStateGlyphs && *_SidebarStateGlyphs)
+    {
+        auto glyphs = winrt::single_threaded_map<winrt::hstring, winrt::hstring>();
+        for (const auto& kv : *_SidebarStateGlyphs)
+        {
+            glyphs.Insert(kv.Key(), kv.Value());
+        }
+        globals->_SidebarStateGlyphs = glyphs;
+    }
     if (_DisabledProfileSources)
     {
         globals->_DisabledProfileSources = winrt::single_threaded_vector<hstring>();

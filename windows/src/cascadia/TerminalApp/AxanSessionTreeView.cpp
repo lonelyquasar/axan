@@ -34,6 +34,7 @@
 
 #include "AxanLabelTemplate.h"
 #include "AxanSessionState.h" // axan #30
+#include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs
 #include "SessionNodeViewModel.h"
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
@@ -3334,7 +3335,24 @@ namespace winrt::TerminalApp::implementation
             resting.retainedMessage = winrt::hstring{ result.retained.message };
         }
         resting.reportKey = winrt::hstring{ result.reportKey };
-        resting.showPresence = result.agentPresent && _settings && _settings.GlobalSettings().SidebarShowAgentPresence();
+        // axan: the right-edge slot: the sidebar.stateGlyphs glyph for the slot state (a
+        // missing key keeps the default; "" shows nothing).
+        resting.slotKey = winrt::hstring{ Axan::SessionState::SlotKey(result.slot) };
+        {
+            winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring> map{ nullptr };
+            if (_settings)
+            {
+                map = _settings.GlobalSettings().SidebarStateGlyphs();
+            }
+            resting.slotGlyph = winrt::hstring{ Axan::StateGlyphs::GlyphFor(resting.slotKey, [&](std::wstring_view key) -> std::optional<std::wstring> {
+                const winrt::hstring k{ key };
+                if (map && map.HasKey(k))
+                {
+                    return std::wstring{ map.Lookup(k) };
+                }
+                return std::nullopt;
+            }) };
+        }
         if (vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now, resting))
         {
             _RecomputeSections(); // axan #33: a collapsed header's badge summarises hidden states
@@ -3380,8 +3398,8 @@ namespace winrt::TerminalApp::implementation
         _RecomputeNodeState(node);
     }
 
-    // axan: re-derive every node, e.g. after sidebar.statusAfterSeen / showAgentPresence
-    // changed (settings reload or the sidebar menu).
+    // axan: re-derive every node, e.g. after sidebar.statusAfterSeen / stateGlyphs changed
+    // (settings reload or the sidebar menu).
     void TerminalPage::_RecomputeAllNodeStates()
     {
         if (!SessionTree())
@@ -3884,27 +3902,6 @@ namespace winrt::TerminalApp::implementation
             }
         });
         flyout.Items().Append(keepItem);
-
-        ToggleMenuFlyoutItem presenceItem{};
-        presenceItem.Text(RS_(L"AxanMenuShowAgentPresence"));
-        presenceItem.IsChecked(_settings && _settings.GlobalSettings().SidebarShowAgentPresence());
-        presenceItem.Click([weakThis{ get_weak() }](auto&& sender, auto&&) {
-            if (const auto p{ weakThis.get() })
-            {
-                if (const auto t = sender.template try_as<ToggleMenuFlyoutItem>())
-                {
-                    p->_SetSidebarStatusSetting("showAgentPresence", [show = t.IsChecked()](const auto& globals) {
-                        if (globals.SidebarShowAgentPresence() == show)
-                        {
-                            return false;
-                        }
-                        globals.SidebarShowAgentPresence(show);
-                        return true;
-                    });
-                }
-            }
-        });
-        flyout.Items().Append(presenceItem);
     }
 
     // axan: apply one sidebar status-display setting change from the menu, persist it, and

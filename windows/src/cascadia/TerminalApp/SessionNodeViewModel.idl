@@ -91,11 +91,14 @@ namespace TerminalApp
         Windows.UI.Xaml.Media.Brush StateDotStroke { get; };
         String StateGlyph { get; };
         Windows.UI.Xaml.Visibility StateGlyphVisibility { get; };
+        // axan: StateGlyph as an icon element (sidebar.stateGlyphs accepts the node icon
+        // vocabulary: glyph, emoji or image). A fresh element per get, like Icon.
+        Windows.UI.Xaml.Controls.IconElement StateGlyphIcon { get; };
         String SubLabel { get; };
         Windows.UI.Xaml.Visibility SubLabelVisibility { get; };
         // axan: 0.7 for a live state's second line, 0.45 for a kept (already seen) report
-        // under sidebar.statusAfterSeen = keep. StateGlyph also carries the agent-presence
-        // glyph (sidebar.showAgentPresence) when working / running don't own the slot.
+        // under sidebar.statusAfterSeen = keep. StateGlyph is the sidebar.stateGlyphs glyph for
+        // the node's slot state (idle = an agent at rest; "" = nothing).
         Double SubLabelOpacity { get; };
         String StateToolTip { get; };
         Windows.UI.Xaml.Visibility StateToolTipVisibility { get; };

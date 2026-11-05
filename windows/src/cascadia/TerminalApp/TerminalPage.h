@@ -574,7 +574,7 @@ namespace winrt::TerminalApp::implementation
         void _OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args);
         void _SetNeedsYouGroupEnabled(bool enabled);
         void _AppendNeedsYouGroupToggle(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout);
-        // axan: sidebar.statusAfterSeen / sidebar.showAgentPresence menu toggles (appended by
+        // axan: the sidebar.statusAfterSeen menu toggle (appended by
         // _AppendNeedsYouGroupToggle) and the re-derive they (and a settings reload) trigger.
         void _SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply);
         void _RecomputeAllNodeStates();
