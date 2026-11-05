@@ -96,7 +96,7 @@ namespace Microsoft.Terminal.Settings.Model
         INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA String>, SidebarStateGlyphs);
         // axan: a small state word next to the slot glyph ("working", "needs answer"). Default true.
         INHERITABLE_SETTING(Boolean, SidebarStateLabels);
-        // axan: an agent at rest shows its session name (record title, else the terminal
+        // axan: an agent shows its session name (record title, else the terminal
         // title) as the row's muted second line. Default true.
         INHERITABLE_SETTING(Boolean, SidebarShowAgentName);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);

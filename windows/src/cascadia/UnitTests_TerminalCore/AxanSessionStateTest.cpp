@@ -437,7 +437,7 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_EQUAL(std::wstring{ L"needs-answer" }, std::wstring{ WordToken(SlotKey(q.slot), q.kind) });
         }
 
-        TEST_METHOD(AgentNameAtRest)
+        TEST_METHOD(AgentNameWheneverRecordsExist)
         {
             std::vector<PaneInput> panes(2);
             panes[0].terminalTitle = L"pwsh";
@@ -453,9 +453,22 @@ namespace TerminalCoreUnitTests
             panes[1].records[0].title = L"named-by-record";
             VERIFY_ARE_EQUAL(std::wstring{ L"named-by-record" }, Derive(panes, false).agentName);
 
-            Log::Comment(L"Not at rest (working): no agent name");
+            Log::Comment(L"Working: still derived (the row shows it when there is no message)");
             panes[1].records[0].state = RecordState::Working;
-            VERIFY_ARE_EQUAL(std::wstring{}, Derive(panes, false).agentName);
+            VERIFY_ARE_EQUAL(std::wstring{ L"named-by-record" }, Derive(panes, false).agentName);
+
+            Log::Comment(L"Blocked: derived too; the row lets the attention line win");
+            panes[1].records[0].state = RecordState::Blocked;
+            VERIFY_ARE_EQUAL(std::wstring{ L"named-by-record" }, Derive(panes, false).agentName);
+
+            Log::Comment(L"Running beside an agent pane: derived");
+            panes[1].records[0].state = RecordState::Idle;
+            panes[1].records[0].title = {};
+            panes[0].commandRunning = true;
+            const auto running = Derive(panes, false);
+            VERIFY_IS_TRUE(running.state == State::Running);
+            VERIFY_ARE_EQUAL(std::wstring{ L"exile-survival" }, running.agentName);
+            panes[0].commandRunning = false;
 
             Log::Comment(L"Seen done (keep): still at rest, so the name is derived (the row prefers the kept line)");
             panes[1].records[0] = Rec(RecordState::Done, true, 4, L"ok", RecordKind::None, true);

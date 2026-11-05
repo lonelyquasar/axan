@@ -646,10 +646,10 @@
   </data>
   <data name="Globals_SidebarShowAgentName.Header" xml:space="preserve">
     <value>Show the agent's session name</value>
-    <comment>axan: Header for a toggle: an agent at rest shows its session name as the second line of its sidebar row.</comment>
+    <comment>axan: Header for a toggle: an agent shows its session name as the second line of its sidebar row.</comment>
   </data>
   <data name="Globals_SidebarShowAgentName.HelpText" xml:space="preserve">
-    <value>When a status-reporting program (such as Claude Code) is at rest and nothing else is on the row's second line, show its session name there, dimmed: the name it reports, or else its terminal title (Claude Code sets this from --name).</value>
+    <value>When a status-reporting program (such as Claude Code) is present and nothing else is on the row's second line, show its session name there, dimmed: the name it reports, or else its terminal title (Claude Code sets this from --name).</value>
     <comment>axan: A description for the "show the agent's session name" setting. Presented near "Globals_SidebarShowAgentName.Header".</comment>
   </data>
   <data name="Globals_SidebarHoistStates.Header" xml:space="preserve">

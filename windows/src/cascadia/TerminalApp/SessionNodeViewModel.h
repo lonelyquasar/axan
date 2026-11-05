@@ -197,8 +197,14 @@ namespace winrt::TerminalApp::implementation
         // axan: a kept (seen) report renders more muted than a live one.
         double SubLabelOpacity() const noexcept { return ShowsRetained() || ShowsAgentName() ? 0.45 : 0.7; }
         bool ShowsRetained() const noexcept { return !_isSeparator && !_retainedWhat.empty(); }
-        // axan: an agent at rest with nothing else on its second line shows its name there.
-        bool ShowsAgentName() const noexcept { return !_isSeparator && _state == L"idle" && !ShowsRetained() && !_agentName.empty(); }
+        // axan: an agent with nothing else on its second line shows its name there: below
+        // the attention states (which always own the line), a kept report and a working
+        // message; so idle, running and a message-less working all show it.
+        bool ShowsAgentName() const noexcept
+        {
+            return !_isSeparator && !_agentName.empty() && !ShowsRetained() &&
+                   (_state == L"idle" || _state == L"running" || (_state == L"working" && _stateMessage.empty()));
+        }
         // axan: the slot's state word (sidebar.stateLabels) and the slot tooltip.
         hstring StateWord() const noexcept { return _isSeparator || !_showSlotWord ? hstring{} : _slotWord; }
         winrt::Windows::UI::Xaml::Visibility StateWordVisibility() const noexcept;

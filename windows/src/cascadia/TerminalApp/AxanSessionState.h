@@ -43,10 +43,13 @@
 // record (a status-reporting program such as Claude Code is present and at rest, including
 // a done/error report already seen), and None otherwise (a plain shell at its prompt).
 //
-// Agent name (`sidebar.showAgentName`): with the idle slot, Result.agentName is what the row's
-// second line shows when nothing else owns it: the first record-bearing pane's root record
-// `title` when non-empty, else that pane's terminal title (Claude Code sets it from its
-// session name, `claude --name`) with a leading spinner / status symbol stripped.
+// Agent name (`sidebar.showAgentName`): whenever some pane has an OSC 7501 record,
+// Result.agentName is what the row's second line shows when nothing else owns it (the row
+// gives attention states, a kept report and a working message priority): the first
+// record-bearing pane's root record `title` when non-empty, else that pane's terminal title
+// (Claude Code sets it from its session name, `claude --name`) with a leading spinner /
+// status symbol stripped. Not gated on the state, so a working agent that sends no message
+// still shows its name.
 
 #include <cstdint>
 #include <span>
@@ -158,7 +161,7 @@ namespace Axan::SessionState
         std::wstring kind; // "permission" / "question" / "auth" for needs-you, else ""
         std::string_view source{ "none" }; // "osc7501" / "osc133" / "bell" / "none"
         Slot slot{ Slot::None }; // the glyph slot's state (see the header comment)
-        std::wstring agentName; // idle slot only: root record title, else the terminal title
+        std::wstring agentName; // any pane with records: root record title, else the terminal title
         Retained retained; // keep mode only; set only while the node is idle / running
         // Identity of the done/error report the row's age counts from: "<paneId>:<id>:<state>"
         // for an unseen done/error that decided the state, or for the retained report; ""
@@ -386,7 +389,7 @@ namespace Axan::SessionState
             best.slot = anyRecords ? Slot::Idle : Slot::None;
             break;
         }
-        if (best.slot == Slot::Idle)
+        if (anyRecords)
         {
             // Prefer a root record's own title in any agent pane, then the first agent pane's
             // terminal title.

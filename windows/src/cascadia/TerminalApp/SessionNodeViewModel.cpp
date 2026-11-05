@@ -275,7 +275,8 @@ namespace winrt::TerminalApp::implementation
         std::wstring what{ _stateMessage };
         if (_state == L"working")
         {
-            return hstring{ what };
+            // axan: a working agent that sends no message shows its name instead.
+            return what.empty() && ShowsAgentName() ? _agentName : hstring{ what };
         }
         if (!ShowsAge())
         {
@@ -284,7 +285,8 @@ namespace winrt::TerminalApp::implementation
                 std::wstring kept{ _retainedMessage.empty() ? _retainedWhat : _retainedMessage };
                 return _withAge(std::move(kept), now, _reportSince != winrt::Windows::Foundation::DateTime{} ? _reportSince : _stateSince);
             }
-            // axan: sidebar.showAgentName, lowest priority: an agent at rest shows its name.
+            // axan: sidebar.showAgentName, lowest priority: an agent (idle, or running beside
+            // a shell command) shows its name.
             if (ShowsAgentName())
             {
                 return _agentName;

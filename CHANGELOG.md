@@ -25,8 +25,9 @@ All notable changes to axan are documented here.
   `needs answer`, `needs permission`, ...; `sidebar.stateLabels`, default on),
   hovering it explains the state in one sentence, and screen readers hear the
   state as part of the row's name. Windows only.
-- An agent at rest shows its session name as the row's muted second line (the
-  terminal title Claude Code sets from `claude --name`;
+- An agent shows its session name as the row's muted second line whenever
+  nothing more urgent is there, including while it works without a message
+  (the terminal title Claude Code sets from `claude --name`;
   `sidebar.showAgentName`, default on). Windows only.
 - Idle rows are dimmed and shrunk after `sidebar.idleAfterMinutes` (default 15;
   `0` turns it off); the focused row is never dimmed. Windows only. (#31)
