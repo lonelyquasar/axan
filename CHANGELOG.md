@@ -2,6 +2,46 @@
 
 All notable changes to axan are documented here.
 
+## [Unreleased]
+
+### Session state in the sidebar
+
+- The terminal now implements the OSC 7501 Program Status Protocol: it answers
+  the `ESC ] 7501 ; ? ESC \` query and keeps per-pane records from programs
+  that report `idle`, `working`, `done`, `blocked` or `error` (such as Claude
+  Code). Windows only. (#29)
+- Sidebar rows show session state: a dot on the icon, a second line (`kind ·
+  age` or `message · age`), a lightning-bolt glyph while working, a play glyph
+  while a shell command runs (OSC 133), and a tooltip with the state and when
+  it began. A done or error report counts as unread until you open the tab.
+  Windows only. (#30, #32)
+- `sidebar.statusAfterSeen` (`keep` by default, or `clear`) sets whether an
+  opened tab keeps its last report as a muted line. `sidebar.showAgentPresence`
+  (default on) adds a small robot glyph to rows where a status-reporting
+  program lives. Windows only.
+- Idle rows are dimmed and shrunk after `sidebar.idleAfterMinutes` (default 15;
+  `0` turns it off); the focused row is never dimmed. Windows only. (#31)
+- Optional "Needs you" group above the session tree
+  (`sidebar.needsYouGroup`, default off) listing sessions that are blocked,
+  errored or finished and unseen, longest-waiting first. Windows only. (#34)
+- Separators with a label are now collapsible section headers; a collapsed
+  header shows how many sessions it hides and the most urgent state among
+  them. Windows only. (#33)
+- `tools/axan-status.sh` and `tools/axan-status.ps1` send OSC 7501 reports for
+  manual testing, with `--query` and `--demo` modes.
+
+### Fixes
+
+- Separators are drop targets during a drag, and the flat list is verified
+  after drops. Windows only. (#28)
+- Settings reloads coalesce theme refreshes and skip unchanged node brushes,
+  and the Startup sessions page no longer does quadratic work on long lists.
+  Windows only. (#26, #19)
+- Copying from a text flyout no longer crashes the terminal when the clipboard
+  is busy. Windows only.
+- The bash shell wrapper no longer reports an idle WSL prompt as a running
+  command. Windows only.
+
 ## [0.1.2] — 2026-09-01
 
 ### Session tree & menus

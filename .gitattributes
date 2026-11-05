@@ -1,0 +1,2 @@
+tools/*.sh text eol=lf
+tools/*.ps1 text eol=lf

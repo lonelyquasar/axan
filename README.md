@@ -134,6 +134,94 @@ The curated startup tree — which shells to spawn, in what hierarchy — is a l
 - **Windows** — a single global `startupSessions` array on the root of WT's `settings.json` (camelCase keys: `id`, `parent`, `profile`, `name`, `directory`, `command`, `icon`, `color`, `colorTarget`). Each entry additionally carries `profile` — the GUID of the WT profile it spawns under (which shell: cmd/pwsh/WSL distro), empty = the default profile. One workstation tree, mixed shells, edited on the global **Startup sessions** settings page. WT's profiles keep owning appearance and the shell commandline; axan entries reference them.
 - **Linux** — a per-profile `default-launch-entries` GSettings key (an `a(ssssssss)` tuple array). GNOME Terminal has one shell per profile, so there is no per-entry profile reference; entries run under the owning profile. The Preferences → Startup tab is the GUI editor; **⌖ Capture current window** snapshots the live sidebar tree (cwd + name + hierarchy, not commands) into the edited profile's entries, and **⌖ Capture as new profile…** does the same into a fresh profile cloned from the current one.
 
+### Session state in the sidebar
+
+Windows only for now (the Linux/VTE build doesn't implement it yet). Each row in the session tree shows what its session is doing, so you can leave a long-running build or a coding agent alone and glance at the sidebar to see who needs you. A row can show a dot on its icon, a second line under the label, and a glyph at the right edge; a tab with several panes shows its strongest pane.
+
+**Where the state comes from**, in priority order (a pane uses the first source that has something to say):
+
+1. **OSC 7501, the Program Status Protocol.** A program reports its own state (idle, working, done, blocked, error). If a pane has any 7501 records they are authoritative for that pane: Claude Code sitting at its own prompt reports `idle` while the shell around it is technically still running `claude`, and idle is the truth.
+2. **OSC 133 command lifecycle** (shell integration): a command executing is *running*, otherwise idle. A non-zero exit is deliberately not an error state; a failed `ls` isn't worth flagging.
+3. **The bell.** If the tab is otherwise idle and its bell indicator is up, the row shows as done-unseen with the message `bell`. Windows Terminal already clears the indicator when the tab gains focus, so `make; printf '\a'` works as a "finished" signal in a plain shell.
+4. **Ambient idle.** Nothing to report and no input or output for `sidebar.idleAfterMinutes`: the row is dimmed and shrinks (see the settings below).
+
+**Handshake.** A program that wants to report should first ask whether the terminal understands the protocol, so it never sends reports into a terminal that would print them. It sends `ESC ] 7501 ; ? ESC \`, and axan answers on the program's input with
+
+```
+ESC ] 7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth ESC \
+```
+
+(`ESC` is byte `0x1B`; if the program has switched on 8-bit controls the reply uses `0x9D` and `0x9C` instead of `ESC ]` and `ESC \`.) No reply means no support.
+
+**Reports.** `ESC ] 7501 ; key=value : key=value ... ESC \` (a BEL terminator also works). Pairs are separated by `:`; values may only contain `A-Z a-z 0-9 _ . , + / = -`, which is why free text is base64.
+
+| Key | Meaning |
+|---|---|
+| `state` | Required: `idle`, `working`, `done`, `blocked`, `error`, or `clear` (removes records, below) |
+| `id` | Which record this report is about. Absent = the root record. A path of up to 8 segments separated by `/`, each 1-32 characters of `A-Z a-z 0-9 _ . + -`, at most 128 bytes in all (`build`, `agent/sub1`) |
+| `app` | Name of the reporting program, up to 32 bytes of `A-Z a-z 0-9 _ . + -`; a child inherits from its nearest ancestor. Parsed but not shown |
+| `kind` | Only meaningful with `blocked`: `permission`, `question` or `auth` |
+| `progress` | Integer 0-100, only with `working` or `blocked`. Parsed but not shown |
+| `msg` | Base64 (standard alphabet) of UTF-8 text, up to 2048 bytes decoded (2732 encoded) |
+| `title` | Base64 of UTF-8 text, up to 192 bytes decoded (256 encoded). Shown only as a fallback when there is no `msg` |
+
+A report replaces its record entirely: a key you leave out is cleared, not kept from the previous report. `state=clear` removes the record named by `id` and everything under it (`id=a` covers `a` and `a/b` but not `a-b`), or every record when there is no `id`. Records live until they are cleared, replaced, or the terminal is reset (RIS); `working` and `blocked` records are also dropped when the shell draws a new prompt (OSC 133;A) or the connection closes, so a crashed program can't leave a row stuck. `done`, `error` and `idle` survive that. At most 256 records per terminal; past that the least recently updated one is evicted.
+
+Receivers are strict about the parts that identify and bound a report, and forgiving about the rest. The **whole report is discarded** (nothing applied, and it is logged) when: the whole sequence is over 4096 bytes; a key is over 16 bytes; `app` is over 32 bytes; `state` is missing or unknown; `id` is invalid in any pair (this includes `state=clear`, so a malformed id can never wipe everything); `msg` or `title` is over its limit, isn't valid base64, isn't valid UTF-8, or contains a control character. A **malformed pair is skipped** and the rest still applies: no `=`, an empty or non-lowercase-letter key, or a value with a disallowed byte. Unknown keys are ignored, a repeated key takes its last value, an `app` with illegal characters is treated as absent, and an invalid `kind` or `progress` is treated as absent. Bidirectional-control characters are stripped from `msg` and `title`.
+
+**What a row shows:**
+
+| State | How it looks |
+|---|---|
+| `blocked` (needs you) | Bright dot with a ring on the icon's corner; second line `kind · age` (`permission · 3m`), or `message · age` when there is a `msg` or `title`; `needs you` if it has neither |
+| `done`, not yet seen | Half-strength dot; second line `message · age` (`done · age` with no message) |
+| `done`, after you've opened it | No dot. With `sidebar.statusAfterSeen` = `keep` (the default) the report stays as a muted second line with its age until it is replaced or cleared; with `clear` the row returns to plain |
+| `error`, not yet seen | Red dot; second line `message · age` (`error · age` with no message); after it's seen it follows the same keep/clear rule as `done` |
+| `working` | Lightning-bolt glyph at the right edge; the second line is the message, with no age |
+| Agent present at rest | A small robot glyph at the right edge whenever a pane has any 7501 record and none of the above owns that slot (`sidebar.showAgentPresence`) |
+| Shell command running (OSC 133) | Play glyph at the right edge |
+| `idle` | Plain row (dimmed and smaller after `sidebar.idleAfterMinutes`) |
+| `clear` | Removes the records, so the row falls back to the next source |
+
+Messages on the second line are cut at 24 characters so the age stays visible; the row tooltip has the full message, the state and kind, and the local time it began. Ages read `<1m`, `5m`, `2h`, `3d`. Nothing in the sidebar animates.
+
+When a tab has several records or panes, the strongest state wins: blocked, then error, then done-unseen, then working, then running, then idle. On a tie the root record beats a child and then the most recently written wins, so a parent `id` hierarchy (`agent`, `agent/sub1`) collapses into one row showing the most urgent thing happening.
+
+**"Seen".** Only `done` and `error` can be unread; a `blocked` row stays lit for as long as the program reports `blocked`. A done or error report counts as seen when you select the tab or one of its panes gains focus, and also when the window is activated while that tab is the focused one. A report that arrives while the tab is already focused in an active window is seen immediately, so it never shows the unread dot. To see the unread dot in a test, report from a tab you aren't looking at, for example `sleep 5; tools/axan-status.sh done --msg Finished` and then switch to another tab before it fires.
+
+**Settings** (in `settings.json`, at the root next to `startupSessions`; the three toggles are also in the sidebar's right-click menu):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `sidebar.idleAfterMinutes` | `15` | Minutes of no input or output, while idle, before a row is dimmed and shrunk. `0` turns it off. The focused row is never dimmed |
+| `sidebar.needsYouGroup` | `false` | Show a "Needs you" group above the session tree listing every session that is blocked, errored or done-unseen, longest-waiting first |
+| `sidebar.statusAfterSeen` | `"keep"` | `"keep"` or `"clear"`: what a row does with a done/error report once you've seen it. Either way it stops counting as needing you |
+| `sidebar.showAgentPresence` | `true` | The robot glyph on rows where a status-reporting program lives |
+
+Section headers on separators (label, collapse, the summary badge) are covered under the launch-entry tree above; a collapsed header's badge summarises the states of the rows it hides.
+
+**Trying it without an agent.** `tools/axan-status.sh` (bash; Git Bash and WSL) and `tools/axan-status.ps1` (PowerShell) emit one report to the terminal they run in. Both take the same flags; run them inside an axan pane.
+
+```
+axan-status.sh <state> [--kind permission|question|auth] [--msg "text"] [--title "text"]
+               [--progress N] [--id a/b] [--app name]
+axan-status.sh --query     # send the feature-detection query (the reply goes to the shell's input)
+axan-status.sh --demo      # working, then blocked (question), then done, 3 seconds apart
+```
+
+`<state>` is one of `idle working done blocked error clear`. Examples:
+
+```
+tools/axan-status.sh working --msg "Compiling"
+tools/axan-status.sh blocked --kind permission --msg "Run rm -rf build?"
+tools/axan-status.sh error --msg "Tests failed"
+tools/axan-status.sh working --id agent/sub1 --msg "Sub-task"   # a child record
+tools/axan-status.sh clear --id agent                            # removes agent and agent/sub1
+tools/axan-status.sh clear                                       # removes every record on this terminal
+```
+
+The PowerShell script takes the same flags (`tools/axan-status.ps1 blocked --kind question --msg "Which branch?"`; `-Kind`-style spelling works too). Each script writes only the escape sequence to stdout, so `axan-status.sh done > file` captures exactly what a terminal would receive.
+
 ### The portable TOML
 
 Every file starts with a version block:
