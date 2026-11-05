@@ -148,6 +148,24 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::Foundation::DateTime LastActivity() const noexcept { return _lastActivity; }
         bool SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now);
         void SetLastActivity(winrt::Windows::Foundation::DateTime value);
+
+        // axan #32: row presentation of the state (see the idl).
+        winrt::Windows::UI::Xaml::Visibility StateDotVisibility() const noexcept;
+        winrt::Windows::UI::Xaml::Media::Brush StateDotFill() const;
+        winrt::Windows::UI::Xaml::Media::Brush StateDotStroke() const;
+        hstring StateGlyph() const noexcept;
+        winrt::Windows::UI::Xaml::Visibility StateGlyphVisibility() const noexcept;
+        hstring SubLabel() const noexcept { return _subLabel; }
+        winrt::Windows::UI::Xaml::Visibility SubLabelVisibility() const noexcept;
+        hstring StateToolTip() const;
+        winrt::Windows::UI::Xaml::Visibility StateToolTipVisibility() const noexcept;
+        // Recompute the age part of SubLabel. Called by the sidebar's 1s clock; a no-op (no
+        // PropertyChanged) unless the visible text changed, and only states that show an
+        // age (needs-you / done-unseen / error) ever change it.
+        void RefreshAge(winrt::Windows::Foundation::DateTime now);
+        bool ShowsAge() const noexcept;
+        // "<1m", "4m", "2h", "3d" - the compact age the second line shows.
+        static hstring FormatAge(winrt::Windows::Foundation::TimeSpan age);
         // axan #30: "seen" bookkeeping. Per TermControl (keyed by its ContentId), the highest
         // OSC 7501 record Revision the user has been shown. A done/error record with a
         // revision at or below this is seen. Written only by TerminalPage's acknowledge
@@ -186,6 +204,12 @@ namespace winrt::TerminalApp::implementation
         hstring _stateMessage;
         hstring _stateKind;
         winrt::Windows::Foundation::DateTime _lastActivity{};
+        // axan #32
+        hstring _subLabel;
+        hstring _subLabelMessage;
+        winrt::Windows::UI::Color _textColor() const;
+        hstring _computeSubLabel(winrt::Windows::Foundation::DateTime now) const;
+        void _raiseStatePresentation();
     };
 }
 

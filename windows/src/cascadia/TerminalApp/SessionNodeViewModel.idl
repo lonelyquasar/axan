@@ -75,5 +75,25 @@ namespace TerminalApp
         String StateMessage { get; };
         String StateKind { get; };
         Windows.Foundation.DateTime LastActivity { get; };
+
+        // axan #32: the row's rendering of State, all derived here so the ItemTemplate is
+        // pure binding. The state dot overlays the icon's bottom-right corner: needs-you is
+        // an inverted badge (fill = the theme text colour, ring = its opposite) so it reads
+        // against any user node colour; done-unseen is the same dot at low alpha (softer);
+        // error is red with the same ring. StateGlyph is a static (never animated) glyph at
+        // the row's right edge for working / running. SubLabel is the optional second line:
+        // the 7501 msg (or the blocked kind / state word) plus an age for the states where
+        // waiting time matters ("permission · 4m", "done · 25m"); "" collapses the line.
+        // StateToolTip (under the label in the row tooltip) is the state, its kind, the
+        // absolute local time it began and the full message; "" and Collapsed when idle.
+        Windows.UI.Xaml.Visibility StateDotVisibility { get; };
+        Windows.UI.Xaml.Media.Brush StateDotFill { get; };
+        Windows.UI.Xaml.Media.Brush StateDotStroke { get; };
+        String StateGlyph { get; };
+        Windows.UI.Xaml.Visibility StateGlyphVisibility { get; };
+        String SubLabel { get; };
+        Windows.UI.Xaml.Visibility SubLabelVisibility { get; };
+        String StateToolTip { get; };
+        Windows.UI.Xaml.Visibility StateToolTipVisibility { get; };
     }
 }

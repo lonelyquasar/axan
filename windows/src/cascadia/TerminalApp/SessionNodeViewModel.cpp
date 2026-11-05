@@ -53,7 +53,201 @@ namespace winrt::TerminalApp::implementation
             _stateMessage = message;
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateMessage" });
         }
+        if (transition || message != _subLabelMessage)
+        {
+            _subLabelMessage = message;
+            _subLabel = _computeSubLabel(now);
+            _raiseStatePresentation();
+        }
         return transition;
+    }
+
+    // ----- axan #32: row presentation ------------------------------------------------------
+
+    void SessionNodeViewModel::_raiseStatePresentation()
+    {
+        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"SubLabel", L"SubLabelVisibility", L"StateToolTip", L"StateToolTipVisibility" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    bool SessionNodeViewModel::ShowsAge() const noexcept
+    {
+        return _state == L"needs-you" || _state == L"done-unseen" || _state == L"error";
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateDotVisibility() const noexcept
+    {
+        return !_isSeparator && ShowsAge() ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    // The theme's text colour (white on dark / near-black on light), which is what the
+    // inverted badge fills with; its ring is the opposite so the dot separates from the icon.
+    winrt::Windows::UI::Color SessionNodeViewModel::_textColor() const
+    {
+        if (const auto solid = _defaultTextBrush.try_as<winrt::Windows::UI::Xaml::Media::SolidColorBrush>())
+        {
+            return solid.Color();
+        }
+        return _isDarkTheme ? winrt::Windows::UI::Color{ 255, 255, 255, 255 } : winrt::Windows::UI::Color{ 255, 0x1C, 0x1C, 0x1C };
+    }
+
+    winrt::Windows::UI::Xaml::Media::Brush SessionNodeViewModel::StateDotFill() const
+    {
+        using winrt::Windows::UI::Color;
+        if (_state == L"error")
+        {
+            return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ _isDarkTheme ? Color{ 255, 0xFF, 0x6B, 0x6B } : Color{ 255, 0xC4, 0x2B, 0x1C } };
+        }
+        auto c = _textColor();
+        if (_state == L"done-unseen")
+        {
+            c.A = 0x80; // softer than needs-you
+        }
+        return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ c };
+    }
+
+    winrt::Windows::UI::Xaml::Media::Brush SessionNodeViewModel::StateDotStroke() const
+    {
+        using winrt::Windows::UI::Color;
+        return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ _isDarkTheme ? Color{ 255, 0x1C, 0x1C, 0x1C } : Color{ 255, 0xFF, 0xFF, 0xFF } };
+    }
+
+    // Static Segoe Fluent / MDL2 glyphs, never animated: lightning bolt for an agent
+    // working (OSC 7501), play for a shell command running (OSC 133).
+    hstring SessionNodeViewModel::StateGlyph() const noexcept
+    {
+        if (_state == L"working")
+        {
+            return hstring{ L"\uE945" };
+        }
+        if (_state == L"running")
+        {
+            return hstring{ L"\uE768" };
+        }
+        return {};
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateGlyphVisibility() const noexcept
+    {
+        return !_isSeparator && (_state == L"working" || _state == L"running") ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SubLabelVisibility() const noexcept
+    {
+        return _subLabel.empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    hstring SessionNodeViewModel::FormatAge(winrt::Windows::Foundation::TimeSpan age)
+    {
+        using namespace std::chrono;
+        const auto secs = duration_cast<seconds>(age).count();
+        if (secs < 60)
+        {
+            return hstring{ L"<1m" };
+        }
+        if (secs < 3600)
+        {
+            return hstring{ std::to_wstring(secs / 60) + L"m" };
+        }
+        if (secs < 86400)
+        {
+            return hstring{ std::to_wstring(secs / 3600) + L"h" };
+        }
+        return hstring{ std::to_wstring(secs / 86400) + L"d" };
+    }
+
+    // Second line: what the state is about, plus how long it has been that way for the
+    // states the user is looking for. Working shows only its message (no age); running
+    // and idle show nothing, so their rows stay one line.
+    hstring SessionNodeViewModel::_computeSubLabel(winrt::Windows::Foundation::DateTime now) const
+    {
+        if (_isSeparator)
+        {
+            return {};
+        }
+        std::wstring what{ _stateMessage };
+        if (_state == L"working")
+        {
+            return hstring{ what };
+        }
+        if (!ShowsAge())
+        {
+            return {};
+        }
+        if (what.empty())
+        {
+            if (_state == L"needs-you")
+            {
+                what = _stateKind.empty() ? std::wstring{ L"needs you" } : std::wstring{ _stateKind };
+            }
+            else if (_state == L"done-unseen")
+            {
+                what = L"done";
+            }
+            else
+            {
+                what = L"error";
+            }
+        }
+        const auto age = now > _stateSince ? now - _stateSince : winrt::Windows::Foundation::TimeSpan{ 0 };
+        return hstring{ what + L" \u00B7 " + std::wstring{ FormatAge(age) } };
+    }
+
+    void SessionNodeViewModel::RefreshAge(winrt::Windows::Foundation::DateTime now)
+    {
+        if (!ShowsAge())
+        {
+            return;
+        }
+        auto text = _computeSubLabel(now);
+        if (text != _subLabel)
+        {
+            _subLabel = std::move(text);
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SubLabel" });
+        }
+    }
+
+    // For a non-idle state: the state, its kind, the absolute local time it began and the
+    // full message, e.g. "needs-you (permission) since 14:32:05" / "Allow Bash: ...".
+    // Shown under the label in the row tooltip; Collapsed when idle.
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateToolTipVisibility() const noexcept
+    {
+        return _isSeparator || _state == L"idle" ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    hstring SessionNodeViewModel::StateToolTip() const
+    {
+        if (_isSeparator || _state == L"idle")
+        {
+            return {};
+        }
+        std::wstring tip{ _state };
+        if (!_stateKind.empty())
+        {
+            tip += L" (";
+            tip += _stateKind;
+            tip += L")";
+        }
+        if (_stateSince != winrt::Windows::Foundation::DateTime{})
+        {
+            const FILETIME utc = winrt::clock::to_FILETIME(_stateSince);
+            FILETIME local{};
+            SYSTEMTIME st{};
+            if (FileTimeToLocalFileTime(&utc, &local) && FileTimeToSystemTime(&local, &st))
+            {
+                wchar_t buf[32]{};
+                swprintf_s(buf, L" since %02u:%02u:%02u", st.wHour, st.wMinute, st.wSecond);
+                tip += buf;
+            }
+        }
+        if (!_stateMessage.empty())
+        {
+            tip += L"\n";
+            tip += _stateMessage;
+        }
+        return hstring{ tip };
     }
 
     void SessionNodeViewModel::SetLastActivity(winrt::Windows::Foundation::DateTime value)
@@ -246,6 +440,9 @@ namespace winrt::TerminalApp::implementation
         // the label brush and the glyph tint can change — raise Icon too, not just LabelBrush.
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" });
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"Icon" });
+        // axan #32: the state dot is derived from the theme text colour too.
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateDotFill" });
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateDotStroke" });
         return true;
     }
 

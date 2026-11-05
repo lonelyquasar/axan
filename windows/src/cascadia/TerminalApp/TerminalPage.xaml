@@ -63,23 +63,71 @@
                 <Grid MinHeight="{ThemeResource TreeViewItemMinHeight}"
                       VerticalAlignment="Center"
                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SessionVisibility, Mode=OneWay}">
+                    <!--
+                        axan #32: icon column with the state dot overlaid on its bottom-right
+                        corner; label column is the label plus an optional second line
+                        (Collapsed when empty, so idle rows stay one line); a static state
+                        glyph (working / running) at the right edge. Nothing here animates.
+                        The row tooltip is the label, then the state detail when not idle.
+                    -->
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <ContentPresenter Grid.Column="0"
-                                      Width="16"
-                                      Height="16"
-                                      Margin="0,0,8,0"
-                                      VerticalAlignment="Center"
-                                      Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
-                    <TextBlock Grid.Column="1"
-                               Text="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}"
-                               Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                    <ToolTipService.ToolTip>
+                        <StackPanel MaxWidth="420">
+                            <TextBlock Text="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Margin="0,4,0,0"
+                                       Opacity="0.8"
+                                       Text="{x:Bind ((local:SessionNodeViewModel)Content).StateToolTip, Mode=OneWay}"
+                                       TextWrapping="Wrap"
+                                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateToolTipVisibility, Mode=OneWay}" />
+                        </StackPanel>
+                    </ToolTipService.ToolTip>
+                    <Grid Grid.Column="0"
+                          Width="16"
+                          Height="16"
+                          Margin="0,0,8,0"
+                          VerticalAlignment="Center">
+                        <ContentPresenter Width="16"
+                                          Height="16"
+                                          Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
+                        <Ellipse Width="9"
+                                 Height="9"
+                                 Margin="0,0,-4,-4"
+                                 HorizontalAlignment="Right"
+                                 VerticalAlignment="Bottom"
+                                 Fill="{x:Bind ((local:SessionNodeViewModel)Content).StateDotFill, Mode=OneWay}"
+                                 Stroke="{x:Bind ((local:SessionNodeViewModel)Content).StateDotStroke, Mode=OneWay}"
+                                 StrokeThickness="1.5"
+                                 Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateDotVisibility, Mode=OneWay}" />
+                    </Grid>
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}"
+                                   Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap" />
+                        <TextBlock Margin="0,0,0,2"
+                                   FontSize="11"
+                                   Opacity="0.7"
+                                   Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                                   Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabel, Mode=OneWay}"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap"
+                                   Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SubLabelVisibility, Mode=OneWay}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="2"
+                               Margin="6,0,8,0"
                                VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis"
-                               TextWrapping="NoWrap"
-                               ToolTipService.ToolTip="{x:Bind ((local:SessionNodeViewModel)Content).Label, Mode=OneWay}" />
+                               FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                               FontSize="12"
+                               Opacity="0.75"
+                               Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                               Text="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyph, Mode=OneWay}"
+                               Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphVisibility, Mode=OneWay}" />
                 </Grid>
                 <Grid Height="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorPixelHeight, Mode=OneWay}"
                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorVisibility, Mode=OneWay}">

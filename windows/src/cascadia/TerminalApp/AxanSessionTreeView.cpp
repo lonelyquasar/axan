@@ -385,6 +385,11 @@ namespace winrt::TerminalApp::implementation
     // sidebar's item style used to floor every row at (now carried by the template's session
     // Grid instead, so a separator can be shorter). A separator's pixel height is its
     // row-unit Height times this. Falls back to WinUI 2.8's 32 if the lookup fails.
+    // axan #32/#31: rows are no longer all one height (a state second line makes a row
+    // taller; an idle-de-emphasised row is shorter), so the separator "row unit" is pinned
+    // to this value - one full-size, single-line session row - rather than to whatever the
+    // neighbouring rows currently measure. A separator therefore keeps its height while the
+    // rows around it change state.
     double TerminalPage::_SessionRowHeightPx()
     {
         constexpr double kFallbackRowHeight = 32.0;
@@ -3328,6 +3333,7 @@ namespace winrt::TerminalApp::implementation
 
     void TerminalPage::_SessionStateClockTick()
     {
+        const auto now = winrt::clock::now();
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             const auto vm = _nodeVM(node);
             const auto tab = _nodeTab(node);
@@ -3341,6 +3347,7 @@ namespace winrt::TerminalApp::implementation
                 latest = std::max({ latest, control.LastInputTime(), control.LastOutputTime() });
             }
             vm->SetLastActivity(latest);
+            vm->RefreshAge(now); // axan #32: only rows showing an age ever change
         });
     }
 }
