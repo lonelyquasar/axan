@@ -116,13 +116,25 @@ if [ -z "$(trap -p DEBUG)" ]; then
         __axan_preexec_armed=1
     }
     __axan_preexec() {
+        # Programmable completion runs commands at an idle prompt too (bash-preexec's guard).
+        [ -n "${COMP_LINE-}" ] && return
         if [ -n "$__axan_preexec_armed" ]; then
             __axan_preexec_armed=
             __axan_cmd_ran=1
             printf '\033]133;C\033\\'
         fi
     }
-    PROMPT_COMMAND="__axan_prompt_start; $PROMPT_COMMAND; __axan_arm_preexec"
+    # bash 5.1+ also runs PROMPT_COMMAND as an array, and distros use that form (Fedora's
+    # /etc/bashrc title hook plus systemd's __systemd_osc_context_precmdline). A plain
+    # string assignment only replaces element [0], so the other elements ran AFTER the arm
+    # and the DEBUG trap reported them as a user command: a false "running" at every idle
+    # prompt (#30). Wrap the whole array instead, keeping the arm genuinely last.
+    if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]] &&
+        (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then
+        PROMPT_COMMAND=(__axan_prompt_start "${PROMPT_COMMAND[@]}" __axan_arm_preexec)
+    else
+        PROMPT_COMMAND="__axan_prompt_start; $PROMPT_COMMAND; __axan_arm_preexec"
+    fi
     case "$PS1" in
         *'133;B'*) ;;
         *) PS1="$PS1"'\[\033]133;B\033\\\]' ;;
