@@ -380,5 +380,95 @@ namespace TerminalCoreUnitTests
                 VERIFY_IS_TRUE(Axan::StateGlyphs::IsKey(SlotKey(slot)));
             }
         }
+
+        TEST_METHOD(StateGlyphsKindKeysOverrideBlocked)
+        {
+            const auto glyph = [](std::wstring_view kind, const std::map<std::wstring, std::wstring>& cfg) {
+                return Axan::StateGlyphs::GlyphFor(L"blocked", kind, [&](std::wstring_view k) -> std::optional<std::wstring> {
+                    if (const auto it = cfg.find(std::wstring{ k }); it != cfg.end())
+                    {
+                        return it->second;
+                    }
+                    return std::nullopt;
+                });
+            };
+            const std::map<std::wstring, std::wstring> cfg{ { L"blocked", L"B" }, { L"question", L"Q" }, { L"auth", L"" } };
+            VERIFY_ARE_EQUAL(std::wstring{ L"Q" }, glyph(L"question", cfg));
+            Log::Comment(L"An empty kind value means nothing for that kind, not the blocked glyph");
+            VERIFY_ARE_EQUAL(std::wstring{}, glyph(L"auth", cfg));
+            Log::Comment(L"An unset kind falls back to blocked; no kind is blocked");
+            VERIFY_ARE_EQUAL(std::wstring{ L"B" }, glyph(L"permission", cfg));
+            VERIFY_ARE_EQUAL(std::wstring{ L"B" }, glyph(L"", cfg));
+            Log::Comment(L"Nothing configured: blocked's default, i.e. nothing");
+            VERIFY_ARE_EQUAL(std::wstring{}, glyph(L"question", {}));
+            Log::Comment(L"A kind key never applies to another state");
+            const std::map<std::wstring, std::wstring> onlyQ{ { L"question", L"Q" } };
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE945 }), Axan::StateGlyphs::GlyphFor(L"working", L"question", [&](std::wstring_view k) -> std::optional<std::wstring> {
+                                 if (const auto it = onlyQ.find(std::wstring{ k }); it != onlyQ.end())
+                                 {
+                                     return it->second;
+                                 }
+                                 return std::nullopt;
+                             }));
+        }
+
+        TEST_METHOD(StateWordTokens)
+        {
+            using Axan::StateGlyphs::WordToken;
+            VERIFY_ARE_EQUAL(std::wstring{ L"idle" }, std::wstring{ WordToken(L"idle", L"") });
+            VERIFY_ARE_EQUAL(std::wstring{ L"working" }, std::wstring{ WordToken(L"working", L"") });
+            VERIFY_ARE_EQUAL(std::wstring{ L"running" }, std::wstring{ WordToken(L"running", L"") });
+            VERIFY_ARE_EQUAL(std::wstring{ L"done" }, std::wstring{ WordToken(L"done", L"") });
+            VERIFY_ARE_EQUAL(std::wstring{ L"error" }, std::wstring{ WordToken(L"error", L"") });
+            VERIFY_ARE_EQUAL(std::wstring{ L"needs-permission" }, std::wstring{ WordToken(L"blocked", L"permission") });
+            VERIFY_ARE_EQUAL(std::wstring{ L"needs-answer" }, std::wstring{ WordToken(L"blocked", L"question") });
+            VERIFY_ARE_EQUAL(std::wstring{ L"needs-login" }, std::wstring{ WordToken(L"blocked", L"auth") });
+            VERIFY_ARE_EQUAL(std::wstring{ L"needs-you" }, std::wstring{ WordToken(L"blocked", L"") });
+            Log::Comment(L"No slot state, no word");
+            VERIFY_ARE_EQUAL(std::wstring{}, std::wstring{ WordToken(L"", L"") });
+
+            Log::Comment(L"End to end: a seen done in keep mode reads idle (the kept line says done)");
+            std::vector<PaneInput> panes(1);
+            panes[0].records.push_back(Rec(RecordState::Done, true, 2, L"ok", RecordKind::None, true));
+            const auto r = Derive(panes, false, Options{ .keepAfterSeen = true });
+            VERIFY_ARE_EQUAL(std::wstring{ L"idle" }, std::wstring{ WordToken(SlotKey(r.slot), r.kind) });
+            panes[0].records[0] = Rec(RecordState::Blocked, true, 3, L"Tea or coffee?", RecordKind::Question);
+            const auto q = Derive(panes, false);
+            VERIFY_ARE_EQUAL(std::wstring{ L"needs-answer" }, std::wstring{ WordToken(SlotKey(q.slot), q.kind) });
+        }
+
+        TEST_METHOD(AgentNameAtRest)
+        {
+            std::vector<PaneInput> panes(2);
+            panes[0].terminalTitle = L"pwsh";
+            panes[1].terminalTitle = L"\x2733 exile-survival";
+            Log::Comment(L"No records: a plain shell has no agent name");
+            VERIFY_ARE_EQUAL(std::wstring{}, Derive(panes, false).agentName);
+
+            Log::Comment(L"Idle record with no title: the agent pane's terminal title, spinner stripped");
+            panes[1].records.push_back(Rec(RecordState::Idle));
+            VERIFY_ARE_EQUAL(std::wstring{ L"exile-survival" }, Derive(panes, false).agentName);
+
+            Log::Comment(L"A root record's title wins over the terminal title");
+            panes[1].records[0].title = L"named-by-record";
+            VERIFY_ARE_EQUAL(std::wstring{ L"named-by-record" }, Derive(panes, false).agentName);
+
+            Log::Comment(L"Not at rest (working): no agent name");
+            panes[1].records[0].state = RecordState::Working;
+            VERIFY_ARE_EQUAL(std::wstring{}, Derive(panes, false).agentName);
+
+            Log::Comment(L"Seen done (keep): still at rest, so the name is derived (the row prefers the kept line)");
+            panes[1].records[0] = Rec(RecordState::Done, true, 4, L"ok", RecordKind::None, true);
+            VERIFY_ARE_EQUAL(std::wstring{ L"exile-survival" }, Derive(panes, false, Options{ .keepAfterSeen = true }).agentName);
+        }
+
+        TEST_METHOD(CleanTerminalTitleStripsLeadingSymbols)
+        {
+            VERIFY_ARE_EQUAL(std::wstring{ L"exile-survival" }, CleanTerminalTitle(L"\x2733 exile-survival"));
+            VERIFY_ARE_EQUAL(std::wstring{ L"build bot" }, CleanTerminalTitle(L"\x2802  build bot  "));
+            VERIFY_ARE_EQUAL(std::wstring{ L"Claude Code" }, CleanTerminalTitle(L"Claude Code"));
+            VERIFY_ARE_EQUAL(std::wstring{ L"~/src" }, CleanTerminalTitle(L"~/src"));
+            VERIFY_ARE_EQUAL(std::wstring{}, CleanTerminalTitle(L"\x2733 "));
+        }
     };
 }

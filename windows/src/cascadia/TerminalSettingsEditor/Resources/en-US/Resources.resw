@@ -600,6 +600,30 @@
     <value>Running: a shell command is executing (needs shell integration; only for a pane with no status-reporting program). Default: a play triangle.</value>
     <comment>axan: A description for the "running" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphRunning.Header".</comment>
   </data>
+  <data name="Globals_SidebarStateGlyphPermission.Header" xml:space="preserve">
+    <value>Blocked: needs permission</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "permission" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphPermission.HelpText" xml:space="preserve">
+    <value>Needs permission: a tool call is waiting for your approval. Overrides Blocked for this kind. Default: same as Blocked.</value>
+    <comment>axan: A description for the "permission" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphPermission.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphQuestion.Header" xml:space="preserve">
+    <value>Blocked: needs answer</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "question" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphQuestion.HelpText" xml:space="preserve">
+    <value>Needs answer: the program (e.g. Claude Code) is waiting for you to pick an option. Overrides Blocked for this kind. Default: same as Blocked.</value>
+    <comment>axan: A description for the "question" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphQuestion.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphAuth.Header" xml:space="preserve">
+    <value>Blocked: needs login</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "auth" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphAuth.HelpText" xml:space="preserve">
+    <value>Needs login: the program is waiting for authentication. Overrides Blocked for this kind. Default: same as Blocked.</value>
+    <comment>axan: A description for the "auth" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphAuth.Header".</comment>
+  </data>
   <data name="Globals_SidebarStateGlyphDefault" xml:space="preserve">
     <value>Default</value>
     <comment>axan: Label for a sidebar state icon that uses its built-in icon; also the name of the picker cell that restores it.</comment>
@@ -607,6 +631,26 @@
   <data name="Globals_SidebarStateGlyphDefaultNone" xml:space="preserve">
     <value>Default (none)</value>
     <comment>axan: Label for a sidebar state icon whose built-in default is to show nothing.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDefaultBlocked" xml:space="preserve">
+    <value>Default (same as Blocked)</value>
+    <comment>axan: Label for a blocked-kind sidebar state icon (permission / question / login) that follows the Blocked icon.</comment>
+  </data>
+  <data name="Globals_SidebarStateLabels.Header" xml:space="preserve">
+    <value>Show state words next to the icons</value>
+    <comment>axan: Header for a toggle: show a small word (working, needs answer, idle...) at the right edge of sidebar rows.</comment>
+  </data>
+  <data name="Globals_SidebarStateLabels.HelpText" xml:space="preserve">
+    <value>Adds a short word beside the right-edge icon: idle, working, running, needs permission, needs answer, needs login, done or error. Hover the icon or word for a one-sentence explanation. Screen readers hear the word either way.</value>
+    <comment>axan: A description for the "show state words" setting. Presented near "Globals_SidebarStateLabels.Header".</comment>
+  </data>
+  <data name="Globals_SidebarShowAgentName.Header" xml:space="preserve">
+    <value>Show the agent's session name</value>
+    <comment>axan: Header for a toggle: an agent at rest shows its session name as the second line of its sidebar row.</comment>
+  </data>
+  <data name="Globals_SidebarShowAgentName.HelpText" xml:space="preserve">
+    <value>When a status-reporting program (such as Claude Code) is at rest and nothing else is on the row's second line, show its session name there, dimmed: the name it reports, or else its terminal title (Claude Code sets this from --name).</value>
+    <comment>axan: A description for the "show the agent's session name" setting. Presented near "Globals_SidebarShowAgentName.Header".</comment>
   </data>
   <data name="Globals_SidebarStateGlyphNone" xml:space="preserve">
     <value>None</value>

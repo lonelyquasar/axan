@@ -126,12 +126,32 @@
                         is an icon element (minted per get, tinted with the label brush in the
                         view model), not a symbol-font TextBlock.
                     -->
-                    <ContentPresenter Grid.Column="2"
-                                      Margin="6,0,8,0"
-                                      VerticalAlignment="Center"
-                                      Content="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphIcon, Mode=OneWay}"
-                                      Opacity="0.75"
-                                      Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphVisibility, Mode=OneWay}" />
+                    <!--
+                        axan: the slot also carries a small muted state word (sidebar.stateLabels)
+                        and a one-sentence explanation tooltip. Natural width, capped, so the
+                        label column (which trims) gives way only as much as needed.
+                    -->
+                    <StackPanel Grid.Column="2"
+                                MaxWidth="120"
+                                Margin="6,0,8,0"
+                                VerticalAlignment="Center"
+                                Background="Transparent"
+                                Opacity="0.75"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                ToolTipService.ToolTip="{x:Bind ((local:SessionNodeViewModel)Content).SlotToolTip, Mode=OneWay}"
+                                Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SlotVisibility, Mode=OneWay}">
+                        <ContentPresenter VerticalAlignment="Center"
+                                          Content="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphIcon, Mode=OneWay}"
+                                          Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphVisibility, Mode=OneWay}" />
+                        <TextBlock VerticalAlignment="Center"
+                                   FontSize="11"
+                                   Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                                   Text="{x:Bind ((local:SessionNodeViewModel)Content).StateWord, Mode=OneWay}"
+                                   TextTrimming="CharacterEllipsis"
+                                   TextWrapping="NoWrap"
+                                   Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateWordVisibility, Mode=OneWay}" />
+                    </StackPanel>
                 </Grid>
                 <Grid Height="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorPixelHeight, Mode=OneWay}"
                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorVisibility, Mode=OneWay}">

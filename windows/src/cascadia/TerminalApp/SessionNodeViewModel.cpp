@@ -66,13 +66,19 @@ namespace winrt::TerminalApp::implementation
             _reportKey = resting.reportKey;
             _reportSince = _reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
         }
-        const bool restingChanged = reportChanged || resting.retainedWhat != _retainedWhat || resting.retainedMessage != _retainedMessage || resting.slotKey != _slotKey || resting.slotGlyph != _slotGlyph;
+        const bool restingChanged = reportChanged || resting.retainedWhat != _retainedWhat || resting.retainedMessage != _retainedMessage ||
+                                    resting.slotKey != _slotKey || resting.slotGlyph != _slotGlyph || resting.slotWord != _slotWord ||
+                                    resting.slotExplanation != _slotExplanation || resting.showSlotWord != _showSlotWord || resting.agentName != _agentName;
         if (restingChanged)
         {
             _retainedWhat = resting.retainedWhat;
             _retainedMessage = resting.retainedMessage;
             _slotKey = resting.slotKey;
             _slotGlyph = resting.slotGlyph;
+            _slotWord = resting.slotWord;
+            _slotExplanation = resting.slotExplanation;
+            _showSlotWord = resting.showSlotWord;
+            _agentName = resting.agentName;
         }
         if (transition || message != _subLabelMessage || restingChanged)
         {
@@ -87,7 +93,7 @@ namespace winrt::TerminalApp::implementation
 
     void SessionNodeViewModel::_raiseStatePresentation()
     {
-        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"StateGlyphIcon", L"SubLabel", L"SubLabelVisibility", L"SubLabelOpacity", L"StateToolTip", L"StateToolTipVisibility" })
+        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"StateGlyphIcon", L"StateWord", L"StateWordVisibility", L"SlotVisibility", L"SlotToolTip", L"SubLabel", L"SubLabelVisibility", L"SubLabelOpacity", L"StateToolTip", L"StateToolTipVisibility" })
         {
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
         }
@@ -145,6 +151,29 @@ namespace winrt::TerminalApp::implementation
     hstring SessionNodeViewModel::StateGlyph() const noexcept
     {
         return _isSeparator ? hstring{} : _slotGlyph;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateWordVisibility() const noexcept
+    {
+        return StateWord().empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SlotVisibility() const noexcept
+    {
+        return StateGlyph().empty() && StateWord().empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    hstring SessionNodeViewModel::ToString() const
+    {
+        if (_isSeparator)
+        {
+            return hstring{ L"Separator" };
+        }
+        if (_slotWord.empty())
+        {
+            return _Label;
+        }
+        return _Label + L", " + _slotWord;
     }
 
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateGlyphVisibility() const noexcept
@@ -255,6 +284,11 @@ namespace winrt::TerminalApp::implementation
                 std::wstring kept{ _retainedMessage.empty() ? _retainedWhat : _retainedMessage };
                 return _withAge(std::move(kept), now, _reportSince != winrt::Windows::Foundation::DateTime{} ? _reportSince : _stateSince);
             }
+            // axan: sidebar.showAgentName, lowest priority: an agent at rest shows its name.
+            if (ShowsAgentName())
+            {
+                return _agentName;
+            }
             return {};
         }
         if (what.empty())
@@ -333,7 +367,7 @@ namespace winrt::TerminalApp::implementation
     // Shown under the label in the row tooltip; Collapsed when idle.
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateToolTipVisibility() const noexcept
     {
-        return _isSeparator || (_state == L"idle" && !ShowsRetained()) ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+        return _isSeparator || (_state == L"idle" && !ShowsRetained() && _slotExplanation.empty()) ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
     }
 
     static void _appendSince(std::wstring& tip, winrt::Windows::Foundation::DateTime since)
@@ -362,9 +396,18 @@ namespace winrt::TerminalApp::implementation
             return {};
         }
         std::wstring tip;
+        // axan: the slot state's one-sentence explanation leads the state detail.
+        if (!_slotExplanation.empty())
+        {
+            tip = _slotExplanation;
+        }
         if (_state != L"idle")
         {
-            tip = _state;
+            if (!tip.empty())
+            {
+                tip += L"\n";
+            }
+            tip += _state;
             if (!_stateKind.empty())
             {
                 tip += L" (";

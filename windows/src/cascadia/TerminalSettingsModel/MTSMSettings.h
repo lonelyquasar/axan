@@ -51,6 +51,8 @@ using IAxanStringMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstr
     X(bool, SidebarNeedsYouGroup, "sidebar.needsYouGroup", false)                                                                                                                                    \
     X(Model::SidebarStatusAfterSeen, SidebarStatusAfterSeen, "sidebar.statusAfterSeen", Model::SidebarStatusAfterSeen::Keep)                                                                         \
     X(IAxanStringMap, SidebarStateGlyphs, "sidebar.stateGlyphs", nullptr)                                                                                                                            \
+    X(bool, SidebarStateLabels, "sidebar.stateLabels", true)                                                                                                                                         \
+    X(bool, SidebarShowAgentName, "sidebar.showAgentName", true)                                                                                                                                     \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \

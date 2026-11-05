@@ -86,10 +86,15 @@ namespace Microsoft.Terminal.Settings.Model
         // or clear it. Default Keep. Either way it stops counting as needing attention.
         INHERITABLE_SETTING(SidebarStatusAfterSeen, SidebarStatusAfterSeen);
         // axan: the right-edge glyph per slot state, keys idle / working / blocked / done /
-        // error / running, each in the node icon vocabulary ("" = nothing; a missing key =
+        // error / running (+ permission / question / auth overriding blocked by kind), each in the node icon vocabulary ("" = nothing; a missing key =
         // the default glyph). See
         // src/inc/AxanStateGlyphs.h. Unset by default.
         INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA String>, SidebarStateGlyphs);
+        // axan: a small state word next to the slot glyph ("working", "needs answer"). Default true.
+        INHERITABLE_SETTING(Boolean, SidebarStateLabels);
+        // axan: an agent at rest shows its session name (record title, else the terminal
+        // title) as the row's muted second line. Default true.
+        INHERITABLE_SETTING(Boolean, SidebarShowAgentName);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

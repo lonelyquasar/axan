@@ -76,6 +76,18 @@
                       Style="{StaticResource ComboBoxSettingStyle}" />
         </local:SettingContainer>
 
+        <!--  axan: sidebar.stateLabels, the small state word beside the right-edge icon  -->
+        <local:SettingContainer x:Uid="Globals_SidebarStateLabels">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarStateLabels, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        </local:SettingContainer>
+
+        <!--  axan: sidebar.showAgentName, an agent at rest shows its session name  -->
+        <local:SettingContainer x:Uid="Globals_SidebarShowAgentName">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarShowAgentName, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        </local:SettingContainer>
+
         <!--
             axan: sidebar.stateGlyphs. The right-edge icon a row shows for its slot state: the
             same picker as the Startup page's icon button, plus a Default cell. The text beside
@@ -211,6 +223,75 @@
                                     HorizontalContentAlignment="Center"
                                     VerticalContentAlignment="Center"
                                     Content="{x:Bind ViewModel.SidebarRunningGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphPermission">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarPermissionGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the blocked: needs permission icon"
+                        Tag="permission"
+                        ToolTipService.ToolTip="Needs permission: a tool call is waiting for your approval. Overrides Blocked for this kind. Default: same as Blocked.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarPermissionGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphQuestion">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarQuestionGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the blocked: needs answer icon"
+                        Tag="question"
+                        ToolTipService.ToolTip="Needs answer: the program (e.g. Claude Code) is waiting for you to pick an option. Overrides Blocked for this kind. Default: same as Blocked.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarQuestionGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphAuth">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarAuthGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the blocked: needs login icon"
+                        Tag="auth"
+                        ToolTipService.ToolTip="Needs login: the program is waiting for authentication. Overrides Blocked for this kind. Default: same as Blocked.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarAuthGlyphPreview, Mode=OneWay}"
                                     IsTabStop="False" />
                     <Button.Flyout>
                         <Flyout Opening="StateGlyphFlyout_Opening" />

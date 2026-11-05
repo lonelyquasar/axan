@@ -727,10 +727,18 @@ namespace winrt::TerminalApp::implementation
         // when the node is pruned (_RemoveNodeSelfHealing) — so re-minting a node for a
         // still-live tab can never stack duplicate handlers on the tab/control.
         {
-            const auto titleToken = tab.PropertyChanged([recompute](auto&&, const WUX::Data::PropertyChangedEventArgs& e) {
+            const auto titleToken = tab.PropertyChanged([recompute, weakThis{ get_weak() }, weakNode](auto&&, const WUX::Data::PropertyChangedEventArgs& e) {
                 if (e.PropertyName() == L"Title")
                 {
                     recompute();
+                    // axan: sidebar.showAgentName reads the terminal title.
+                    if (const auto page{ weakThis.get() })
+                    {
+                        if (const auto n = weakNode.get())
+                        {
+                            page->_RecomputeNodeState(n);
+                        }
+                    }
                 }
             });
             vmImpl->RevokeTitleSubscription = [weakTab, titleToken]() {
@@ -3273,6 +3281,49 @@ namespace winrt::TerminalApp::implementation
     // UI thread. If the node's tab is the focused tab in an activated window, the user is
     // looking at it, so its done/error records are acknowledged first (the bell rule: WT
     // clears the bell indicator for a focused tab the same way).
+    // axan: the localized state word and its one-sentence explanation for a WordToken
+    // (AxanStateGlyphs.h). Literal RS_ keys (USES_RESOURCE checks them at build time).
+    static std::pair<winrt::hstring, winrt::hstring> _slotWordAndExplanation(std::wstring_view token)
+    {
+        if (token == L"idle")
+        {
+            return { RS_(L"AxanSlotWordIdle"), RS_(L"AxanSlotExplainIdle") };
+        }
+        if (token == L"working")
+        {
+            return { RS_(L"AxanSlotWordWorking"), RS_(L"AxanSlotExplainWorking") };
+        }
+        if (token == L"running")
+        {
+            return { RS_(L"AxanSlotWordRunning"), RS_(L"AxanSlotExplainRunning") };
+        }
+        if (token == L"needs-permission")
+        {
+            return { RS_(L"AxanSlotWordNeedsPermission"), RS_(L"AxanSlotExplainNeedsPermission") };
+        }
+        if (token == L"needs-answer")
+        {
+            return { RS_(L"AxanSlotWordNeedsAnswer"), RS_(L"AxanSlotExplainNeedsAnswer") };
+        }
+        if (token == L"needs-login")
+        {
+            return { RS_(L"AxanSlotWordNeedsLogin"), RS_(L"AxanSlotExplainNeedsLogin") };
+        }
+        if (token == L"needs-you")
+        {
+            return { RS_(L"AxanSlotWordNeedsYou"), RS_(L"AxanSlotExplainNeedsYou") };
+        }
+        if (token == L"done")
+        {
+            return { RS_(L"AxanSlotWordDone"), RS_(L"AxanSlotExplainDone") };
+        }
+        if (token == L"error")
+        {
+            return { RS_(L"AxanSlotWordError"), RS_(L"AxanSlotExplainError") };
+        }
+        return {};
+    }
+
     void TerminalPage::_RecomputeNodeState(const MUX::Controls::TreeViewNode& node)
     {
         const auto vm = _nodeVM(node);
@@ -3306,6 +3357,7 @@ namespace winrt::TerminalApp::implementation
             auto& pane = panes.emplace_back();
             pane.commandRunning = control.ShellCommandRunning();
             pane.paneId = control.ContentId();
+            pane.terminalTitle = texts.emplace_back(control.Title()); // axan: agent name source
             const auto records = control.ProgramStatusRecords();
             const auto seenIt = vm->SeenRevisions.find(control.ContentId());
             const uint64_t seenRevision = seenIt == vm->SeenRevisions.end() ? 0 : seenIt->second;
@@ -3344,7 +3396,7 @@ namespace winrt::TerminalApp::implementation
             {
                 map = _settings.GlobalSettings().SidebarStateGlyphs();
             }
-            resting.slotGlyph = winrt::hstring{ Axan::StateGlyphs::GlyphFor(resting.slotKey, [&](std::wstring_view key) -> std::optional<std::wstring> {
+            resting.slotGlyph = winrt::hstring{ Axan::StateGlyphs::GlyphFor(resting.slotKey, result.kind, [&](std::wstring_view key) -> std::optional<std::wstring> {
                 const winrt::hstring k{ key };
                 if (map && map.HasKey(k))
                 {
@@ -3352,6 +3404,19 @@ namespace winrt::TerminalApp::implementation
                 }
                 return std::nullopt;
             }) };
+        }
+        // axan: the state word + explanation (sidebar.stateLabels hides only the visible word;
+        // the accessible name and tooltips keep it) and the resting agent name.
+        {
+            const auto token = Axan::StateGlyphs::WordToken(resting.slotKey, result.kind);
+            const auto [word, explanation] = _slotWordAndExplanation(token);
+            resting.slotWord = word;
+            resting.slotExplanation = explanation;
+            resting.showSlotWord = !_settings || _settings.GlobalSettings().SidebarStateLabels();
+            if (!_settings || _settings.GlobalSettings().SidebarShowAgentName())
+            {
+                resting.agentName = winrt::hstring{ result.agentName };
+            }
         }
         if (vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now, resting))
         {

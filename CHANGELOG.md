@@ -18,7 +18,16 @@ All notable changes to axan are documented here.
 - `sidebar.statusAfterSeen` (`keep` by default, or `clear`) sets whether an
   opened tab keeps its last report as a muted line. A robot glyph at the right
   edge marks rows where a status-reporting program is present and at rest, and
-  `sidebar.stateGlyphs` customizes the per-state glyphs. Windows only.
+  `sidebar.stateGlyphs` customizes the per-state glyphs (including separate
+  ones for a blocked report waiting on permission, an answer or a login).
+  Windows only.
+- The right-edge slot also shows a small state word (`idle`, `working`,
+  `needs answer`, `needs permission`, ...; `sidebar.stateLabels`, default on),
+  hovering it explains the state in one sentence, and screen readers hear the
+  state as part of the row's name. Windows only.
+- An agent at rest shows its session name as the row's muted second line (the
+  terminal title Claude Code sets from `claude --name`;
+  `sidebar.showAgentName`, default on). Windows only.
 - Idle rows are dimmed and shrunk after `sidebar.idleAfterMinutes` (default 15;
   `0` turns it off); the focused row is never dimmed. Windows only. (#31)
 - Optional "Needs you" group above the session tree

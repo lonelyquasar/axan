@@ -37,12 +37,18 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         winrt::Windows::UI::Xaml::Controls::IconElement SidebarDoneGlyphPreview() const { return _StateGlyphPreview(L"done"); }
         winrt::Windows::UI::Xaml::Controls::IconElement SidebarErrorGlyphPreview() const { return _StateGlyphPreview(L"error"); }
         winrt::Windows::UI::Xaml::Controls::IconElement SidebarRunningGlyphPreview() const { return _StateGlyphPreview(L"running"); }
+        winrt::Windows::UI::Xaml::Controls::IconElement SidebarPermissionGlyphPreview() const { return _StateGlyphPreview(L"permission"); }
+        winrt::Windows::UI::Xaml::Controls::IconElement SidebarQuestionGlyphPreview() const { return _StateGlyphPreview(L"question"); }
+        winrt::Windows::UI::Xaml::Controls::IconElement SidebarAuthGlyphPreview() const { return _StateGlyphPreview(L"auth"); }
         winrt::hstring SidebarIdleGlyphLabel() const { return _StateGlyphLabel(L"idle"); }
         winrt::hstring SidebarWorkingGlyphLabel() const { return _StateGlyphLabel(L"working"); }
         winrt::hstring SidebarBlockedGlyphLabel() const { return _StateGlyphLabel(L"blocked"); }
         winrt::hstring SidebarDoneGlyphLabel() const { return _StateGlyphLabel(L"done"); }
         winrt::hstring SidebarErrorGlyphLabel() const { return _StateGlyphLabel(L"error"); }
         winrt::hstring SidebarRunningGlyphLabel() const { return _StateGlyphLabel(L"running"); }
+        winrt::hstring SidebarPermissionGlyphLabel() const { return _StateGlyphLabel(L"permission"); }
+        winrt::hstring SidebarQuestionGlyphLabel() const { return _StateGlyphLabel(L"question"); }
+        winrt::hstring SidebarAuthGlyphLabel() const { return _StateGlyphLabel(L"auth"); }
 
         bool InvertedDisableAnimations();
         void InvertedDisableAnimations(bool value);
@@ -55,6 +61,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, UseAcrylicInTabRow);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarMatchesProfileTransparency);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarIdleAfterMinutes); // axan #31
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateLabels); // axan
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarShowAgentName); // axan
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, ShowTitleInTitlebar);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, AlwaysOnTop);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, AutoHideWindow);

@@ -66,7 +66,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     // isn't blank.
     winrt::Windows::UI::Xaml::Controls::IconElement GlobalAppearanceViewModel::_StateGlyphPreview(std::wstring_view key) const
     {
-        const auto native = Axan::StateGlyphs::Resolve(_StateGlyphConfigured(key), Axan::StateGlyphs::DefaultFor(key));
+        // A kind key (permission / question / auth) falls back to blocked, as in the app.
+        const auto lookup = [this](std::wstring_view k) { return _StateGlyphConfigured(k); };
+        const auto native = Axan::StateGlyphs::IsKindKey(key) ? Axan::StateGlyphs::GlyphFor(L"blocked", key, lookup) : Axan::StateGlyphs::GlyphFor(key, lookup);
         const bool none = native.empty();
         const auto icon = Microsoft::Terminal::UI::IconPathConverter::IconWUX(none ? winrt::hstring{ L"\uE711" } : winrt::hstring{ native });
         if (!icon)
@@ -101,6 +103,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         const auto configured = _StateGlyphConfigured(key);
         if (!configured)
         {
+            if (Axan::StateGlyphs::IsKindKey(key))
+            {
+                return RS_(L"Globals_SidebarStateGlyphDefaultBlocked");
+            }
             return Axan::StateGlyphs::DefaultFor(key).empty() ? RS_(L"Globals_SidebarStateGlyphDefaultNone") : RS_(L"Globals_SidebarStateGlyphDefault");
         }
         const auto text = SidebarStateGlyphText(winrt::hstring{ key });
@@ -126,7 +132,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         {
             _GlobalSettings.SidebarStateGlyphs(map);
         }
-        _NotifyChanges(L"SidebarIdleGlyphPreview", L"SidebarIdleGlyphLabel", L"SidebarWorkingGlyphPreview", L"SidebarWorkingGlyphLabel", L"SidebarBlockedGlyphPreview", L"SidebarBlockedGlyphLabel", L"SidebarDoneGlyphPreview", L"SidebarDoneGlyphLabel", L"SidebarErrorGlyphPreview", L"SidebarErrorGlyphLabel", L"SidebarRunningGlyphPreview", L"SidebarRunningGlyphLabel");
+        _NotifyChanges(L"SidebarIdleGlyphPreview", L"SidebarIdleGlyphLabel", L"SidebarWorkingGlyphPreview", L"SidebarWorkingGlyphLabel", L"SidebarBlockedGlyphPreview", L"SidebarBlockedGlyphLabel", L"SidebarDoneGlyphPreview", L"SidebarDoneGlyphLabel", L"SidebarErrorGlyphPreview", L"SidebarErrorGlyphLabel", L"SidebarRunningGlyphPreview", L"SidebarRunningGlyphLabel", L"SidebarPermissionGlyphPreview", L"SidebarPermissionGlyphLabel", L"SidebarQuestionGlyphPreview", L"SidebarQuestionGlyphLabel", L"SidebarAuthGlyphPreview", L"SidebarAuthGlyphLabel");
     }
 
     // Always a fresh map: the model's may be shared with (or inherited from) another settings

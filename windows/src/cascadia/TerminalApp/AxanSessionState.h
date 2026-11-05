@@ -42,6 +42,11 @@
 // straight from the node state; an idle node is `idle` only when some pane has an OSC 7501
 // record (a status-reporting program such as Claude Code is present and at rest, including
 // a done/error report already seen), and None otherwise (a plain shell at its prompt).
+//
+// Agent name (`sidebar.showAgentName`): with the idle slot, Result.agentName is what the row's
+// second line shows when nothing else owns it: the first record-bearing pane's root record
+// `title` when non-empty, else that pane's terminal title (Claude Code sets it from its
+// session name, `claude --name`) with a leading spinner / status symbol stripped.
 
 #include <cstdint>
 #include <span>
@@ -95,6 +100,7 @@ namespace Axan::SessionState
         std::vector<RecordInput> records;
         bool commandRunning{ false };
         uint64_t paneId{ 0 }; // the control's ContentId; only used for Result::reportKey
+        std::wstring_view terminalTitle; // the pane's terminal title; only used for agentName
     };
 
     struct Options
@@ -152,6 +158,7 @@ namespace Axan::SessionState
         std::wstring kind; // "permission" / "question" / "auth" for needs-you, else ""
         std::string_view source{ "none" }; // "osc7501" / "osc133" / "bell" / "none"
         Slot slot{ Slot::None }; // the glyph slot's state (see the header comment)
+        std::wstring agentName; // idle slot only: root record title, else the terminal title
         Retained retained; // keep mode only; set only while the node is idle / running
         // Identity of the done/error report the row's age counts from: "<paneId>:<id>:<state>"
         // for an unseen done/error that decided the state, or for the retained report; ""
@@ -227,6 +234,32 @@ namespace Axan::SessionState
         key += L':';
         key += std::to_wstring(static_cast<int>(r.state));
         return key;
+    }
+
+    // A terminal title as an agent name: drop a leading run of symbols (Claude Code prefixes a
+    // spinner or a status mark, e.g. U+2733 or the braille spinner U+2800..U+28FF) and
+    // surrounding whitespace. Letters, digits and common name punctuation stop the strip.
+    inline std::wstring CleanTerminalTitle(std::wstring_view title)
+    {
+        size_t i = 0;
+        while (i < title.size())
+        {
+            const auto c = title[i];
+            const bool nameChar = (c >= L'0' && c <= L'9') || (c >= L'A' && c <= L'Z') || (c >= L'a' && c <= L'z') ||
+                                  c == L'_' || c == L'-' || c == L'.' || c == L'(' || c == L'[' || c == L'~' || c == L'/' ||
+                                  (c >= 0x00C0 && c < 0x2000) || (c >= 0x3040 && c < 0xD800) || (c >= 0xF900 && c < 0xFFF0);
+            if (nameChar)
+            {
+                break;
+            }
+            ++i;
+        }
+        auto rest = title.substr(i);
+        while (!rest.empty() && (rest.back() == L' ' || rest.back() == L'\t'))
+        {
+            rest.remove_suffix(1);
+        }
+        return std::wstring{ rest };
     }
 
     inline Result Derive(std::span<const PaneInput> panes, bool bellIndicator, const Options& options = {})
@@ -352,6 +385,34 @@ namespace Axan::SessionState
         default:
             best.slot = anyRecords ? Slot::Idle : Slot::None;
             break;
+        }
+        if (best.slot == Slot::Idle)
+        {
+            // Prefer a root record's own title in any agent pane, then the first agent pane's
+            // terminal title.
+            const PaneInput* firstAgentPane = nullptr;
+            for (const auto& pane : panes)
+            {
+                if (pane.records.empty())
+                {
+                    continue;
+                }
+                if (!firstAgentPane)
+                {
+                    firstAgentPane = &pane;
+                }
+                for (const auto& r : pane.records)
+                {
+                    if (r.isRoot && !r.title.empty() && best.agentName.empty())
+                    {
+                        best.agentName.assign(r.title);
+                    }
+                }
+            }
+            if (best.agentName.empty() && firstAgentPane)
+            {
+                best.agentName = CleanTerminalTitle(firstAgentPane->terminalTitle);
+            }
         }
         return best;
     }

@@ -1058,4 +1058,76 @@
   <data name="AboutDialog_WindowsTerminalLinksLabel.Text" xml:space="preserve">
     <value>Windows Terminal links:</value>
   </data>
+  <data name="AxanSlotWordIdle" xml:space="preserve">
+    <value>idle</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainIdle" xml:space="preserve">
+    <value>Idle: a status-reporting program is present and waiting at its prompt.</value>
+    <comment>axan: Tooltip explaining the "idle" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordWorking" xml:space="preserve">
+    <value>working</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainWorking" xml:space="preserve">
+    <value>Working: the agent is running a turn.</value>
+    <comment>axan: Tooltip explaining the "working" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordRunning" xml:space="preserve">
+    <value>running</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainRunning" xml:space="preserve">
+    <value>Running: a shell command is executing.</value>
+    <comment>axan: Tooltip explaining the "running" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordNeedsPermission" xml:space="preserve">
+    <value>needs permission</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainNeedsPermission" xml:space="preserve">
+    <value>Needs permission: a tool call is waiting for your approval.</value>
+    <comment>axan: Tooltip explaining the "needs permission" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordNeedsAnswer" xml:space="preserve">
+    <value>needs answer</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainNeedsAnswer" xml:space="preserve">
+    <value>Needs answer: the program (e.g. Claude Code) is waiting for you to pick an option.</value>
+    <comment>axan: Tooltip explaining the "needs answer" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordNeedsLogin" xml:space="preserve">
+    <value>needs login</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainNeedsLogin" xml:space="preserve">
+    <value>Needs login: the program is waiting for authentication.</value>
+    <comment>axan: Tooltip explaining the "needs login" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordNeedsYou" xml:space="preserve">
+    <value>needs you</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainNeedsYou" xml:space="preserve">
+    <value>Needs you: the program is waiting for your input.</value>
+    <comment>axan: Tooltip explaining the "needs you" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordDone" xml:space="preserve">
+    <value>done</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainDone" xml:space="preserve">
+    <value>Done: finished and not yet looked at.</value>
+    <comment>axan: Tooltip explaining the "done" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordError" xml:space="preserve">
+    <value>error</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainError" xml:space="preserve">
+    <value>Error: the program reported an error.</value>
+    <comment>axan: Tooltip explaining the "error" state of a sidebar row.</comment>
+  </data>
 </root>

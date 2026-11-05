@@ -14,6 +14,9 @@
 // nothing is happening, including a done/error report already seen); a plain shell at its
 // prompt has no slot state and shows nothing.
 //
+// Optional kind keys `permission`, `question`, `auth` override `blocked` for a blocked
+// record of that kind (fallback: the `blocked` value, then nothing).
+//
 // Each key is optional. A missing key keeps that state's default (idle = Robot, working =
 // lightning, running = play, blocked / done / error = nothing: the attention dot on the
 // icon already carries those). An empty string shows nothing. Anything else uses the node
@@ -37,8 +40,9 @@ namespace Axan::StateGlyphs
     inline constexpr std::wstring_view kDefaultWorking{ L"\xE945" }; // Lightning: the agent is working
     inline constexpr std::wstring_view kDefaultRunning{ L"\xE768" }; // Play: a shell command is running
 
-    // Every key, in the order the settings page lists them.
+    // Every state key, in the order the settings page lists them, then the blocked kinds.
     inline constexpr std::array<std::wstring_view, 6> kKeys{ L"idle", L"working", L"blocked", L"done", L"error", L"running" };
+    inline constexpr std::array<std::wstring_view, 3> kKindKeys{ L"permission", L"question", L"auth" };
 
     // The default for a key; "" for blocked / done / error and for unknown keys.
     constexpr std::wstring_view DefaultFor(std::wstring_view key) noexcept
@@ -58,6 +62,18 @@ namespace Axan::StateGlyphs
         return {};
     }
 
+    constexpr bool IsKindKey(std::wstring_view key) noexcept
+    {
+        for (const auto k : kKindKeys)
+        {
+            if (k == key)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     constexpr bool IsKey(std::wstring_view key) noexcept
     {
         for (const auto k : kKeys)
@@ -67,7 +83,7 @@ namespace Axan::StateGlyphs
                 return true;
             }
         }
-        return false;
+        return IsKindKey(key);
     }
 
     // One value. nullopt (key absent) -> the fallback; otherwise the configured value, trimmed
@@ -102,5 +118,55 @@ namespace Axan::StateGlyphs
             return {};
         }
         return Resolve(lookup(key), DefaultFor(key));
+    }
+
+    // The glyph for a slot state and the blocked kind ("permission" / "question" / "auth" /
+    // ""): a configured kind key wins for a blocked slot; otherwise the state's own value.
+    template<typename Lookup>
+    std::wstring GlyphFor(std::wstring_view key, std::wstring_view kind, Lookup&& lookup)
+    {
+        if (key == L"blocked" && IsKindKey(kind))
+        {
+            if (auto configured = lookup(kind))
+            {
+                return Resolve(configured, {});
+            }
+        }
+        return GlyphFor(key, lookup);
+    }
+
+    // ---- the visible state word (setting `sidebar.stateLabels`) ----
+    // A stable token per slot state + blocked kind; the app maps it to a localized word and a
+    // one-sentence explanation (the slot / row tooltip). "" for no slot state.
+    //   idle / working / running / done / error
+    //   blocked: needs-permission / needs-answer / needs-login, or needs-you with no kind
+    // A done/error report already seen is the idle slot, so it reads "idle" (the kept second
+    // line already says "done · age").
+    constexpr std::wstring_view WordToken(std::wstring_view key, std::wstring_view kind) noexcept
+    {
+        if (key == L"blocked")
+        {
+            if (kind == L"permission")
+            {
+                return L"needs-permission";
+            }
+            if (kind == L"question")
+            {
+                return L"needs-answer";
+            }
+            if (kind == L"auth")
+            {
+                return L"needs-login";
+            }
+            return L"needs-you";
+        }
+        for (const auto k : kKeys)
+        {
+            if (k == key)
+            {
+                return k;
+            }
+        }
+        return {};
     }
 }

@@ -94,6 +94,12 @@ namespace TerminalApp
         // axan: StateGlyph as an icon element (sidebar.stateGlyphs accepts the node icon
         // vocabulary: glyph, emoji or image). A fresh element per get, like Icon.
         Windows.UI.Xaml.Controls.IconElement StateGlyphIcon { get; };
+        // axan: the slot's small state word (sidebar.stateLabels; "" when off or no slot
+        // state), the slot as a whole (glyph and/or word), and its explanation tooltip.
+        String StateWord { get; };
+        Windows.UI.Xaml.Visibility StateWordVisibility { get; };
+        Windows.UI.Xaml.Visibility SlotVisibility { get; };
+        String SlotToolTip { get; };
         String SubLabel { get; };
         Windows.UI.Xaml.Visibility SubLabelVisibility { get; };
         // axan: 0.7 for a live state's second line, 0.45 for a kept (already seen) report

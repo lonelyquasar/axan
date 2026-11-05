@@ -31,7 +31,10 @@ namespace winrt::TerminalApp::implementation
     // report the age counts from ("" = none). slotKey is the right-edge slot's state
     // (AxanSessionState.h SlotKey: idle / working / blocked / done / error / running, "" =
     // none) and slotGlyph its resolved sidebar.stateGlyphs value (AxanStateGlyphs.h), ""
-    // = nothing.
+    // = nothing. slotWord / slotExplanation are the localized state word ("needs answer")
+    // and its one-sentence explanation; showSlotWord = sidebar.stateLabels (the word stays in
+    // the accessible name and tooltips either way). agentName is the resting agent's session
+    // name for the second line ("" = none, or sidebar.showAgentName off).
     struct SessionRestingState
     {
         hstring retainedWhat;
@@ -39,6 +42,10 @@ namespace winrt::TerminalApp::implementation
         hstring reportKey;
         hstring slotKey;
         hstring slotGlyph;
+        hstring slotWord;
+        hstring slotExplanation;
+        bool showSlotWord{ true };
+        hstring agentName;
     };
 
     struct SessionNodeViewModel : SessionNodeViewModelT<SessionNodeViewModel, winrt::Windows::Foundation::IStringable>
@@ -52,7 +59,9 @@ namespace winrt::TerminalApp::implementation
         // axan #429: IStringable — the UIA/Narrator name of any row displaying this node
         // (see the struct comment). Kept in lockstep with the displayed text by definition.
         // axan #3: a separator has no label of its own; Narrator reads it as "Separator".
-        hstring ToString() const { return _isSeparator ? hstring{ L"Separator" } : _Label; }
+        // axan: the state word joins the name ("exile-survival, needs answer") so screen
+        // readers get the state too.
+        hstring ToString() const;
 
         // axan #3: separator rows (see the idl). The projected getters feed the shared
         // ItemTemplate's x:Binds; ConfigureSeparator (impl-only, called once by
@@ -178,8 +187,15 @@ namespace winrt::TerminalApp::implementation
         hstring SubLabel() const noexcept { return _subLabel; }
         winrt::Windows::UI::Xaml::Visibility SubLabelVisibility() const noexcept;
         // axan: a kept (seen) report renders more muted than a live one.
-        double SubLabelOpacity() const noexcept { return ShowsRetained() ? 0.45 : 0.7; }
+        double SubLabelOpacity() const noexcept { return ShowsRetained() || ShowsAgentName() ? 0.45 : 0.7; }
         bool ShowsRetained() const noexcept { return !_isSeparator && !_retainedWhat.empty(); }
+        // axan: an agent at rest with nothing else on its second line shows its name there.
+        bool ShowsAgentName() const noexcept { return !_isSeparator && _state == L"idle" && !ShowsRetained() && !_agentName.empty(); }
+        // axan: the slot's state word (sidebar.stateLabels) and the slot tooltip.
+        hstring StateWord() const noexcept { return _isSeparator || !_showSlotWord ? hstring{} : _slotWord; }
+        winrt::Windows::UI::Xaml::Visibility StateWordVisibility() const noexcept;
+        winrt::Windows::UI::Xaml::Visibility SlotVisibility() const noexcept;
+        hstring SlotToolTip() const noexcept { return _slotExplanation; }
         hstring StateToolTip() const;
         winrt::Windows::UI::Xaml::Visibility StateToolTipVisibility() const noexcept;
         // Recompute the age part of SubLabel. Called by the sidebar's 1s clock; a no-op (no
@@ -269,6 +285,10 @@ namespace winrt::TerminalApp::implementation
         // axan: the glyph slot (see SessionRestingState).
         hstring _slotKey;
         hstring _slotGlyph;
+        hstring _slotWord;
+        hstring _slotExplanation;
+        bool _showSlotWord{ true };
+        hstring _agentName;
         // axan #31
         bool _deEmphasised{ false };
         // axan #33

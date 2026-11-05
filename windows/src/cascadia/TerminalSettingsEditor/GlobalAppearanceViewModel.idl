@@ -38,12 +38,18 @@ namespace Microsoft.Terminal.Settings.Editor
         Windows.UI.Xaml.Controls.IconElement SidebarDoneGlyphPreview { get; };
         Windows.UI.Xaml.Controls.IconElement SidebarErrorGlyphPreview { get; };
         Windows.UI.Xaml.Controls.IconElement SidebarRunningGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarPermissionGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarQuestionGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarAuthGlyphPreview { get; };
         String SidebarIdleGlyphLabel { get; };
         String SidebarWorkingGlyphLabel { get; };
         String SidebarBlockedGlyphLabel { get; };
         String SidebarDoneGlyphLabel { get; };
         String SidebarErrorGlyphLabel { get; };
         String SidebarRunningGlyphLabel { get; };
+        String SidebarPermissionGlyphLabel { get; };
+        String SidebarQuestionGlyphLabel { get; };
+        String SidebarAuthGlyphLabel { get; };
 
         Boolean InvertedDisableAnimations;
 
@@ -55,6 +61,8 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, UseAcrylicInTabRow);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarMatchesProfileTransparency);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Int32, SidebarIdleAfterMinutes); // axan #31
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarStateLabels); // axan
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarShowAgentName); // axan
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, ShowTitleInTitlebar);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AlwaysOnTop);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, AutoHideWindow);

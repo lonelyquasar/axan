@@ -178,11 +178,15 @@ Receivers are strict about the parts that identify and bound a report, and forgi
 | `done`, after you've opened it | No dot. With `sidebar.statusAfterSeen` = `keep` (the default) the report stays as a muted second line with its age until it is replaced or cleared; with `clear` the row returns to plain |
 | `error`, not yet seen | Red dot; second line `message · age` (`error · age` with no message); after it's seen it follows the same keep/clear rule as `done` |
 | `working` | Lightning-bolt glyph in the right-edge slot; the second line is the message, with no age |
-| `idle` | Robot glyph in the right-edge slot whenever a status-reporting program is present and at rest, including a done or error report you've already seen; no glyph when no program has reported. The row is dimmed and smaller after `sidebar.idleAfterMinutes` |
+| `idle` | Robot glyph in the right-edge slot whenever a status-reporting program is present and at rest, including a done or error report you've already seen; no glyph when no program has reported. When nothing else owns the second line, it shows the agent's session name, muted (`sidebar.showAgentName`). The row is dimmed and smaller after `sidebar.idleAfterMinutes` |
 | running (shell, OSC 133) | Play glyph in the right-edge slot. Only for a pane with no 7501 records |
 | `clear` | Removes the records, so the row falls back to the next source |
 
-The right-edge slot always shows the node's current state. `blocked`, `done` and `error` show no slot glyph by default; the attention dot on the icon carries them. The glyphs are customizable with `sidebar.stateGlyphs`, an object with the keys `idle`, `working`, `blocked`, `done`, `error` and `running`, each using the same icon vocabulary as node icons (`builtin:NAME`, a literal glyph or emoji, or an image path); `""` means no glyph, and a missing key keeps its default. Settings > Appearance has a picker for each. For example, `"sidebar.stateGlyphs": { "idle": "", "blocked": "✋", "running": "builtin:build" }` hides the robot, marks blocked rows with a hand and shows a wrench while a command runs.
+The right-edge slot always shows the node's current state. `blocked`, `done` and `error` show no slot glyph by default; the attention dot on the icon carries them. The glyphs are customizable with `sidebar.stateGlyphs`, an object with the keys `idle`, `working`, `blocked`, `done`, `error` and `running`, each using the same icon vocabulary as node icons (`builtin:NAME`, a literal glyph or emoji, or an image path); `""` means no glyph, and a missing key keeps its default. Settings > Appearance has a picker for each. For example, `"sidebar.stateGlyphs": { "idle": "", "blocked": "✋", "running": "builtin:build" }` hides the robot, marks blocked rows with a hand and shows a wrench while a command runs. Three more optional keys, `permission`, `question` and `auth`, override `blocked` for a blocked report of that kind (an unset kind falls back to `blocked`), so a session waiting on a multiple-choice answer can look different from one waiting for a tool approval.
+
+Next to the glyph the slot shows a small state word (`sidebar.stateLabels`, on by default): `idle`, `working`, `running`, `needs permission`, `needs answer`, `needs login` (or `needs you` for a blocked report with no kind), `done` or `error`. A done or error report you've already seen reads `idle`; the kept second line still says `done · age`. Hovering the glyph or word shows a one-sentence explanation of the state, and the row tooltip starts with the same sentence. The word is also part of the row's accessible name ("exile-survival, needs answer"), whether or not it is shown.
+
+**Agent name.** When a status-reporting program is at rest and nothing else owns the row's second line (needs-you, unseen done/error, a kept report and a working message all come first), the second line shows the agent's session name, muted: the root record's `title` if it sent one, else the pane's terminal title with any leading spinner or status symbol removed. Claude Code doesn't send `title`, but it sets the terminal title from its session name (`claude --name`), so the row shows the name other agents address it by. Plain shells stay one line.
 
 Messages on the second line are cut at 24 characters so the age stays visible; the row tooltip has the full message, the state and kind, and the local time it began. Ages read `<1m`, `5m`, `2h`, `3d`. Nothing in the sidebar animates.
 
@@ -190,14 +194,16 @@ When a tab has several records or panes, the strongest state wins: blocked, then
 
 **"Seen".** Only `done` and `error` can be unread; a `blocked` row stays lit for as long as the program reports `blocked`. A done or error report counts as seen when you select the tab or one of its panes gains focus, and also when the window is activated while that tab is the focused one. A report that arrives while the tab is already focused in an active window is seen immediately, so it never shows the unread dot. To see the unread dot in a test, report from a tab you aren't looking at, for example `sleep 5; tools/axan-status.sh done --msg Finished` and then switch to another tab before it fires.
 
-**Settings** (in `settings.json`, at the root next to `startupSessions`; the three toggles are also in the sidebar's right-click menu):
+**Settings** (in `settings.json`, at the root next to `startupSessions`; `sidebar.needsYouGroup` and `sidebar.statusAfterSeen` are also in the sidebar's right-click menu; all but `sidebar.needsYouGroup` are in Settings > Appearance):
 
 | Key | Default | Meaning |
 |---|---|---|
 | `sidebar.idleAfterMinutes` | `15` | Minutes of no input or output, while idle, before a row is dimmed and shrunk. `0` turns it off. The focused row is never dimmed |
 | `sidebar.needsYouGroup` | `false` | Show a "Needs you" group above the session tree listing every session that is blocked, errored or done-unseen, longest-waiting first |
 | `sidebar.statusAfterSeen` | `"keep"` | `"keep"` or `"clear"`: what a row does with a done/error report once you've seen it. Either way it stops counting as needing you |
-| `sidebar.stateGlyphs` | robot / bolt / play for `idle` / `working` / `running`, none for the rest | Per-state right-edge glyphs, as described above |
+| `sidebar.stateGlyphs` | robot / bolt / play for `idle` / `working` / `running`, none for the rest | Per-state right-edge glyphs, as described above. Optional `permission` / `question` / `auth` override `blocked` (default: same as `blocked`) |
+| `sidebar.stateLabels` | `true` | Show the small state word next to the right-edge glyph |
+| `sidebar.showAgentName` | `true` | An agent at rest shows its session name as the muted second line |
 
 Section headers on separators (label, collapse, the summary badge) are covered under the launch-entry tree above; a collapsed header's badge summarises the states of the rows it hides.
 
