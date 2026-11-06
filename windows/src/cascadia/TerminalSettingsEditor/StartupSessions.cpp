@@ -8,7 +8,7 @@
 #include <LibraryResources.h>
 #include "..\WinRTUtils\inc\Utils.h"
 #include "../../types/inc/utils.hpp" // GuidToString
-#include "AxanIconPicker.h" // the shared icon picker flyout body (#438)
+#include <AxanIconPicker.h> // the shared icon picker flyout body (#438)
 #include <AxanSessionPalette.h> // shared session color palette for the color picker flyout (#13)
 
 using namespace winrt::Windows::UI::Xaml;
@@ -172,7 +172,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
         // The shared picker body (AxanIconPicker.h): grid (none + the 11 builtins), image
         // browse, free text. A pick applies and dismisses.
-        AxanIconPicker::Options options;
+        Axan::Ui::IconPicker::Options options;
         options.currentText = vm.IconPortable();
         options.onPick = [vm, hide](const winrt::hstring& icon) {
             vm.Icon(icon);
@@ -184,7 +184,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 self->_PickIconImage(vm, weakFlyout);
             }
         };
-        const auto root = AxanIconPicker::Build(options);
+        const auto root = Axan::Ui::IconPicker::Build(options);
 
         flyout.Content(root);
     }

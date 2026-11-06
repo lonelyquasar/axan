@@ -39,6 +39,7 @@
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
 #include <AxanHoistRule.h> // axan #34: the hoisted group's match rule
+#include <AxanEntryIdentityEditor.h> // axan #38: the node editor's identity section, shared with Settings
 
 #include <shlobj.h>
 #include <array>
@@ -2293,9 +2294,11 @@ namespace winrt::TerminalApp::implementation
     // The editor card is built programmatically (the XAML hosts only the NodeEditOverlay
     // scrim + empty NodeEditCard border). #436 split the original ~420-line builder into
     // the per-section helpers below; the file-statics need no page state, the members read
-    // and wire the _nodeEdit* fields.
+    // and wire the _nodeEdit* fields. #38 moved the identity sections (name + "?" help,
+    // icon grid + Browse, swatches, Apply color to) into the shared
+    // AxanEntryIdentityEditor.h, which the Startup sessions settings page hosts too.
 
-    // A bold section caption ("Icon", "Color").
+    // A bold section caption ("Hoisted group").
     static TextBlock _buildNodeEditSectionLabel(const wchar_t* text)
     {
         TextBlock t{};
@@ -2314,358 +2317,6 @@ namespace winrt::TerminalApp::implementation
         title.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
         title.Margin(WUX::Thickness{ 0, 0, 0, 10 });
         return title;
-    }
-
-    // The "?" button whose flyout documents the label-template variables.
-    static Button _buildNodeEditHelpButton()
-    {
-        Button helpBtn{};
-        helpBtn.Content(winrt::box_value(winrt::hstring{ L"?" }));
-        helpBtn.Width(22);
-        helpBtn.Height(22);
-        helpBtn.Padding(WUX::Thickness{ 0, 0, 0, 0 });
-        // axan #429: "?" alone is a useless Narrator name.
-        Automation::AutomationProperties::SetName(helpBtn, L"Session name variables help");
-        {
-            const auto varRow = [](const wchar_t* code, const wchar_t* desc) {
-                StackPanel row{};
-                row.Orientation(Orientation::Horizontal);
-                row.Spacing(8);
-                TextBlock c{};
-                c.Text(code);
-                c.FontFamily(WUX::Media::FontFamily{ L"Cascadia Mono, Consolas, monospace" });
-                c.Width(92);
-                TextBlock d{};
-                d.Text(desc);
-                d.TextWrapping(WUX::TextWrapping::Wrap);
-                row.Children().Append(c);
-                row.Children().Append(d);
-                return row;
-            };
-            StackPanel vars{};
-            vars.Spacing(3);
-            vars.MaxWidth(330);
-            TextBlock head{};
-            head.Text(L"Session name variables — type any of these and axan substitutes the live value; mix with plain text.");
-            head.TextWrapping(WUX::TextWrapping::Wrap);
-            head.Margin(WUX::Thickness{ 0, 0, 0, 6 });
-            vars.Children().Append(head);
-            vars.Children().Append(varRow(L"$shell", L"Shell name — pwsh, cmd, bash…"));
-            vars.Children().Append(varRow(L"$dir", L"Current folder name only"));
-            vars.Children().Append(varRow(L"$cwd  $pwd", L"Full working-directory path"));
-            vars.Children().Append(varRow(L"$~", L"Home-relative working directory"));
-            vars.Children().Append(varRow(L"$branch", L"Active git branch, if any"));
-            vars.Children().Append(varRow(L"$repo", L"Git repository name"));
-            vars.Children().Append(varRow(L"$user", L"Logged-in user"));
-            vars.Children().Append(varRow(L"$host", L"Machine hostname"));
-            vars.Children().Append(varRow(L"$title", L"Terminal title (OSC 0/2)"));
-            vars.Children().Append(varRow(L"$cmd", L"Foreground command"));
-            vars.Children().Append(varRow(L"${file:path}", L"First line of the file at path"));
-            TextBlock eg{};
-            eg.Text(L"Example:  $dir — $shell  →  axan — pwsh");
-            eg.Margin(WUX::Thickness{ 0, 8, 0, 0 });
-            eg.FontFamily(WUX::Media::FontFamily{ L"Cascadia Mono, Consolas, monospace" });
-            vars.Children().Append(eg);
-            Flyout helpFlyout{};
-            helpFlyout.Content(vars);
-            helpBtn.Flyout(helpFlyout);
-        }
-        return helpBtn;
-    }
-
-    // The name section: the "Session name" caption with its "?" help popover, then the
-    // [icon preview | Session name field] row. Stores _nodeEditPreview / _nodeEditLabelBox.
-    // (Escape handling lives on the card content — #436 item 4 — not on the TextBox.)
-    StackPanel TerminalPage::_BuildNodeEditNameSection(const winrt::hstring& currentTemplate,
-                                                       const WUX::Media::SolidColorBrush& neutralBrush)
-    {
-        StackPanel nameLabelRow{};
-        nameLabelRow.Orientation(Orientation::Horizontal);
-        nameLabelRow.Spacing(6);
-        nameLabelRow.Margin(WUX::Thickness{ 0, 0, 0, 5 });
-        {
-            TextBlock t{};
-            t.Text(L"Session name");
-            t.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
-            t.VerticalAlignment(WUX::VerticalAlignment::Center);
-            nameLabelRow.Children().Append(t);
-        }
-        nameLabelRow.Children().Append(_buildNodeEditHelpButton());
-
-        // [icon preview | Session name field]
-        ContentPresenter preview{};
-        preview.HorizontalAlignment(WUX::HorizontalAlignment::Center);
-        preview.VerticalAlignment(WUX::VerticalAlignment::Center);
-        _nodeEditPreview = preview;
-        Border previewBox{};
-        previewBox.Width(40);
-        previewBox.Height(40);
-        previewBox.CornerRadius(WUX::CornerRadius{ 5, 5, 5, 5 });
-        previewBox.BorderThickness(WUX::Thickness{ 1, 1, 1, 1 });
-        previewBox.BorderBrush(neutralBrush);
-        previewBox.Child(preview);
-
-        TextBox labelBox{};
-        labelBox.Text(currentTemplate);
-        labelBox.PlaceholderText(L"$dir — $shell");
-        labelBox.AcceptsReturn(false);
-        labelBox.Height(40);
-        labelBox.VerticalContentAlignment(WUX::VerticalAlignment::Center);
-        _nodeEditLabelBox = labelBox;
-
-        Grid nameRow{};
-        {
-            ColumnDefinition c0{};
-            c0.Width(GridLengthHelper::FromValueAndType(0, GridUnitType::Auto));
-            ColumnDefinition c1{};
-            c1.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star));
-            nameRow.ColumnDefinitions().Append(c0);
-            nameRow.ColumnDefinitions().Append(c1);
-            nameRow.ColumnSpacing(8);
-            Grid::SetColumn(previewBox, 0);
-            Grid::SetColumn(labelBox, 1);
-            nameRow.Children().Append(previewBox);
-            nameRow.Children().Append(labelBox);
-        }
-
-        // Spacing(2) matches the assembled card's own child spacing, so wrapping the two
-        // rows in this section panel is layout-neutral.
-        StackPanel section{};
-        section.Spacing(2);
-        section.Children().Append(nameLabelRow);
-        section.Children().Append(nameRow);
-        return section;
-    }
-
-    // The icon row: one pickable button per registry builtin, plus "Browse to icon file…".
-    Grid TerminalPage::_BuildNodeEditIconRow(const WUX::Media::SolidColorBrush& accentBrush,
-                                             const WUX::Media::SolidColorBrush& neutralBrush)
-    {
-        auto iconBtns = std::make_shared<std::vector<Button>>();
-        const auto selectIconButton = [iconBtns, accentBrush, neutralBrush](const Button& chosen) {
-            for (const auto& b : *iconBtns)
-            {
-                const bool sel = (b == chosen);
-                b.BorderBrush(sel ? accentBrush : neutralBrush);
-                b.BorderThickness(sel ? WUX::Thickness{ 2, 2, 2, 2 } : WUX::Thickness{ 1, 1, 1, 1 });
-            }
-        };
-        // axan #10: a horizontal StackPanel clipped everything past ~6 buttons at the card's
-        // width. Wrap into a fixed 6-per-row grid instead (the same shape as the startup
-        // page's picker), led by a "No icon" cell that clears the override back to the
-        // session's own resolved icon.
-        VariableSizedWrapGrid iconBtnRow{};
-        iconBtnRow.Orientation(Orientation::Horizontal);
-        iconBtnRow.MaximumRowsOrColumns(6);
-        iconBtnRow.ItemWidth(42);
-        iconBtnRow.ItemHeight(42);
-        // axan #436 item 1: the picker offers exactly AxanIconRegistry's builtins (all 11),
-        // so every pickable glyph round-trips to a portable `builtin:NAME` token on TOML
-        // export. (The old hardcoded 8-glyph row had five glyphs outside the registry, which
-        // exported as raw PUA chars that Linux renders as nothing.)
-        const auto addIconCell = [&](const winrt::hstring& glyph, const winrt::hstring& name, const winrt::hstring& storedValue) {
-            Button b{};
-            b.Width(36);
-            b.Height(36);
-            b.Padding(WUX::Thickness{ 0, 0, 0, 0 });
-            b.BorderThickness(WUX::Thickness{ 1, 1, 1, 1 });
-            b.BorderBrush(neutralBrush);
-            // axan #429/#436: the picker buttons are icon-only (a bare Segoe glyph reads as
-            // nothing or as a codepoint); the registry's portable name names them for
-            // Narrator (and a tooltip) — better than the old positional "Icon option N".
-            Automation::AutomationProperties::SetName(b, winrt::hstring{ L"Icon: " + std::wstring{ name } });
-            WUX::Controls::ToolTipService::SetToolTip(b, winrt::box_value(name));
-            FontIcon fi{};
-            fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-            fi.Glyph(glyph);
-            b.Content(fi);
-            iconBtns->push_back(b);
-            b.Click([weakThis{ get_weak() }, storedValue, b, selectIconButton](auto&&, auto&&) {
-                if (auto p{ weakThis.get() })
-                {
-                    p->_nodeEditIconOverride = storedValue;
-                    selectIconButton(b);
-                    p->_UpdateNodeEditPreview();
-                }
-            });
-            if (_nodeEditIconOverride == storedValue)
-            {
-                b.BorderBrush(accentBrush);
-                b.BorderThickness(WUX::Thickness{ 2, 2, 2, 2 });
-            }
-            iconBtnRow.Children().Append(b);
-        };
-        addIconCell(L"", L"No icon", L"" /* clear -> the session's own icon */);
-        for (const auto& builtin : Axan::IconRegistry::Builtins())
-        {
-            const winrt::hstring glyph{ std::wstring(1, builtin.glyph) };
-            addIconCell(glyph, winrt::hstring{ builtin.name }, glyph);
-        }
-        Button browseBtn{};
-        {
-            StackPanel bc{};
-            bc.Orientation(Orientation::Horizontal);
-            bc.Spacing(7);
-            FontIcon fi{};
-            fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-            fi.Glyph(L"");
-            fi.FontSize(14);
-            TextBlock t{};
-            t.Text(L"Browse to icon file…");
-            bc.Children().Append(fi);
-            bc.Children().Append(t);
-            browseBtn.Content(bc);
-        }
-        // axan #429: the StackPanel content yields no automatic UIA name.
-        Automation::AutomationProperties::SetName(browseBtn, L"Browse to icon file");
-        browseBtn.VerticalAlignment(WUX::VerticalAlignment::Center);
-        browseBtn.Click([weakThis{ get_weak() }, selectIconButton](auto&&, auto&&) {
-            if (auto p{ weakThis.get() })
-            {
-                selectIconButton(Button{ nullptr });
-                p->_BrowseNodeIconFile();
-            }
-        });
-        Grid iconRow{};
-        {
-            ColumnDefinition c0{};
-            c0.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star));
-            ColumnDefinition c1{};
-            c1.Width(GridLengthHelper::FromValueAndType(0, GridUnitType::Auto));
-            iconRow.ColumnDefinitions().Append(c0);
-            iconRow.ColumnDefinitions().Append(c1);
-            iconRow.ColumnSpacing(8);
-            Grid::SetColumn(iconBtnRow, 0);
-            Grid::SetColumn(browseBtn, 1);
-            iconRow.Children().Append(iconBtnRow);
-            iconRow.Children().Append(browseBtn);
-        }
-        return iconRow;
-    }
-
-    // The color swatch row.
-    StackPanel TerminalPage::_BuildNodeEditSwatchRow(const WUX::Media::SolidColorBrush& accentBrush,
-                                                     const WUX::Media::SolidColorBrush& neutralBrush)
-    {
-        auto swatchEls = std::make_shared<std::vector<std::pair<winrt::hstring, Border>>>();
-        const auto selectSwatch = [swatchEls, accentBrush, neutralBrush](const winrt::hstring& token) {
-            for (const auto& entry : *swatchEls)
-            {
-                const bool sel = (entry.first == token);
-                entry.second.BorderBrush(sel ? accentBrush : neutralBrush);
-                entry.second.BorderThickness(sel ? WUX::Thickness{ 2, 2, 2, 2 } : WUX::Thickness{ 1, 1, 1, 1 });
-            }
-        };
-        StackPanel swatchRow{};
-        swatchRow.Orientation(Orientation::Horizontal);
-        swatchRow.Spacing(8);
-        // axan #422: a swatch STORES a semantic palette name ("blue") — the cross-OS-portable
-        // token — and FILLS with that name resolved to the active theme's hex (WYSIWYG). The
-        // names match SessionNodeViewModel's palette + the Linux set. First entry is "no color".
-        struct Swatch
-        {
-            const wchar_t* name;
-            bool none;
-        };
-        static constexpr std::array<Swatch, 7> swatches{ {
-            { L"", true },
-            { L"red", false },
-            { L"orange", false },
-            { L"yellow", false },
-            { L"green", false },
-            { L"blue", false },
-            { L"purple", false } } };
-        for (const auto& sw : swatches)
-        {
-            Border el{};
-            el.Width(34);
-            el.Height(34);
-            el.CornerRadius(WUX::CornerRadius{ 5, 5, 5, 5 });
-            el.BorderThickness(WUX::Thickness{ 1, 1, 1, 1 });
-            el.BorderBrush(neutralBrush);
-            const winrt::hstring token{ sw.name };
-            if (sw.none)
-            {
-                FontIcon fi{};
-                fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-                fi.Glyph(L"");
-                fi.FontSize(14);
-                el.Child(fi);
-            }
-            else if (const auto fill = winrt::TerminalApp::implementation::SessionNodeViewModel::ResolveColorBrush(token, _nodeEditIsDark))
-            {
-                el.Background(fill);
-                WUX::Controls::ToolTipService::SetToolTip(el, winrt::box_value(token));
-            }
-            swatchEls->push_back({ token, el });
-            el.Tapped([weakThis{ get_weak() }, token, selectSwatch](auto&&, auto&&) {
-                if (auto p{ weakThis.get() })
-                {
-                    p->_nodeEditColor = token;
-                    selectSwatch(token);
-                    p->_UpdateNodeEditPreview();
-                }
-            });
-            if (_nodeEditColor == token)
-            {
-                el.BorderBrush(accentBrush);
-                el.BorderThickness(WUX::Thickness{ 2, 2, 2, 2 });
-            }
-            swatchRow.Children().Append(el);
-        }
-        return swatchRow;
-    }
-
-    // The "Apply color to" section: caption + hint, then the Icon/Text/Both radio row.
-    StackPanel TerminalPage::_BuildNodeEditApplyColorSection()
-    {
-        const auto makeRadio = [this](const wchar_t* text, const wchar_t* val) {
-            RadioButton rb{};
-            rb.Content(winrt::box_value(winrt::hstring{ text }));
-            rb.GroupName(L"axanApplyColorTo");
-            const winrt::hstring v{ val };
-            rb.IsChecked(_nodeEditColorTarget == v);
-            rb.Checked([weakThis{ get_weak() }, v](auto&&, auto&&) {
-                if (auto p{ weakThis.get() })
-                {
-                    p->_nodeEditColorTarget = v;
-                    p->_UpdateNodeEditPreview();
-                }
-            });
-            return rb;
-        };
-        StackPanel applyRow{};
-        applyRow.Orientation(Orientation::Horizontal);
-        applyRow.Spacing(18);
-        applyRow.Children().Append(makeRadio(L"Icon", L"icon"));
-        applyRow.Children().Append(makeRadio(L"Text", L"text"));
-        applyRow.Children().Append(makeRadio(L"Both", L"both"));
-
-        // Apply-to label + hint.
-        StackPanel applyLabelRow{};
-        applyLabelRow.Orientation(Orientation::Horizontal);
-        applyLabelRow.Spacing(6);
-        applyLabelRow.Margin(WUX::Thickness{ 0, 10, 0, 4 });
-        {
-            TextBlock t{};
-            t.Text(L"Apply color to");
-            t.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
-            t.VerticalAlignment(WUX::VerticalAlignment::Bottom);
-            TextBlock h{};
-            h.Text(L"recolors glyph icons; image files keep their own colors");
-            h.Opacity(0.6);
-            h.VerticalAlignment(WUX::VerticalAlignment::Bottom);
-            h.TextWrapping(WUX::TextWrapping::Wrap);
-            applyLabelRow.Children().Append(t);
-            applyLabelRow.Children().Append(h);
-        }
-
-        // Spacing(2) matches the assembled card's own child spacing — layout-neutral wrap.
-        StackPanel section{};
-        section.Spacing(2);
-        section.Children().Append(applyLabelRow);
-        section.Children().Append(applyRow);
-        return section;
     }
 
     // axan #34: "Hoisted group": Default (follow sidebar.hoistStates) / Never / Custom, the
@@ -2841,26 +2492,54 @@ namespace winrt::TerminalApp::implementation
         // against the matching palette set (the same derivation _RefreshNodeLabelBrushes uses).
         _nodeEditIsDark = _SidebarIsDarkTheme();
 
-        // Accent + neutral brushes for selection highlights.
-        winrt::Windows::UI::Color accentColor{ 255, 0x4c, 0xc2, 0xff };
-        if (const auto a = Application::Current().Resources().TryLookup(winrt::box_value(winrt::hstring{ L"SystemAccentColor" })))
-        {
-            accentColor = winrt::unbox_value_or<winrt::Windows::UI::Color>(a, accentColor);
-        }
-        const WUX::Media::SolidColorBrush accentBrush{ accentColor };
-        const WUX::Media::SolidColorBrush neutralBrush{ winrt::Windows::UI::Color{ 0x40, 0x80, 0x80, 0x80 } };
+        // axan #38: the identity sections (name + "?" help, icon grid + Browse, swatches,
+        // Apply color to) are the shared AxanEntryIdentityEditor, also hosted by the Startup
+        // sessions settings page. Edits stage into _nodeEditIconOverride / _nodeEditColor /
+        // _nodeEditColorTarget through onChanged; the name is read from the field on Save.
+        // Nothing is applied until Save (the footer), exactly as before.
+        namespace Identity = Axan::Ui::IdentityEditor;
+        Identity::Options identity;
+        identity.initial.name = vm->LabelTemplate;
+        identity.initial.icon = _nodeEditIconOverride;
+        identity.initial.color = _nodeEditColor;
+        identity.initial.colorTarget = _nodeEditColorTarget;
+        identity.isDark = _nodeEditIsDark;
+        // The preview uses the same BuildIcon as the sidebar row, falls back to the node's own
+        // icon before a glyph is picked, and tints only when the target paints the icon, so
+        // it matches the realized row.
+        identity.renderPreview = [weakThis{ get_weak() }](const Identity::Fields& f) -> WUX::UIElement {
+            const auto p{ weakThis.get() };
+            if (!p)
+            {
+                return nullptr;
+            }
+            const auto path = f.icon.empty() ? p->_nodeEditFallbackPath : f.icon;
+            const auto effColor = (f.colorTarget != L"text") ? f.color : winrt::hstring{};
+            return winrt::TerminalApp::implementation::SessionNodeViewModel::BuildIcon(path, effColor, p->_nodeEditIsDark);
+        };
+        identity.onChanged = [weakThis{ get_weak() }](const Identity::Fields& f) {
+            if (const auto p{ weakThis.get() })
+            {
+                p->_nodeEditIconOverride = f.icon;
+                p->_nodeEditColor = f.color;
+                p->_nodeEditColorTarget = f.colorTarget;
+            }
+        };
+        identity.onBrowseIcon = [weakThis{ get_weak() }]() {
+            if (const auto p{ weakThis.get() })
+            {
+                p->_BrowseNodeIconFile();
+            }
+        };
+        _nodeEditor = Identity::Build(std::move(identity));
+        _nodeEditLabelBox = _nodeEditor->NameBox();
 
         // --- assemble ---
         StackPanel content{};
         content.Spacing(2);
         content.MinWidth(420);
         content.Children().Append(_buildNodeEditTitle());
-        content.Children().Append(_BuildNodeEditNameSection(vm->LabelTemplate, neutralBrush));
-        content.Children().Append(_buildNodeEditSectionLabel(L"Icon"));
-        content.Children().Append(_BuildNodeEditIconRow(accentBrush, neutralBrush));
-        content.Children().Append(_buildNodeEditSectionLabel(L"Color"));
-        content.Children().Append(_BuildNodeEditSwatchRow(accentBrush, neutralBrush));
-        content.Children().Append(_BuildNodeEditApplyColorSection());
+        content.Children().Append(_nodeEditor->Root());
         content.Children().Append(_BuildNodeEditHoistSection()); // axan #34
         content.Children().Append(_BuildNodeEditFooter());
 
@@ -2880,9 +2559,8 @@ namespace winrt::TerminalApp::implementation
             }
         });
 
-        card.Child(content);
+        card.Child(content); // the identity editor rendered its preview during Build
 
-        _UpdateNodeEditPreview();
         overlay.Visibility(Visibility::Visible);
 
         // Focus the Session name field on its 2nd LayoutUpdated (in-tree focus timing).
@@ -2902,28 +2580,10 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Debug("TerminalPage", "opened node edit panel");
     }
 
-    // axan M13: rebuild the editor's live icon preview from the current icon choice + recolor,
-    // via the same BuildIcon the sidebar row uses. The preview tints only when the target paints
-    // the icon (so it matches the realized row).
-    void TerminalPage::_UpdateNodeEditPreview()
-    {
-        if (!_nodeEditPreview)
-        {
-            return;
-        }
-        const auto path = _nodeEditIconOverride.empty() ? _nodeEditFallbackPath : _nodeEditIconOverride;
-        const auto effColor = (_nodeEditColorTarget != L"text") ? _nodeEditColor : winrt::hstring{};
-        auto el = winrt::TerminalApp::implementation::SessionNodeViewModel::BuildIcon(path, effColor, _nodeEditIsDark);
-        if (el)
-        {
-            el.Width(24);
-            el.Height(24);
-        }
-        _nodeEditPreview.Content(el);
-    }
-
     // axan M13 (design handoff): "Browse to icon file…" — pick an image/exe and set it as the
     // editor's current icon override; the preview updates. Mirrors WT's profile icon picker.
+    // #38: the pick goes through the identity editor (SetIcon), which refreshes its preview and
+    // stages the override via onChanged; a panel closed while the picker was up is left alone.
     safe_void_coroutine TerminalPage::_BrowseNodeIconFile()
     {
         auto strongThis{ get_strong() };
@@ -2944,10 +2604,9 @@ namespace winrt::TerminalApp::implementation
             }
             CATCH_LOG();
         });
-        if (!file.empty())
+        if (!file.empty() && _nodeEditor)
         {
-            _nodeEditIconOverride = file;
-            _UpdateNodeEditPreview();
+            _nodeEditor->SetIcon(winrt::hstring{ file });
         }
     }
 
@@ -2966,7 +2625,7 @@ namespace winrt::TerminalApp::implementation
         }
         _nodeEditTarget = {};
         _nodeEditLabelBox = nullptr;
-        _nodeEditPreview = nullptr;
+        _nodeEditor.reset(); // its controls go inert (they hold only a weak_ptr)
         _nodeEditIconOverride = {};
         _nodeEditColor = {};
         _nodeEditColorTarget = L"both";

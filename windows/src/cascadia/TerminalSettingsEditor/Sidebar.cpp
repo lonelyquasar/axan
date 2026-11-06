@@ -9,7 +9,7 @@
 
 #include <LibraryResources.h>
 #include "..\WinRTUtils\inc\Utils.h" // OpenImagePicker
-#include "AxanIconPicker.h" // the shared icon picker flyout body
+#include <AxanIconPicker.h> // the shared icon picker flyout body
 #include <AxanStateGlyphs.h> // sidebar.stateGlyphs defaults
 #include <AxanHoistRule.h> // axan #34: sidebar.hoistStates vocabulary
 
@@ -99,7 +99,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             }
         };
 
-        AxanIconPicker::Options options;
+        Axan::Ui::IconPicker::Options options;
         options.leading.push_back({ defaultGlyph, RS_(L"Globals_SidebarStateGlyphDefault"), [vm, key, hide]() {
                                        vm.ResetSidebarStateGlyph(key);
                                        hide();
@@ -116,7 +116,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 self->_PickStateGlyphImage(key, weakFlyout);
             }
         };
-        flyout.Content(AxanIconPicker::Build(options));
+        flyout.Content(Axan::Ui::IconPicker::Build(options));
     }
 
     safe_void_coroutine Sidebar::_PickStateGlyphImage(winrt::hstring key, winrt::weak_ref<Flyout> weakFlyout)

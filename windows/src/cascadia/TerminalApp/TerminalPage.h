@@ -30,6 +30,11 @@ namespace Microsoft::Terminal::Core
     class ControlKeyStates;
 }
 
+namespace Axan::Ui::IdentityEditor
+{
+    class Editor; // axan #38: AxanEntryIdentityEditor.h, the node editor's identity section
+}
+
 namespace winrt::TerminalApp::implementation
 {
     struct TerminalSettingsCache;
@@ -333,7 +338,9 @@ namespace winrt::TerminalApp::implementation
         // before a glyph is picked. The label field is focused on its 2nd LayoutUpdated.
         winrt::weak_ref<Microsoft::UI::Xaml::Controls::TreeViewNode> _nodeEditTarget;
         winrt::Windows::UI::Xaml::Controls::TextBox _nodeEditLabelBox{ nullptr }; // Session name field
-        winrt::Windows::UI::Xaml::Controls::ContentPresenter _nodeEditPreview{ nullptr };
+        // axan #38: the shared identity editor (name, icon, colour, colour target) hosted in the
+        // card; it owns the preview and stages its edits into the strings below via onChanged.
+        std::shared_ptr<Axan::Ui::IdentityEditor::Editor> _nodeEditor;
         // axan M13 (design handoff): the icon is chosen via the button row / Browse (no text
         // field), so the current choice + recolor + recolor-target are tracked as strings.
         winrt::hstring _nodeEditIconOverride;
@@ -658,15 +665,10 @@ namespace winrt::TerminalApp::implementation
         // The label field is focused on its 2nd LayoutUpdated. State lives in the members below.
         void _ShowNodeEditPanel(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         // axan #436: per-section builders for the node editor card, split out of the original
-        // monolithic _ShowNodeEditPanel. Each builds one row/section of the card; the
-        // selection brushes are passed in so all sections highlight consistently.
-        Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditNameSection(const winrt::hstring& currentTemplate, const Windows::UI::Xaml::Media::SolidColorBrush& neutralBrush);
-        Windows::UI::Xaml::Controls::Grid _BuildNodeEditIconRow(const Windows::UI::Xaml::Media::SolidColorBrush& accentBrush, const Windows::UI::Xaml::Media::SolidColorBrush& neutralBrush);
-        Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditSwatchRow(const Windows::UI::Xaml::Media::SolidColorBrush& accentBrush, const Windows::UI::Xaml::Media::SolidColorBrush& neutralBrush);
-        Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditApplyColorSection();
+        // monolithic _ShowNodeEditPanel. #38: the identity sections (name, icon, colour, colour
+        // target) moved to the shared AxanEntryIdentityEditor.h; what stays card-only is here.
         Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditFooter();
         Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditHoistSection(); // axan #34
-        void _UpdateNodeEditPreview();
         void _HideNodeEditPanel();
         void _AddChildSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         void _DuplicateNodeSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);

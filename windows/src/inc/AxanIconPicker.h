@@ -4,9 +4,11 @@
 #pragma once
 
 // axan: the settings editor's icon picker flyout body, shared by the Startup page's per-row
-// icon button (#438) and Settings > Appearance's sidebar state glyphs (sidebar.stateGlyphs).
-// Code-built rather than a control: the Flyout content is rebuilt on each Opening (the
-// classic-Binding limitation noted on the Startup page's profile combo applies here too).
+// icon button (#438) and the Sidebar page's state glyphs (sidebar.stateGlyphs). Code-built
+// rather than a control: the Flyout content is rebuilt on each Opening (the classic-Binding
+// limitation noted on the Startup page's profile combo applies here too). Lives in the shared
+// src/inc (#38) next to AxanEntryIdentityEditor.h; it needs only the Windows.UI.Xaml
+// projection the including project's pch already provides.
 //
 // Layout: a glyph grid (optional leading cells, a "No icon" cell, then the 11
 // AxanIconRegistry builtins, so every pickable glyph round-trips to a portable builtin:NAME
@@ -18,7 +20,7 @@
 #include <functional>
 #include <vector>
 
-namespace winrt::Microsoft::Terminal::Settings::Editor::implementation::AxanIconPicker
+namespace Axan::Ui::IconPicker
 {
     struct Cell
     {
