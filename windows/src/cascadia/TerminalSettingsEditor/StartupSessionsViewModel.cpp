@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <unordered_map>
 #include <unordered_set>
+#include <optional>
 #include <toml.hpp>
 #include <AxanLaunchEntryWire.h> // shared wire format: TOML keys, icon mapping, version (src/inc)
 #include <AxanHoistRule.h> // axan #34
@@ -63,6 +64,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _Entries = rows;
         _recomputeDepths();
         _NotifyChanges(L"Entries");
+        _select(rows.Size() ? rows.GetAt(0) : nullptr); // axan #38
     }
 
     // axan #19: the ONLY place a LaunchEntryViewModel is constructed, and (with
@@ -123,12 +125,26 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         return hstring{ ::Microsoft::Console::Utils::GuidToString(::Microsoft::Console::Utils::CreateGuid()) };
     }
 
-    // Re-commit the global tree whenever a row's field changes (profile/name/dir/cmd/icon/color,
-    // a separator's style/height/placement, or ParentId via indent/outdent). Weak capture
-    // breaks the this->vector->vm->handler cycle.
+    // Re-commit the global tree whenever a row's PERSISTED field changes (profile/name/dir/
+    // cmd/icon/color, a separator's style/height/placement/label, or ParentId via indent/
+    // outdent). axan #38: derived properties are raised alongside the field they mirror
+    // (Icon also raises IconPortable + IconPreview, Kind raises four more, Depth raises
+    // IndentMargin, ...), and committing on each re-ran the O(N) _commit up to five times
+    // per edit. They are filtered out by name. A denylist rather than an allowlist, so a
+    // newly added persisted field commits without touching this. Weak capture breaks the
+    // this->vector->vm->handler cycle.
     void StartupSessionsViewModel::_hookEntry(const Editor::LaunchEntryViewModel& vm)
     {
-        vm.PropertyChanged([weakThis = get_weak()](const auto& /*sender*/, const auto& /*args*/) {
+        vm.PropertyChanged([weakThis = get_weak()](const auto& /*sender*/, const Windows::UI::Xaml::Data::PropertyChangedEventArgs& args) {
+            static const std::unordered_set<std::wstring_view> derived{
+                L"IconPortable", L"IconPreview", L"ColorPreviewBrush", L"Depth", L"IndentMargin",
+                L"IsSeparator", L"IsSession", L"SessionVisibility", L"SeparatorVisibility",
+                L"SeparatorStyleIndex", L"PlacementIndex"
+            };
+            if (derived.count(std::wstring_view{ args.PropertyName() }))
+            {
+                return;
+            }
             if (auto self{ weakThis.get() })
             {
                 if (!self->_suspendCommit)
@@ -137,6 +153,98 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 }
             }
         });
+    }
+
+    // ---- axan #38: selection and the structural rules (src/inc/AxanEntryTreeOps.h) ----
+
+    Axan::EntryTree::Nodes StartupSessionsViewModel::_nodes() const
+    {
+        Axan::EntryTree::Nodes nodes;
+        if (_Entries)
+        {
+            nodes.reserve(_Entries.Size());
+            for (const auto& e : _Entries)
+            {
+                nodes.push_back({ std::wstring{ e.Id() }, std::wstring{ e.ParentId() }, e.IsSeparator() });
+            }
+        }
+        return nodes;
+    }
+
+    std::optional<uint32_t> StartupSessionsViewModel::_indexOf(const Editor::LaunchEntryViewModel& vm) const
+    {
+        uint32_t index;
+        if (vm && _Entries && _Entries.IndexOf(vm, index))
+        {
+            return index;
+        }
+        return std::nullopt;
+    }
+
+    // In place rather than a fresh vector + "Entries": rebinding re-realized every row
+    // (profile combo populate, icon/color previews, text boxes), a visible pause per click
+    // on longer lists. Removing then re-inserting only the block touches just those rows.
+    // After the removals the vector is the block-less list, so insertAt is a live index.
+    void StartupSessionsViewModel::_applyBlockMove(const Axan::EntryTree::BlockMove& move)
+    {
+        std::vector<Editor::LaunchEntryViewModel> block;
+        block.reserve(move.block.size());
+        for (const auto i : move.block)
+        {
+            block.push_back(_Entries.GetAt(static_cast<uint32_t>(i)));
+        }
+        for (auto it = move.block.rbegin(); it != move.block.rend(); ++it)
+        {
+            _Entries.RemoveAt(static_cast<uint32_t>(*it));
+        }
+        for (size_t k = 0; k < block.size(); ++k)
+        {
+            _Entries.InsertAt(static_cast<uint32_t>(move.insertAt + k), block[k]);
+        }
+    }
+
+    void StartupSessionsViewModel::SelectedEntry(const Editor::LaunchEntryViewModel& value)
+    {
+        if (_selectedEntry != value)
+        {
+            _select(value);
+        }
+    }
+
+    void StartupSessionsViewModel::_select(const Editor::LaunchEntryViewModel& vm)
+    {
+        _selectedEntry = vm;
+        _NotifyChanges(L"SelectedEntry");
+        _notifySelectionState();
+    }
+
+    void StartupSessionsViewModel::_notifySelectionState()
+    {
+        _NotifyChanges(L"HasSelection", L"CanMoveUp", L"CanMoveDown", L"CanIndent", L"CanOutdent");
+    }
+
+    bool StartupSessionsViewModel::CanMoveUp() const
+    {
+        const auto i = _indexOf(_selectedEntry);
+        return i && Axan::EntryTree::PrevSibling(_nodes(), *i).has_value();
+    }
+
+    bool StartupSessionsViewModel::CanMoveDown() const
+    {
+        const auto i = _indexOf(_selectedEntry);
+        return i && Axan::EntryTree::NextSibling(_nodes(), *i).has_value();
+    }
+
+    bool StartupSessionsViewModel::CanIndent() const
+    {
+        const auto i = _indexOf(_selectedEntry);
+        return i && Axan::EntryTree::IndentParent(_nodes(), *i).has_value();
+    }
+
+    bool StartupSessionsViewModel::CanOutdent() const
+    {
+        const auto i = _indexOf(_selectedEntry);
+        return i && Axan::EntryTree::OutdentParent(_nodes(), *i).has_value();
     }
 
     // depth(row) = depth(parent) + 1, parent looked up by Id; a single forward pass suffices
@@ -192,6 +300,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _recomputeDepths();
         _commit();
         _NotifyChanges(L"Entries");
+        _select(vm); // axan #38
     }
 
     // axan #3: append a root separator — a line, one session row tall, inline. Mirrors
@@ -212,16 +321,18 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _recomputeDepths();
         _commit();
         _NotifyChanges(L"Entries");
+        _select(vm); // axan #38
         Axan::Log::Info("StartupSessionsViewModel", "added a separator row", { { "id", winrt::to_string(id) } });
     }
 
     void StartupSessionsViewModel::DeleteEntry(const Editor::LaunchEntryViewModel& vm)
     {
-        uint32_t index;
-        if (!_Entries.IndexOf(vm, index))
+        const auto found = _indexOf(vm);
+        if (!found)
         {
             return;
         }
+        const auto index = *found;
         _suspendCommit = true;
         // Promote the deleted row's children to its parent so they aren't orphaned.
         const auto deletedId = vm.Id();
@@ -238,214 +349,109 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _suspendCommit = false;
         _commit();
         _NotifyChanges(L"Entries");
+        // axan #38: select the next sibling (a promoted child counts), else the row above,
+        // else nothing.
+        const auto next = Axan::EntryTree::SelectionAfterDelete(_nodes(), index, std::wstring{ newParent });
+        _select(next ? _Entries.GetAt(static_cast<uint32_t>(*next)) : nullptr);
     }
 
     void StartupSessionsViewModel::DuplicateEntry(const Editor::LaunchEntryViewModel& vm)
     {
-        uint32_t index;
-        if (!_Entries.IndexOf(vm, index))
+        const auto index = _indexOf(vm);
+        if (!index)
         {
             return;
         }
-        // A fresh id (so links stay unambiguous); same profile + recipe, same parent → a sibling
-        // right after the original. The common "second claude in the same dir" move.
+        // A fresh id (so links stay unambiguous); same profile + recipe, same parent → the
+        // original's next sibling, placed after the original's whole subtree. axan #38: it
+        // used to land at index + 1, between the original and its children, so the children
+        // were drawn under the copy. Only the row is copied, not its children. The common
+        // "second claude in the same dir" move.
         // axan #19: a round trip through the model, so every field (incl. a separator's
         // kind/style/height/placement) is copied by the two functions that own the field list.
         auto model = _modelFromRow(vm);
         model.Id(_newEntryId());
         const auto copy = _rowFromModel(model);
-        _Entries.InsertAt(index + 1, copy);
+        const auto at = Axan::EntryTree::DuplicateInsertIndex(_nodes(), *index);
+        _Entries.InsertAt(static_cast<uint32_t>(at), copy);
         _hookEntry(copy);
         _recomputeDepths();
         _commit();
         _NotifyChanges(L"Entries");
+        _select(copy); // axan #38
     }
 
+    // Nest under the nearest preceding SESSION row at this row's own depth (its previous
+    // sibling). axan #3: a separator is never a parent, so a separator sibling is skipped
+    // and the search keeps walking up (still stopping at the parent boundary). With none,
+    // indent is a no-op. The rule lives in AxanEntryTreeOps.h (IndentParent).
     void StartupSessionsViewModel::IndentEntry(const Editor::LaunchEntryViewModel& vm)
     {
-        uint32_t index;
-        if (!_Entries.IndexOf(vm, index) || index == 0)
+        const auto index = _indexOf(vm);
+        if (!index)
         {
-            return; // the first row has no previous sibling to nest under
+            return;
         }
-        // Nest under the nearest preceding row at this row's own depth (its previous sibling).
-        // axan #3: a separator is never a parent — it spawns nothing, so nothing can hang
-        // under it. A separator previous-sibling is skipped past, and the search keeps
-        // walking up for the previous SESSION sibling at this depth (still stopping at
-        // the parent boundary). With none, indent is a no-op.
-        const auto myDepth = vm.Depth();
-        for (int32_t i = static_cast<int32_t>(index) - 1; i >= 0; --i)
+        const auto parent = Axan::EntryTree::IndentParent(_nodes(), *index);
+        if (!parent)
         {
-            const auto candidate = _Entries.GetAt(static_cast<uint32_t>(i));
-            if (candidate.Depth() == myDepth && candidate.IsSeparator())
-            {
-                continue;
-            }
-            if (candidate.Depth() == myDepth)
-            {
-                _suspendCommit = true;
-                vm.ParentId(candidate.Id());
-                _recomputeDepths();
-                _suspendCommit = false;
-                _commit();
-                _NotifyChanges(L"Entries");
-                return;
-            }
-            if (candidate.Depth() < myDepth)
-            {
-                return; // hit the parent boundary with no same-depth sibling before it
-            }
-        }
-    }
-
-    void StartupSessionsViewModel::OutdentEntry(const Editor::LaunchEntryViewModel& vm)
-    {
-        const auto parentId = vm.ParentId();
-        if (parentId.empty())
-        {
-            return; // already a root
-        }
-        // New parent = the current parent's parent (un-nest one level).
-        winrt::hstring grandParent;
-        for (const auto& other : _Entries)
-        {
-            if (other.Id() == parentId)
-            {
-                grandParent = other.ParentId();
-                break;
-            }
+            return;
         }
         _suspendCommit = true;
-        vm.ParentId(grandParent);
+        vm.ParentId(hstring{ *parent });
         _recomputeDepths();
         _suspendCommit = false;
         _commit();
         _NotifyChanges(L"Entries");
+        _select(vm); // axan #38
+    }
+
+    // New parent = the current parent's parent (un-nest one level); a root is a no-op.
+    void StartupSessionsViewModel::OutdentEntry(const Editor::LaunchEntryViewModel& vm)
+    {
+        const auto index = _indexOf(vm);
+        if (!index)
+        {
+            return;
+        }
+        const auto parent = Axan::EntryTree::OutdentParent(_nodes(), *index);
+        if (!parent)
+        {
+            return;
+        }
+        _suspendCommit = true;
+        vm.ParentId(hstring{ *parent });
+        _recomputeDepths();
+        _suspendCommit = false;
+        _commit();
+        _NotifyChanges(L"Entries");
+        _select(vm); // axan #38
     }
 
     // axan #13: reorder among siblings, carrying the whole subtree. Launch order is list
     // order (D19), so this is the in-place alternative to delete-and-re-add. The list is
-    // only ordered by the forward-reference rule (a parent precedes its children), NOT
-    // family-contiguous (Duplicate inserts a sibling between a row and its children), so
-    // the move works on id-sets rather than contiguous ranges: lift out the row's subtree,
-    // then reinsert it directly before the previous sibling (up) or after the last row of
-    // the next sibling's subtree (down). Both placements keep every parent ahead of its
-    // children: the moved block stays internally ordered, its parent stays ahead of both
-    // siblings, and no row outside the block moves at all.
+    // only ordered by the forward-reference rule (a parent precedes its children), not
+    // family-contiguous, so the move works on index sets rather than contiguous ranges
+    // (AxanEntryTreeOps.h MoveAmongSiblings). No row outside the moved block moves.
     void StartupSessionsViewModel::_moveEntry(const Editor::LaunchEntryViewModel& vm, bool up)
     {
-        uint32_t index;
-        if (!_Entries.IndexOf(vm, index))
+        const auto index = _indexOf(vm);
+        if (!index)
         {
             return;
         }
-
-        std::vector<Editor::LaunchEntryViewModel> all;
-        all.reserve(_Entries.Size());
-        for (const auto& e : _Entries)
-        {
-            all.push_back(e);
-        }
-
-        // The transitive subtree of a row, as an id set; a single forward pass suffices
-        // because a parent always precedes its children.
-        const auto subtreeIds = [&all](const Editor::LaunchEntryViewModel& root) {
-            std::unordered_set<winrt::hstring> ids{ root.Id() };
-            for (const auto& e : all)
-            {
-                if (const auto p = e.ParentId(); !p.empty() && ids.count(p))
-                {
-                    ids.insert(e.Id());
-                }
-            }
-            return ids;
-        };
-
-        // The sibling to jump over: the nearest row before/after this one with the same
-        // parent. None -> already first/last among its siblings; nothing to do.
-        Editor::LaunchEntryViewModel sibling{ nullptr };
-        if (up)
-        {
-            for (auto i = static_cast<int32_t>(index) - 1; i >= 0; --i)
-            {
-                if (all[static_cast<size_t>(i)].ParentId() == vm.ParentId())
-                {
-                    sibling = all[static_cast<size_t>(i)];
-                    break;
-                }
-            }
-        }
-        else
-        {
-            for (auto i = static_cast<size_t>(index) + 1; i < all.size(); ++i)
-            {
-                if (all[i].ParentId() == vm.ParentId())
-                {
-                    sibling = all[i];
-                    break;
-                }
-            }
-        }
-        if (!sibling)
+        const auto move = Axan::EntryTree::MoveAmongSiblings(_nodes(), *index, up);
+        if (!move)
         {
             return;
         }
-
-        const auto movedIds = subtreeIds(vm);
-        std::vector<Editor::LaunchEntryViewModel> rest;
-        std::vector<Editor::LaunchEntryViewModel> block;
-        rest.reserve(all.size());
-        for (const auto& e : all)
-        {
-            (movedIds.count(e.Id()) ? block : rest).push_back(e);
-        }
-
-        size_t insertAt = 0;
-        if (up)
-        {
-            for (size_t i = 0; i < rest.size(); ++i)
-            {
-                if (rest[i].Id() == sibling.Id())
-                {
-                    insertAt = i;
-                    break;
-                }
-            }
-        }
-        else
-        {
-            const auto siblingIds = subtreeIds(sibling);
-            for (size_t i = 0; i < rest.size(); ++i)
-            {
-                if (siblingIds.count(rest[i].Id()))
-                {
-                    insertAt = i + 1;
-                }
-            }
-        }
-
-        // Apply the move to the live observable vector in place rather than swapping in a
-        // fresh vector + re-notifying "Entries": that rebound the whole ItemsControl and
-        // re-realized every row (profile combo populate, icon/color previews, three text
-        // boxes each), which showed up as a visible pause per click on larger lists /
-        // slower machines. Removing then re-inserting only the moved block means the
-        // ItemsControl touches just those rows; the rest keep their containers. After the
-        // removals, _Entries is exactly `rest`, so `insertAt` is the live index too.
-        for (auto i = static_cast<int32_t>(all.size()) - 1; i >= 0; --i)
-        {
-            if (movedIds.count(all[static_cast<size_t>(i)].Id()))
-            {
-                _Entries.RemoveAt(static_cast<uint32_t>(i));
-            }
-        }
-        for (size_t k = 0; k < block.size(); ++k)
-        {
-            _Entries.InsertAt(static_cast<uint32_t>(insertAt + k), block[k]);
-        }
+        _applyBlockMove(*move);
         // Sibling moves never change depth (the guard in Depth() keeps this silent), and
         // the observable vector already told the view about the rows it needs to redraw.
         _recomputeDepths();
         _commit();
+        // axan #38: the RemoveAt / InsertAt cleared a ListView's selection; put it back.
+        _select(vm);
     }
 
     void StartupSessionsViewModel::MoveEntryUp(const Editor::LaunchEntryViewModel& vm)
@@ -652,6 +658,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _recomputeDepths();
         _commit();
         _NotifyChanges(L"Entries");
+        _select(rows.GetAt(0)); // axan #38 (rows is non-empty here)
         Axan::Log::Info("StartupSessionsViewModel", "import: replaced the startup tree from TOML", { { "path", pathU8 }, { "count", std::to_string(rows.Size()) }, { "separators", std::to_string(separators) } });
         return true;
     }
@@ -690,6 +697,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _recomputeDepths();
         _commit();
         _NotifyChanges(L"Entries");
+        _select(rows.GetAt(0)); // axan #38 (rows is non-empty here)
         Axan::Log::Info("StartupSessionsViewModel", "capture: replaced the startup tree from the live window", { { "count", std::to_string(rows.Size()) } });
         return rows.Size();
     }

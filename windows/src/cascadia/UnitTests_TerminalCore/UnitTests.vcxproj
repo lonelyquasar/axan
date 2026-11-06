@@ -29,6 +29,7 @@
     <ClCompile Include="AxanSessionStateTest.cpp" />
     <ClCompile Include="AxanLaunchEntryWireTest.cpp" />
     <ClCompile Include="AxanHoistRuleTest.cpp" />
+    <ClCompile Include="AxanEntryTreeOpsTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\buffer\out\lib\bufferout.vcxproj">

@@ -28,6 +28,22 @@ namespace Microsoft.Terminal.Settings.Editor
         // The default profile's GUID, so a row with no explicit profile shows the right shell.
         String DefaultProfileGuid { get; };
 
+        // axan #38: the row the page's detail panel edits and the toolbar acts on. The
+        // list pushes the user's pick in; every structural op re-selects the row it acted
+        // on (move / indent / outdent: that row; add / duplicate: the new row; delete: the
+        // next sibling, else the row above; import / capture / construction: the first
+        // row, or none when the list is empty). Raised again after each op even when the
+        // row is unchanged, because the in-place RemoveAt/InsertAt clears a ListView's
+        // selection.
+        LaunchEntryViewModel SelectedEntry;
+        Boolean HasSelection { get; };
+        // Whether the matching op would do anything for SelectedEntry (false with no
+        // selection). Re-raised on selection change and after every structural op.
+        Boolean CanMoveUp { get; };
+        Boolean CanMoveDown { get; };
+        Boolean CanIndent { get; };
+        Boolean CanOutdent { get; };
+
         void AddEntry();
         // axan #3: append a root separator row (line style, one row tall, inline). It is
         // an ordinary row afterwards — move/indent/outdent/duplicate/delete all apply.

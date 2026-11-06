@@ -8,6 +8,8 @@
 #include "ViewModelHelpers.h"
 #include "Utils.h"
 
+#include <AxanEntryTreeOps.h> // axan #38: shared tree rules (src/inc)
+
 namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 {
     struct StartupSessionsViewModel : StartupSessionsViewModelT<StartupSessionsViewModel>, ViewModelHelper<StartupSessionsViewModel>
@@ -27,6 +29,16 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void MoveEntryUp(const Editor::LaunchEntryViewModel& vm);
         void MoveEntryDown(const Editor::LaunchEntryViewModel& vm);
         bool ImportFromToml(hstring path);
+
+        // axan #38: selection model (see the IDL).
+        Editor::LaunchEntryViewModel SelectedEntry() const { return _selectedEntry; }
+        void SelectedEntry(const Editor::LaunchEntryViewModel& value);
+        bool HasSelection() const { return _selectedEntry != nullptr; }
+        bool CanMoveUp() const;
+        bool CanMoveDown() const;
+        bool CanIndent() const;
+        bool CanOutdent() const;
+
         uint32_t CaptureLiveStartup();
         // axan #14: impl-only — MainPage attaches TerminalApp's live-tree snapshot
         // provider at construction (via get_self, same component; not projected).
@@ -53,6 +65,17 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void _recomputeDepths();
         void _commit();
         void _moveEntry(const Editor::LaunchEntryViewModel& vm, bool up);
+
+        // axan #38: the row the detail panel edits (see SelectedEntry).
+        Editor::LaunchEntryViewModel _selectedEntry{ nullptr };
+        // Set the selection and raise SelectedEntry plus every derived flag
+        // unconditionally: structural ops call this even when the row is unchanged.
+        void _select(const Editor::LaunchEntryViewModel& vm);
+        void _notifySelectionState();
+        // The rows as AxanEntryTreeOps nodes, and a row's index (none when absent).
+        Axan::EntryTree::Nodes _nodes() const;
+        std::optional<uint32_t> _indexOf(const Editor::LaunchEntryViewModel& vm) const;
+        void _applyBlockMove(const Axan::EntryTree::BlockMove& move);
         hstring _resolveImportedProfile(const std::string& bareGuid, const std::string& name);
     };
 }
