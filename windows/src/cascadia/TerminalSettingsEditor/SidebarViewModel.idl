@@ -1,0 +1,62 @@
+// Copyright (c) Lonely Quasar.
+// Licensed under the MIT license.
+//
+// axan #38: the Settings > Sessions > Sidebar page view-model. Every sidebar.* global
+// (and sidebarMatchesProfileTransparency) lives here; they moved out of Appearance
+// verbatim, JSON keys unchanged.
+
+import "EnumEntry.idl";
+
+#include "ViewModelHelpers.idl.h"
+
+namespace Microsoft.Terminal.Settings.Editor
+{
+    runtimeclass SidebarViewModel : Windows.UI.Xaml.Data.INotifyPropertyChanged
+    {
+        SidebarViewModel(Microsoft.Terminal.Settings.Model.GlobalAppSettings globalSettings);
+
+        // sidebar.statusAfterSeen
+        IInspectable CurrentSidebarStatusAfterSeen;
+        Windows.Foundation.Collections.IObservableVector<Microsoft.Terminal.Settings.Editor.EnumEntry> SidebarStatusAfterSeenList { get; };
+
+        // sidebar.stateGlyphs. key = a slot state (AxanStateGlyphs.h kKeys). Set takes the
+        // NATIVE icon string the picker produced ("" = show nothing); Reset drops the key so
+        // the state goes back to its default. Preview / Label are per-key properties so the
+        // page binds them (PropertyChanged fires for all of them on any change).
+        String SidebarStateGlyphText(String key);
+        void SetSidebarStateGlyph(String key, String nativeIcon);
+        void ResetSidebarStateGlyph(String key);
+        Windows.UI.Xaml.Controls.IconElement SidebarIdleGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarWorkingGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarBlockedGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarDoneGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarErrorGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarRunningGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarPermissionGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarQuestionGlyphPreview { get; };
+        Windows.UI.Xaml.Controls.IconElement SidebarAuthGlyphPreview { get; };
+        String SidebarIdleGlyphLabel { get; };
+        String SidebarWorkingGlyphLabel { get; };
+        String SidebarBlockedGlyphLabel { get; };
+        String SidebarDoneGlyphLabel { get; };
+        String SidebarErrorGlyphLabel { get; };
+        String SidebarRunningGlyphLabel { get; };
+        String SidebarPermissionGlyphLabel { get; };
+        String SidebarQuestionGlyphLabel { get; };
+        String SidebarAuthGlyphLabel { get; };
+
+        // axan #34: sidebar.hoistStates, the states that put a session in the sidebar's
+        // hoisted group (AxanHoistRule.h names). Unset = ["blocked", "error", "done"].
+        // Summary is the expander's one-line current value.
+        Boolean SidebarHoistStateEnabled(String name);
+        void SetSidebarHoistStateEnabled(String name, Boolean enabled);
+        void ResetSidebarHoistStates();
+        String SidebarHoistStatesSummary { get; };
+
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarMatchesProfileTransparency);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Int32, SidebarIdleAfterMinutes); // axan #31
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarNeedsYouGroup); // axan #34
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarStateLabels);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarShowAgentName);
+    }
+}

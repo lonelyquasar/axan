@@ -816,6 +816,38 @@
     <value>Startup</value>
     <comment>Header for the "startup" menu item. This navigates to a page that lets you see and modify settings related to the app's launch experience (i.e. screen position, mode, etc.)</comment>
   </data>
+  <data name="Nav_SessionsGroup.Content" xml:space="preserve">
+    <value>Sessions</value>
+    <comment>axan #38: Header for a group of menu items (Startup sessions, Sidebar). Acts as a divider introducing the session-related pages.</comment>
+  </data>
+  <data name="Nav_Sidebar.Content" xml:space="preserve">
+    <value>Sidebar</value>
+    <comment>axan #38: Header for the "sidebar" menu item. This navigates to a page with the settings for the session sidebar (the tree of sessions on the left of the window).</comment>
+  </data>
+  <data name="Globals_SidebarNeedsYouGroup.Header" xml:space="preserve">
+    <value>Show the hoisted group</value>
+    <comment>axan #34: Header for a toggle: list sessions in chosen states in a group at the top of the sidebar.</comment>
+  </data>
+  <data name="Globals_SidebarNeedsYouGroup.HelpText" xml:space="preserve">
+    <value>List sessions whose state is checked below in a group at the top of the sidebar, longest-waiting first. Also toggled from the sidebar's right-click menu.</value>
+    <comment>axan #34: A description for the "show the hoisted group" setting. Presented near "Globals_SidebarNeedsYouGroup.Header".</comment>
+  </data>
+  <data name="Sidebar_SessionStateHeader.Text" xml:space="preserve">
+    <value>Session state</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
+  </data>
+  <data name="Sidebar_HoistedGroupHeader.Text" xml:space="preserve">
+    <value>Hoisted group</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
+  </data>
+  <data name="Sidebar_IdleSessionsHeader.Text" xml:space="preserve">
+    <value>Idle sessions</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
+  </data>
+  <data name="Sidebar_GlyphsHeader.Text" xml:space="preserve">
+    <value>Glyphs</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
+  </data>
   <data name="Nav_StartupSessions.Content" xml:space="preserve">
     <value>Startup sessions</value>
     <comment>Header for the "startup sessions" menu item. This navigates to a page that lets the user manage the curated set of shells (terminal sessions) that axan opens automatically at launch.</comment>

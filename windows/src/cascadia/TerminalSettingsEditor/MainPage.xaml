@@ -108,14 +108,6 @@
                 </muxc:NavigationViewItem.Icon>
             </muxc:NavigationViewItem>
 
-            <!--  axan D19: the global startup-sessions tree  -->
-            <muxc:NavigationViewItem x:Uid="Nav_StartupSessions"
-                                     Tag="StartupSessions_Nav">
-                <muxc:NavigationViewItem.Icon>
-                    <FontIcon Glyph="&#xE756;" />
-                </muxc:NavigationViewItem.Icon>
-            </muxc:NavigationViewItem>
-
             <muxc:NavigationViewItem x:Uid="Nav_Interaction"
                                      Tag="Interaction_Nav">
                 <muxc:NavigationViewItem.Icon>
@@ -175,6 +167,26 @@
                     <muxc:InfoBadge Style="{StaticResource NewInfoBadge}"
                                     Visibility="{x:Bind ExtensionsVM.DisplayBadge, Mode=OneWay}" />
                 </muxc:NavigationViewItem.InfoBadge>
+            </muxc:NavigationViewItem>
+
+            <!--
+                axan #38: the Sessions group. Startup sessions (D19, the global startup tree)
+                and Sidebar (every sidebar.* global, moved here from Appearance).
+            -->
+            <muxc:NavigationViewItemHeader x:Uid="Nav_SessionsGroup" />
+
+            <muxc:NavigationViewItem x:Uid="Nav_StartupSessions"
+                                     Tag="StartupSessions_Nav">
+                <muxc:NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE756;" />
+                </muxc:NavigationViewItem.Icon>
+            </muxc:NavigationViewItem>
+
+            <muxc:NavigationViewItem x:Uid="Nav_Sidebar"
+                                     Tag="Sidebar_Nav">
+                <muxc:NavigationViewItem.Icon>
+                    <FontIcon Glyph="&#xE90C;" />
+                </muxc:NavigationViewItem.Icon>
             </muxc:NavigationViewItem>
 
             <muxc:NavigationViewItemHeader x:Uid="Nav_Profiles" />
