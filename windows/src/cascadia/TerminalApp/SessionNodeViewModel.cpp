@@ -83,7 +83,7 @@ namespace winrt::TerminalApp::implementation
         if (transition || message != _subLabelMessage || restingChanged)
         {
             _subLabelMessage = message;
-            _subLabel = _computeSubLabel(now);
+            std::tie(_subLabel, _subLabelAge) = _computeSubLabel(now);
             _raiseStatePresentation();
         }
         return transition;
@@ -93,7 +93,7 @@ namespace winrt::TerminalApp::implementation
 
     void SessionNodeViewModel::_raiseStatePresentation()
     {
-        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"StateGlyphIcon", L"StateWord", L"StateWordVisibility", L"SlotVisibility", L"SlotToolTip", L"SubLabel", L"SubLabelVisibility", L"SubLabelOpacity", L"StateToolTip", L"StateToolTipVisibility" })
+        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"StateGlyphIcon", L"StateWord", L"StateWordVisibility", L"SlotVisibility", L"SlotToolTip", L"SubLabel", L"SubLabelAge", L"SubLabelVisibility", L"SubLabelOpacity", L"StateToolTip", L"StateToolTipVisibility" })
         {
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
         }
@@ -217,7 +217,7 @@ namespace winrt::TerminalApp::implementation
 
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SubLabelVisibility() const noexcept
     {
-        return _subLabel.empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+        return _subLabel.empty() && _subLabelAge.empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
     }
 
     hstring SessionNodeViewModel::FormatAge(winrt::Windows::Foundation::TimeSpan age)
@@ -239,34 +239,20 @@ namespace winrt::TerminalApp::implementation
         return hstring{ std::to_wstring(secs / 86400) + L"d" };
     }
 
-    // "<what> · <age>", with the message capped so the age stays visible at normal sidebar
-    // widths (the TextBlock would otherwise ellipsize the age away); the full message is in
-    // the tooltip.
-    static hstring _withAge(std::wstring what, winrt::Windows::Foundation::DateTime now, winrt::Windows::Foundation::DateTime since)
+    // {message, " · <age>"}. The row renders the two in separate columns: the age keeps its
+    // width at the end of the line and the message is ellipsized into whatever is left (the
+    // full message is in the tooltip).
+    static std::pair<hstring, hstring> _withAge(std::wstring what, winrt::Windows::Foundation::DateTime now, winrt::Windows::Foundation::DateTime since)
     {
-        constexpr size_t kMaxMessageChars = 24;
-        if (what.size() > kMaxMessageChars)
-        {
-            what.resize(kMaxMessageChars);
-            if (what.back() >= 0xD800 && what.back() <= 0xDBFF)
-            {
-                what.pop_back(); // don't split a surrogate pair
-            }
-            while (!what.empty() && what.back() == L' ')
-            {
-                what.pop_back();
-            }
-            what += L"\u2026";
-        }
         const auto age = now > since ? now - since : winrt::Windows::Foundation::TimeSpan{ 0 };
-        return hstring{ what + L" \u00B7 " + std::wstring{ SessionNodeViewModel::FormatAge(age) } };
+        return { hstring{ what }, hstring{ L" \u00B7 " + std::wstring{ SessionNodeViewModel::FormatAge(age) } } };
     }
 
     // Second line: what the state is about, plus how long it has been that way for the
     // states the user is looking for. Working shows only its message (no age); running
     // and idle show nothing, so their rows stay one line, unless a seen report is kept
     // (statusAfterSeen = keep): then it shows that report, muted, aged from when it arrived.
-    hstring SessionNodeViewModel::_computeSubLabel(winrt::Windows::Foundation::DateTime now) const
+    std::pair<hstring, hstring> SessionNodeViewModel::_computeSubLabel(winrt::Windows::Foundation::DateTime now) const
     {
         if (_isSeparator)
         {
@@ -276,7 +262,7 @@ namespace winrt::TerminalApp::implementation
         if (_state == L"working")
         {
             // axan: a working agent that sends no message shows its name instead.
-            return what.empty() && ShowsAgentName() ? _agentName : hstring{ what };
+            return { what.empty() && ShowsAgentName() ? _agentName : hstring{ what }, hstring{} };
         }
         if (!ShowsAge())
         {
@@ -289,7 +275,7 @@ namespace winrt::TerminalApp::implementation
             // a shell command) shows its name.
             if (ShowsAgentName())
             {
-                return _agentName;
+                return { _agentName, hstring{} };
             }
             return {};
         }
@@ -356,11 +342,21 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
-        auto text = _computeSubLabel(now);
+        auto [text, age] = _computeSubLabel(now);
+        const bool visibilityChanged = (_subLabel.empty() && _subLabelAge.empty()) != (text.empty() && age.empty());
         if (text != _subLabel)
         {
             _subLabel = std::move(text);
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SubLabel" });
+        }
+        if (age != _subLabelAge)
+        {
+            _subLabelAge = std::move(age);
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SubLabelAge" });
+        }
+        if (visibilityChanged)
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SubLabelVisibility" });
         }
     }
 

@@ -112,14 +112,31 @@
                                    Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
                                    TextTrimming="CharacterEllipsis"
                                    TextWrapping="NoWrap" />
-                        <TextBlock Margin="0,0,0,2"
-                                   FontSize="11"
-                                   Opacity="{x:Bind ((local:SessionNodeViewModel)Content).SubLabelOpacity, Mode=OneWay}"
-                                   Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
-                                   Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabel, Mode=OneWay}"
-                                   TextTrimming="CharacterEllipsis"
-                                   TextWrapping="NoWrap"
-                                   Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SubLabelVisibility, Mode=OneWay}" />
+                        <!--
+                            axan #32: message and age in two columns. The age (Auto) always
+                            gets its width; the message (*) ellipsizes into what is left.
+                            Left-aligned, so a short message keeps the age right beside it.
+                        -->
+                        <Grid Margin="0,0,0,2"
+                              HorizontalAlignment="Left"
+                              Opacity="{x:Bind ((local:SessionNodeViewModel)Content).SubLabelOpacity, Mode=OneWay}"
+                              Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SubLabelVisibility, Mode=OneWay}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0"
+                                       FontSize="11"
+                                       Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                                       Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabel, Mode=OneWay}"
+                                       TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap" />
+                            <TextBlock Grid.Column="1"
+                                       FontSize="11"
+                                       Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                                       Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabelAge, Mode=OneWay}"
+                                       TextWrapping="NoWrap" />
+                        </Grid>
                     </StackPanel>
                     <!--
                         axan: sidebar.stateGlyphs makes the slot a glyph, emoji or image, so it
@@ -549,13 +566,26 @@
                                                    Text="{x:Bind Label, Mode=OneWay}"
                                                    TextTrimming="CharacterEllipsis"
                                                    TextWrapping="NoWrap" />
-                                        <TextBlock FontSize="11"
-                                                   Foreground="{x:Bind LabelBrush, Mode=OneWay}"
-                                                   Opacity="0.7"
-                                                   Text="{x:Bind SubLabel, Mode=OneWay}"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   TextWrapping="NoWrap"
-                                                   Visibility="{x:Bind SubLabelVisibility, Mode=OneWay}" />
+                                        <!--  axan #32: message (*, ellipsized) + age (Auto, never trimmed)  -->
+                                        <Grid HorizontalAlignment="Left"
+                                              Opacity="0.7"
+                                              Visibility="{x:Bind SubLabelVisibility, Mode=OneWay}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                       FontSize="11"
+                                                       Foreground="{x:Bind LabelBrush, Mode=OneWay}"
+                                                       Text="{x:Bind SubLabel, Mode=OneWay}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="NoWrap" />
+                                            <TextBlock Grid.Column="1"
+                                                       FontSize="11"
+                                                       Foreground="{x:Bind LabelBrush, Mode=OneWay}"
+                                                       Text="{x:Bind SubLabelAge, Mode=OneWay}"
+                                                       TextWrapping="NoWrap" />
+                                        </Grid>
                                     </StackPanel>
                                 </Grid>
                             </DataTemplate>

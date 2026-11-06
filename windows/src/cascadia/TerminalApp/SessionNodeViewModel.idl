@@ -84,6 +84,9 @@ namespace TerminalApp
         // the row's right edge for working / running. SubLabel is the optional second line:
         // the 7501 msg (or the blocked kind / state word) plus an age for the states where
         // waiting time matters ("permission · 4m", "done · 25m"); "" collapses the line.
+        // SubLabel is the message alone and SubLabelAge the " · 4m" suffix ("" when the
+        // state shows no age): the row lays them out in two columns so the age is never
+        // trimmed and the message ellipsizes into the remaining width.
         // StateToolTip (under the label in the row tooltip) is the state, its kind, the
         // absolute local time it began and the full message; "" and Collapsed when idle.
         Windows.UI.Xaml.Visibility StateDotVisibility { get; };
@@ -101,6 +104,7 @@ namespace TerminalApp
         Windows.UI.Xaml.Visibility SlotVisibility { get; };
         String SlotToolTip { get; };
         String SubLabel { get; };
+        String SubLabelAge { get; };
         Windows.UI.Xaml.Visibility SubLabelVisibility { get; };
         // axan: 0.7 for a live state's second line, 0.45 for a kept (already seen) report
         // under sidebar.statusAfterSeen = keep. StateGlyph is the sidebar.stateGlyphs glyph for

@@ -7,6 +7,7 @@
 
 #include <atomic> // axan #430: LabelGeneration
 #include <functional> // axan #427: type-erased recompute unsubscribers
+#include <utility> // axan #32: _computeSubLabel {message, age}
 #include <unordered_map> // axan #30: SeenRevisions
 
 namespace winrt::TerminalApp::implementation
@@ -193,6 +194,7 @@ namespace winrt::TerminalApp::implementation
         // get for the same reason Icon() is; null when the slot is empty.
         winrt::Windows::UI::Xaml::Controls::IconElement StateGlyphIcon();
         hstring SubLabel() const noexcept { return _subLabel; }
+        hstring SubLabelAge() const noexcept { return _subLabelAge; }
         winrt::Windows::UI::Xaml::Visibility SubLabelVisibility() const noexcept;
         // axan: a kept (seen) report renders more muted than a live one.
         double SubLabelOpacity() const noexcept { return ShowsRetained() || ShowsAgentName() ? 0.45 : 0.7; }
@@ -212,7 +214,7 @@ namespace winrt::TerminalApp::implementation
         hstring SlotToolTip() const noexcept { return _slotExplanation; }
         hstring StateToolTip() const;
         winrt::Windows::UI::Xaml::Visibility StateToolTipVisibility() const noexcept;
-        // Recompute the age part of SubLabel. Called by the sidebar's 1s clock; a no-op (no
+        // Recompute SubLabelAge (and SubLabel). Called by the sidebar's 1s clock; a no-op (no
         // PropertyChanged) unless the visible text changed, and only states that show an
         // age (needs-you / done-unseen / error) ever change it.
         void RefreshAge(winrt::Windows::Foundation::DateTime now); // also a kept report's age
@@ -288,6 +290,7 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::Foundation::DateTime _lastActivity{};
         // axan #32
         hstring _subLabel;
+        hstring _subLabelAge; // " · 4m", or "" for a line with no age
         hstring _subLabelMessage;
         // axan: statusAfterSeen = keep (see SessionRestingState). _reportSince
         // is when the report named by _reportKey first appeared; it survives acknowledgement,
@@ -313,7 +316,7 @@ namespace winrt::TerminalApp::implementation
         hstring _sectionBadge;
         void _setDeEmphasised(bool value);
         winrt::Windows::UI::Color _textColor() const;
-        hstring _computeSubLabel(winrt::Windows::Foundation::DateTime now) const;
+        std::pair<hstring, hstring> _computeSubLabel(winrt::Windows::Foundation::DateTime now) const; // {message, age}
         void _raiseStatePresentation();
     };
 }
