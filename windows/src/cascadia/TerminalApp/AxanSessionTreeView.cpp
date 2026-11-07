@@ -1836,6 +1836,28 @@ namespace winrt::TerminalApp::implementation
         MenuFlyout flyout{};
         _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
         _AppendNeedsYouGroupToggle(flyout); // axan #34
+
+        // axan: Settings at the bottom, the same entry point as the titlebar app menu's
+        // Settings item (_SettingsButtonOnClick honours Alt/Shift the same way there).
+        {
+            MenuFlyoutItem settingsItem{};
+            settingsItem.Text(RS_(L"SettingsMenuItem"));
+            FontIcon fi{};
+            fi.FontFamily(WUX::Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" });
+            fi.Glyph(winrt::hstring{ L"\xE713" });
+            settingsItem.Icon(fi);
+            settingsItem.Click({ this, &TerminalPage::_SettingsButtonOnClick });
+            if (_settings)
+            {
+                if (const auto keyChord{ _settings.ActionMap().GetKeyBindingForAction(L"Terminal.OpenSettingsUI") })
+                {
+                    _SetAcceleratorForMenuItem(settingsItem, keyChord);
+                }
+            }
+            flyout.Items().Append(MenuFlyoutSeparator{});
+            flyout.Items().Append(settingsItem);
+        }
+
         _sessionNodeMenu = flyout;
         flyout.Closed([weak = get_weak()](auto&&, auto&&) {
             if (auto p{ weak.get() })
