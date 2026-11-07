@@ -34,8 +34,8 @@ All notable changes to axan are documented here.
   `0` turns it off); the focused row never is. `sidebar.idleEffects` picks how:
   `dim`, `smaller` (the default pair), `gray` (a coloured session loses its
   colour) and `collapse` (idle sessions under an expanded parent or section
-  header are tucked away while active ones stay in view; a hollow dot with the
-  hidden count sits in the chevron slot, clicking cycles tucked → fully
+  header are tucked away while active ones stay in view; a hollow dot sits in
+  the chevron slot with the hidden count in the tooltip, clicking cycles tucked → fully
   collapsed → expanded, a manual expand holds the node open until you collapse
   it again, and a tucked session reappears on activity), with a checkbox each
   on the Sidebar settings page. Windows only. (#31, #46)
@@ -106,9 +106,9 @@ All notable changes to axan are documented here.
 - Each font under "Icon fonts" also takes a weight (Normal, Semibold, Bold;
   `sidebar.iconFontWeight`, e.g. `{ "Segoe UI Historic": "bold" }`), so thin
   historic glyphs can be drawn with a synthesised bold, and a "Let large glyphs
-  overflow the icon box" switch (`sidebar.iconOverflow`) centres an oversized
-  glyph on its box and lets it spill into the padding instead of cropping it;
-  row height is unchanged either way. Windows only. (#48)
+  grow the row" switch (`sidebar.largeIconsGrowRow`) lets an oversized glyph
+  enlarge its icon box and the row instead of being cropped to the icon size.
+  Windows only. (#48)
 - A "Preview states" group on the Sidebar page explains the Preview state
   submenu and adds two switches: "Hoist previewed rows"
   (`sidebar.hoistPreview`) makes the "Needs you" group treat a previewed state

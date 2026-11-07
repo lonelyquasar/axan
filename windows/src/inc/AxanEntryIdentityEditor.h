@@ -79,8 +79,8 @@ namespace Axan::Ui::IdentityEditor
         winrt::hstring customName{ L"Custom color" };
         winrt::hstring customTooltip{ L"Custom color: hex or RGB" };
         winrt::hstring customBoxName{ L"Custom color value" };
-        winrt::hstring customPlaceholder{ L"#RRGGBB or rgb(r, g, b)" };
-        winrt::hstring customError{ L"Use #RRGGBB or rgb(r, g, b)" };
+        winrt::hstring customPlaceholder{ L"#RRGGBB or r, g, b" };
+        winrt::hstring customError{ L"Use #RRGGBB or r, g, b" };
         winrt::hstring applyLabel{ L"Apply color to" };
         winrt::hstring applyHint{ L"recolors glyph icons; image files keep their own colors" };
         winrt::hstring targetIcon{ L"Icon" };
@@ -337,15 +337,19 @@ namespace Axan::Ui::IdentityEditor
                 }
                 return;
             }
-            const auto parsed = Axan::SessionPalette::ParseCustomColor(trimmed);
-            if (!parsed)
+            const auto result = Axan::SessionPalette::ParseCustomColorDetailed(trimmed);
+            if (!result.color)
             {
+                // The parser's specific hint ("blue cannot be 400"); the host's generic
+                // string only if it gave none.
+                const winrt::hstring hint{ result.error.empty() ? std::wstring{ _options.strings.customError } : result.error };
+                _customError.Text(hint);
                 _customError.Visibility(WUX::Visibility::Visible);
-                Axan::Log::Debug("IdentityEditor", "custom color rejected", { { "issue", "50" }, { "input", winrt::to_string(text) }, { "kept", winrt::to_string(_fields.color) } });
+                Axan::Log::Debug("IdentityEditor", "custom color rejected", { { "issue", "50" }, { "input", winrt::to_string(text) }, { "hint", winrt::to_string(hint) }, { "kept", winrt::to_string(_fields.color) } });
                 return;
             }
             _customError.Visibility(WUX::Visibility::Collapsed);
-            const winrt::hstring value{ *parsed };
+            const winrt::hstring value{ *result.color };
             if (_customBox.Text() != value)
             {
                 _customBox.Text(value); // show the stored spelling

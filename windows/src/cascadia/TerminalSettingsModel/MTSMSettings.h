@@ -67,7 +67,7 @@ using IAxanDoubleMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstr
     X(double, SidebarIdleRowHeight, "sidebar.idleRowHeight", 24.0)                                                                                                                                  \
     X(IAxanDoubleMap, SidebarIconFontScale, "sidebar.iconFontScale", nullptr)                                                                                                                       \
     X(IAxanStringMap, SidebarIconFontWeight, "sidebar.iconFontWeight", nullptr)                                                                                                                     \
-    X(bool, SidebarIconOverflow, "sidebar.iconOverflow", false)                                                                                                                                     \
+    X(bool, SidebarLargeIconsGrowRow, "sidebar.largeIconsGrowRow", false)                                                                                                                           \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \

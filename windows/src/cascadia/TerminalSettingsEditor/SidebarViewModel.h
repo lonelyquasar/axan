@@ -120,12 +120,12 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         bool IsSidebarIconFontScaleSet(const winrt::hstring& family) const;
         void SetSidebarIconFontScale(const winrt::hstring& family, double value);
         void ResetSidebarIconFontScale(const winrt::hstring& family);
-        // axan #48: sidebar.iconFontWeight and sidebar.iconOverflow (see the idl)
+        // axan #48: sidebar.iconFontWeight and sidebar.largeIconsGrowRow (see the idl)
         winrt::hstring SidebarIconFontWeight(const winrt::hstring& family) const;
         void SetSidebarIconFontWeight(const winrt::hstring& family, const winrt::hstring& weight);
         bool IsSidebarIconFontSet(const winrt::hstring& family) const;
         void ResetSidebarIconFont(const winrt::hstring& family);
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarIconOverflow);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarLargeIconsGrowRow);
         // Not projected: icon strings in use outside the globals (the live sidebar's icon
         // overrides, every profile's icon), whose families the list also shows. MainPage sets
         // it before navigating.

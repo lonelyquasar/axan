@@ -381,6 +381,9 @@ namespace winrt::TerminalApp::implementation
         // axan #429: Shift+F10 / the menu key raise ContextRequested, not RightTapped — wire
         // the keyboard route to the same menu.
         SessionTree().ContextRequested({ get_weak(), &TerminalPage::_OnSessionTreeContextRequested });
+        // axan #49 (UAT): the hoisted group's rows get the same per-node menu.
+        NeedsYouList().RightTapped({ get_weak(), &TerminalPage::_OnNeedsYouRightTapped });
+        NeedsYouList().ContextRequested({ get_weak(), &TerminalPage::_OnNeedsYouContextRequested });
         // axan M13: when the sidebar's resolved theme changes, repaint node labels with the
         // theme-correct default text color (fires after ActualTheme actually settles).
         if (const auto sidebar{ SessionSidebar() })

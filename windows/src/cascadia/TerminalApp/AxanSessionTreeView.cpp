@@ -1744,7 +1744,7 @@ namespace winrt::TerminalApp::implementation
     // (each item captures the target node); _sessionNodeMenu only exists so a gesture that
     // raises both events can't open it twice.
     void TerminalPage::_ShowSessionNodeContextMenu(const MUX::Controls::TreeViewNode& node,
-                                                   const MUX::Controls::TreeViewItem& item,
+                                                   const FrameworkElement& item,
                                                    const std::optional<winrt::Windows::Foundation::Point>& position)
     {
         if (_sessionNodeMenu && _sessionNodeMenu.IsOpen())
@@ -3209,10 +3209,10 @@ namespace winrt::TerminalApp::implementation
             {
                 Axan::Log::Debug("TerminalPage", "row sizes applied", { { "labelFontSize", std::to_string(vm->LabelFontSize()) }, { "idleLabelFontSize", std::to_string(idleLabelFontSize) }, { "idleRowHeight", std::to_string(idleRowHeight) } });
             }
-            // axan #48: sidebar.iconOverflow; a no-op unless it changed.
-            if (vm->SetIconOverflow(globals.SidebarIconOverflow()))
+            // axan #48: sidebar.largeIconsGrowRow; a no-op unless it changed.
+            if (vm->SetLargeIconsGrowRow(globals.SidebarLargeIconsGrowRow()))
             {
-                Axan::Log::Debug("TerminalPage", "icon overflow applied", { { "iconOverflow", globals.SidebarIconOverflow() ? "true" : "false" } });
+                Axan::Log::Debug("TerminalPage", "large icons grow row applied", { { "largeIconsGrowRow", globals.SidebarLargeIconsGrowRow() ? "true" : "false" } });
             }
         }
         // axan: sidebar.idleEffects, resolved once per settings change (_IdleEffectsMask); a
@@ -4284,7 +4284,7 @@ namespace winrt::TerminalApp::implementation
             entry.host.ClearValue(UIElement::ClipProperty());
             if (reason)
             {
-                Axan::Log::Debug("SessionState", "state-line marquee stopped", { { "reason", reason }, { "row", entry.container ? "tree" : "hoisted" }, { "distance", std::to_string(entry.distance) } });
+                Axan::Log::Debug("SessionState", "state-line marquee stopped", { { "reason", reason }, { "row", entry.inTree ? "tree" : "hoisted" }, { "distance", std::to_string(entry.distance) } });
             }
         }
         entry.distance = 0;
@@ -4298,12 +4298,18 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
+        // axan #49 (UAT): every overflowing state line scrolls, tree rows and hoisted rows alike
+        // (no longer only the selected tree row).
         const bool enabled = _settings && _settings.GlobalSettings().SidebarStateLineMarquee();
-        const bool eligibleRow = !entry.container || entry.container.IsSelected();
         const double available = entry.host.ActualWidth();
         double full = 0;
         bool want = false;
-        if (enabled && eligibleRow && available > 0 && !entry.text.Text().empty() && _StateLineMotionAllowed())
+        if (enabled && available <= 0 && !entry.text.Text().empty())
+        {
+            // Not laid out yet; the post-Loaded re-check or the first SizeChanged retries.
+            Axan::Log::Debug("SessionState", "state-line marquee deferred: host not laid out", { { "reason", reason ? reason : "" }, { "row", entry.inTree ? "tree" : "hoisted" } });
+        }
+        if (enabled && available > 0 && !entry.text.Text().empty() && _StateLineMotionAllowed())
         {
             if (!_stateLineMeasure)
             {
@@ -4368,7 +4374,7 @@ namespace winrt::TerminalApp::implementation
         storyboard.Begin();
         entry.storyboard = storyboard;
         entry.distance = distance;
-        Axan::Log::Debug("SessionState", "state-line marquee started", { { "reason", reason ? reason : "" }, { "row", entry.container ? "tree" : "hoisted" }, { "textWidth", std::to_string(full) }, { "available", std::to_string(available) }, { "distance", std::to_string(distance) } });
+        Axan::Log::Debug("SessionState", "state-line marquee started", { { "reason", reason ? reason : "" }, { "row", entry.inTree ? "tree" : "hoisted" }, { "textWidth", std::to_string(full) }, { "available", std::to_string(available) }, { "distance", std::to_string(distance) } });
     }
 
     void TerminalPage::_RefreshStateLineMarquees(const char* reason)
@@ -4422,22 +4428,13 @@ namespace winrt::TerminalApp::implementation
             };
             entry.textToken = text.RegisterPropertyChangedCallback(TextBlock::TextProperty(), onTextChanged);
             entry.fontToken = text.RegisterPropertyChangedCallback(TextBlock::FontSizeProperty(), onTextChanged);
-            // A tree row scrolls only while selected; a hoisted row (a plain ListViewItem)
-            // always. MUX TreeViewItem derives from ListViewItem, so test it first.
+            // Tree row or hoisted row, for the log only (both scroll). MUX TreeViewItem derives
+            // from ListViewItem, so test it first.
             for (auto parent = WUX::Media::VisualTreeHelper::GetParent(host); parent; parent = WUX::Media::VisualTreeHelper::GetParent(parent))
             {
-                if (const auto item = parent.try_as<MUX::Controls::TreeViewItem>())
+                if (parent.try_as<MUX::Controls::TreeViewItem>())
                 {
-                    entry.container = item.as<WUX::Controls::Primitives::SelectorItem>();
-                    entry.selectedToken = entry.container.RegisterPropertyChangedCallback(WUX::Controls::Primitives::SelectorItem::IsSelectedProperty(), [weakThis{ get_weak() }, key](const DependencyObject&, const DependencyProperty&) {
-                        if (const auto page = weakThis.get())
-                        {
-                            if (const auto found = page->_stateLineMarquees.find(key); found != page->_stateLineMarquees.end())
-                            {
-                                page->_UpdateStateLineMarquee(found->second, "selection changed");
-                            }
-                        }
-                    });
+                    entry.inTree = true;
                     break;
                 }
                 if (parent.try_as<ListViewItem>())
@@ -4447,6 +4444,18 @@ namespace winrt::TerminalApp::implementation
             }
         }
         _UpdateStateLineMarquee(entry, "loaded");
+        // axan #49 (UAT): Loaded can arrive before the host's first arrange (ActualWidth 0) or
+        // before x:Bind has set the text, and a size that never changes again raises no
+        // SizeChanged; re-check once after the layout pass.
+        Dispatcher().RunAsync(winrt::Windows::UI::Core::CoreDispatcherPriority::Low, [weakThis{ get_weak() }, key]() {
+            if (const auto p = weakThis.get())
+            {
+                if (const auto found = p->_stateLineMarquees.find(key); found != p->_stateLineMarquees.end())
+                {
+                    p->_UpdateStateLineMarquee(found->second, "after load");
+                }
+            }
+        });
     }
 
     void TerminalPage::_OnStateLineHostUnloaded(const winrt::Windows::Foundation::IInspectable& sender, const RoutedEventArgs& /*args*/)
@@ -4465,10 +4474,6 @@ namespace winrt::TerminalApp::implementation
         _StopStateLineMarquee(entry, "unloaded");
         entry.text.UnregisterPropertyChangedCallback(TextBlock::TextProperty(), entry.textToken);
         entry.text.UnregisterPropertyChangedCallback(TextBlock::FontSizeProperty(), entry.fontToken);
-        if (entry.container)
-        {
-            entry.container.UnregisterPropertyChangedCallback(WUX::Controls::Primitives::SelectorItem::IsSelectedProperty(), entry.selectedToken);
-        }
         _stateLineMarquees.erase(it);
     }
 
@@ -4542,6 +4547,87 @@ namespace winrt::TerminalApp::implementation
                                             const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args)
     {
         _SelectTabForNodeVM(args.ClickedItem().try_as<winrt::TerminalApp::SessionNodeViewModel>());
+    }
+
+    // axan #49 (UAT): right-click (or Shift+F10 / the menu key) on a hoisted row opens the same
+    // per-node menu as the tree. The row's item is the same SessionNodeViewModel the tree node
+    // holds, so the node is found by matching Content; the flyout anchors to the hoisted row.
+    // Returns true when the menu was shown (or a resolve failure was logged and the event
+    // should still count as handled).
+    static ListViewItem _needsYouRowFrom(const winrt::Windows::Foundation::IInspectable& source)
+    {
+        for (auto current = source.try_as<DependencyObject>(); current; current = WUX::Media::VisualTreeHelper::GetParent(current))
+        {
+            if (const auto row = current.try_as<ListViewItem>())
+            {
+                return row;
+            }
+        }
+        return nullptr;
+    }
+
+    bool TerminalPage::_ShowNeedsYouRowMenu(const winrt::Windows::Foundation::IInspectable& originalSource,
+                                            const std::optional<winrt::Windows::Foundation::Point>& position,
+                                            const char* route)
+    {
+        const auto row = _needsYouRowFrom(originalSource);
+        if (!row)
+        {
+            Axan::Log::Debug("TerminalPage", "hoisted-row menu: no row under the event source", { { "route", route } });
+            return false;
+        }
+        const auto vm = NeedsYouList().ItemFromContainer(row).try_as<winrt::TerminalApp::SessionNodeViewModel>();
+        MUX::Controls::TreeViewNode node{ nullptr };
+        if (vm && SessionTree())
+        {
+            _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& candidate) {
+                if (!node && candidate.Content() == vm)
+                {
+                    node = candidate;
+                }
+            });
+        }
+        if (!node)
+        {
+            Axan::Log::Warn("TerminalPage", "hoisted-row menu: row did not resolve to a tree node; menu suppressed", { { "route", route }, { "hasViewModel", vm ? "true" : "false" } });
+            return true;
+        }
+        _ShowSessionNodeContextMenu(node, row, position);
+        Axan::Log::Debug("TerminalPage", "hoisted-row menu shown", { { "route", route }, { "label", winrt::to_string(vm.Label()) } });
+        return true;
+    }
+
+    void TerminalPage::_OnNeedsYouRightTapped(const winrt::Windows::Foundation::IInspectable& /*sender*/,
+                                              const WUX::Input::RightTappedRoutedEventArgs& args)
+    {
+        // Anchored to the row, at the pointer (row-relative).
+        const auto row = _needsYouRowFrom(args.OriginalSource());
+        const auto position = row ? std::optional<winrt::Windows::Foundation::Point>{ args.GetPosition(row) } : std::nullopt;
+        if (_ShowNeedsYouRowMenu(args.OriginalSource(), position, "right-tap"))
+        {
+            args.Handled(true);
+        }
+    }
+
+    void TerminalPage::_OnNeedsYouContextRequested(const winrt::Windows::Foundation::IInspectable& /*sender*/,
+                                                   const WUX::Input::ContextRequestedEventArgs& args)
+    {
+        // Keyboard invocations carry no position (the flyout anchors to the row); a pointer
+        // one that also raised RightTapped is a no-op thanks to the IsOpen guard in
+        // _ShowSessionNodeContextMenu.
+        std::optional<winrt::Windows::Foundation::Point> position;
+        if (const auto row = _needsYouRowFrom(args.OriginalSource()))
+        {
+            winrt::Windows::Foundation::Point point{};
+            if (args.TryGetPosition(row, point))
+            {
+                position = point;
+            }
+        }
+        if (_ShowNeedsYouRowMenu(args.OriginalSource(), position, "context-requested"))
+        {
+            args.Handled(true);
+        }
     }
 
     // The toggle (sidebar background / separator right-click menu). Persisted as the global

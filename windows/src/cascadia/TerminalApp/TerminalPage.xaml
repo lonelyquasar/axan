@@ -100,8 +100,9 @@
                         zero-size Canvas at the content's left edge, vertically centred, with the
                         marker placed back into the chevron slot (lower-right of the chevron).
                         A Canvas neither clips nor takes layout space. Not hit-testable, so the
-                        chevron underneath still takes the click. Hollow ring (not the filled
-                        unread dot) with the tucked count inside ("9+" cap), dot only when small.
+                        chevron underneath still takes the click. A 7px hollow ring (not the
+                        filled unread dot) centred about (-6, +5) from the content's left edge,
+                        i.e. on the chevron's lower-right corner. The count is in the tooltip.
                     -->
                     <Canvas Grid.Column="0"
                             Width="0"
@@ -110,44 +111,28 @@
                             VerticalAlignment="Center"
                             IsHitTestVisible="False"
                             Visibility="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckVisibility, Mode=OneWay}">
-                        <Grid Canvas.Left="-13"
-                              Canvas.Top="-2"
-                              Width="16"
-                              Height="16">
-                            <Ellipse Width="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckDotSize, Mode=OneWay}"
-                                     Height="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckDotSize, Mode=OneWay}"
-                                     HorizontalAlignment="Center"
-                                     VerticalAlignment="Center"
-                                     Fill="Transparent"
-                                     Opacity="0.85"
-                                     Stroke="{ThemeResource TreeViewItemForeground}"
-                                     StrokeThickness="1" />
-                            <TextBlock HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       FontSize="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeFontSize, Mode=OneWay}"
-                                       Foreground="{ThemeResource TreeViewItemForeground}"
-                                       IsTextScaleFactorEnabled="False"
-                                       LineHeight="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeFontSize, Mode=OneWay}"
-                                       LineStackingStrategy="BlockLineHeight"
-                                       Opacity="0.85"
-                                       Text="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadge, Mode=OneWay}"
-                                       TextLineBounds="Tight"
-                                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeVisibility, Mode=OneWay}" />
-                        </Grid>
+                        <Ellipse Canvas.Left="-9.5"
+                                 Canvas.Top="1.5"
+                                 Width="7"
+                                 Height="7"
+                                 Fill="Transparent"
+                                 Opacity="0.85"
+                                 Stroke="{ThemeResource TreeViewItemForeground}"
+                                 StrokeThickness="1" />
                     </Canvas>
                     <!--  axan: sidebar.iconSize sizes the icon box; the state dot stays 9px in its corner  -->
+                    <!--  axan #48: sidebar.largeIconsGrowRow makes IconBoxSize Auto (NaN), so a large glyph sizes the box and the row grows; off, the box is IconSize and clips  -->
                     <Grid Grid.Column="0"
-                          Width="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
-                          Height="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
+                          Width="{x:Bind ((local:SessionNodeViewModel)Content).IconBoxSize, Mode=OneWay}"
+                          Height="{x:Bind ((local:SessionNodeViewModel)Content).IconBoxSize, Mode=OneWay}"
+                          MinWidth="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
+                          MinHeight="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
                           Margin="0,0,8,0"
                           VerticalAlignment="Center">
-                        <!--  axan #48: sidebar.iconOverflow grows the presenter and pulls it back with a negative margin, so a large glyph is drawn whole over the padding without moving the row  -->
-                        <ContentPresenter Width="{x:Bind ((local:SessionNodeViewModel)Content).IconPresenterSize, Mode=OneWay}"
-                                          Height="{x:Bind ((local:SessionNodeViewModel)Content).IconPresenterSize, Mode=OneWay}"
-                                          Margin="{x:Bind ((local:SessionNodeViewModel)Content).IconPresenterMargin, Mode=OneWay}"
+                        <ContentPresenter Width="{x:Bind ((local:SessionNodeViewModel)Content).IconBoxSize, Mode=OneWay}"
+                                          Height="{x:Bind ((local:SessionNodeViewModel)Content).IconBoxSize, Mode=OneWay}"
                                           HorizontalContentAlignment="Center"
                                           VerticalContentAlignment="Center"
-                                          IsHitTestVisible="{x:Bind ((local:SessionNodeViewModel)Content).IconHitTestVisible, Mode=OneWay}"
                                           Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
                         <Ellipse Width="9"
                                  Height="9"
@@ -264,9 +249,10 @@
                                    Opacity="0.6"
                                    Text="{x:Bind ((local:SessionNodeViewModel)Content).CollapseGlyph, Mode=OneWay}" />
                         <!--
-                            axan #46: the idle-collapsed marker, same ring + count as a session
+                            axan #46: the idle-collapsed marker, the same 7px ring as a session
                             row's (see the session Grid above), overlaid on the chevron's
-                            lower-right from a zero-size Canvas so it takes no layout space.
+                            lower-right (centre about (9, +5)) from a zero-size Canvas so it takes
+                            no layout space. The count is in the header tooltip.
                         -->
                         <Canvas Grid.Column="0"
                                 Width="0"
@@ -275,30 +261,14 @@
                                 VerticalAlignment="Center"
                                 IsHitTestVisible="False"
                                 Visibility="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckVisibility, Mode=OneWay}">
-                            <Grid Canvas.Left="2"
-                                  Canvas.Top="-2"
-                                  Width="16"
-                                  Height="16">
-                                <Ellipse Width="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckDotSize, Mode=OneWay}"
-                                         Height="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckDotSize, Mode=OneWay}"
-                                         HorizontalAlignment="Center"
-                                         VerticalAlignment="Center"
-                                         Fill="Transparent"
-                                         Opacity="0.85"
-                                         Stroke="{ThemeResource TreeViewItemForeground}"
-                                         StrokeThickness="1" />
-                                <TextBlock HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           FontSize="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeFontSize, Mode=OneWay}"
-                                           Foreground="{ThemeResource TreeViewItemForeground}"
-                                           IsTextScaleFactorEnabled="False"
-                                           LineHeight="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeFontSize, Mode=OneWay}"
-                                           LineStackingStrategy="BlockLineHeight"
-                                           Opacity="0.85"
-                                           Text="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadge, Mode=OneWay}"
-                                           TextLineBounds="Tight"
-                                           Visibility="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeVisibility, Mode=OneWay}" />
-                            </Grid>
+                            <Ellipse Canvas.Left="5.5"
+                                     Canvas.Top="1.5"
+                                     Width="7"
+                                     Height="7"
+                                     Fill="Transparent"
+                                     Opacity="0.85"
+                                     Stroke="{ThemeResource TreeViewItemForeground}"
+                                     StrokeThickness="1" />
                         </Canvas>
                         <TextBlock Grid.Column="1"
                                    VerticalAlignment="Center"
@@ -639,18 +609,18 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <!--  axan #48: the icon box follows sidebar.iconSize (the Icon element already does) and sidebar.iconOverflow, like the tree's rows  -->
+                                    <!--  axan #48: the icon box follows sidebar.iconSize (the Icon element already does) and sidebar.largeIconsGrowRow, like the tree's rows  -->
                                     <Grid Grid.Column="0"
-                                          Width="{x:Bind IconSize, Mode=OneWay}"
-                                          Height="{x:Bind IconSize, Mode=OneWay}"
+                                          Width="{x:Bind IconBoxSize, Mode=OneWay}"
+                                          Height="{x:Bind IconBoxSize, Mode=OneWay}"
+                                          MinWidth="{x:Bind IconSize, Mode=OneWay}"
+                                          MinHeight="{x:Bind IconSize, Mode=OneWay}"
                                           Margin="0,0,8,0"
                                           VerticalAlignment="Center">
-                                        <ContentPresenter Width="{x:Bind IconPresenterSize, Mode=OneWay}"
-                                                          Height="{x:Bind IconPresenterSize, Mode=OneWay}"
-                                                          Margin="{x:Bind IconPresenterMargin, Mode=OneWay}"
+                                        <ContentPresenter Width="{x:Bind IconBoxSize, Mode=OneWay}"
+                                                          Height="{x:Bind IconBoxSize, Mode=OneWay}"
                                                           HorizontalContentAlignment="Center"
                                                           VerticalContentAlignment="Center"
-                                                          IsHitTestVisible="{x:Bind IconHitTestVisible, Mode=OneWay}"
                                                           Content="{x:Bind Icon, Mode=OneWay}" />
                                         <Ellipse Width="9"
                                                  Height="9"
@@ -868,14 +838,14 @@
                                             Orientation="Vertical"
                                             HorizontalAlignment="Center"
                                             Spacing="1">
-                                    <!--  axan #48: sized like the tree's icon (sidebar.iconSize / iconOverflow); the Viewbox scales the cell  -->
-                                    <ContentPresenter Width="{x:Bind IconPresenterSize, Mode=OneWay}"
-                                                      Height="{x:Bind IconPresenterSize, Mode=OneWay}"
-                                                      Margin="{x:Bind IconPresenterMargin, Mode=OneWay}"
+                                    <!--  axan #48: sized like the tree's icon (sidebar.iconSize / largeIconsGrowRow); the Viewbox scales the cell  -->
+                                    <ContentPresenter Width="{x:Bind IconBoxSize, Mode=OneWay}"
+                                                      Height="{x:Bind IconBoxSize, Mode=OneWay}"
+                                                      MinWidth="{x:Bind IconSize, Mode=OneWay}"
+                                                      MinHeight="{x:Bind IconSize, Mode=OneWay}"
                                                       HorizontalAlignment="Center"
                                                       HorizontalContentAlignment="Center"
                                                       VerticalContentAlignment="Center"
-                                                      IsHitTestVisible="{x:Bind IconHitTestVisible, Mode=OneWay}"
                                                       Content="{x:Bind Icon, Mode=OneWay}" />
                                     <TextBlock Text="{x:Bind local:SessionNodeViewModel.Initials(Label), Mode=OneWay}"
                                                FontSize="11"

@@ -589,10 +589,9 @@ namespace winrt::TerminalApp::implementation
         {
             winrt::Windows::UI::Xaml::FrameworkElement host{ nullptr };
             winrt::Windows::UI::Xaml::Controls::TextBlock text{ nullptr };
-            winrt::Windows::UI::Xaml::Controls::Primitives::SelectorItem container{ nullptr }; // the tree row's TreeViewItem; null in the hoisted group
+            bool inTree{ false }; // a tree row (else the hoisted group); for the log only
             int64_t textToken{ 0 };
             int64_t fontToken{ 0 };
-            int64_t selectedToken{ 0 };
             winrt::Windows::UI::Xaml::Media::Animation::Storyboard storyboard{ nullptr };
             double distance{ 0 }; // px the running storyboard scrolls (0 = not running)
         };
@@ -699,7 +698,13 @@ namespace winrt::TerminalApp::implementation
         void _OnSessionTreeContextRequested(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::ContextRequestedEventArgs& args);
         // axan M13/#429: the menu itself, shared by both routes. `position` is item-relative
         // when the gesture reported one (pointer), else the flyout anchors to the row (keyboard).
-        void _ShowSessionNodeContextMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const Microsoft::UI::Xaml::Controls::TreeViewItem& item, const std::optional<Windows::Foundation::Point>& position);
+        // axan #49 (UAT): `item` is the row the flyout anchors to, a TreeViewItem or (from the
+        // hoisted group) a ListViewItem.
+        void _ShowSessionNodeContextMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const Windows::UI::Xaml::FrameworkElement& item, const std::optional<Windows::Foundation::Point>& position);
+        // axan #49 (UAT): the same menu from a hoisted ("Needs you") row, mouse and keyboard.
+        void _OnNeedsYouRightTapped(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::RightTappedRoutedEventArgs& args);
+        void _OnNeedsYouContextRequested(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::ContextRequestedEventArgs& args);
+        bool _ShowNeedsYouRowMenu(const winrt::Windows::Foundation::IInspectable& originalSource, const std::optional<Windows::Foundation::Point>& position, const char* route);
         // axan: the node menu's "Preview state" submenu. id = a kStatePreviews id, "" = clear.
         void _AppendStatePreviewSubMenu(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout, const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         void _PreviewNodeState(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, std::wstring_view id);

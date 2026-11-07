@@ -99,8 +99,8 @@ namespace Microsoft.Terminal.Settings.Editor
         void SetSidebarIconFontWeight(String family, String weight);
         Boolean IsSidebarIconFontSet(String family);
         void ResetSidebarIconFont(String family);
-        // axan #48: sidebar.iconOverflow, a glyph larger than the icon box is drawn whole over
-        // the row padding instead of cut at the box edge. Default false.
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarIconOverflow);
+        // axan #48: sidebar.largeIconsGrowRow, a glyph larger than the icon box grows the box
+        // and the row gets taller to fit; off clips it to the box. Default false.
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarLargeIconsGrowRow);
     }
 }

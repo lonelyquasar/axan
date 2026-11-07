@@ -267,12 +267,10 @@ namespace winrt::TerminalApp::implementation
         bool SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize, double idleLabelFontSize, double idleRowHeight);
         // Re-raise Icon and StateGlyphIcon so both are rebuilt (sidebar.iconFontScale changed).
         void RefreshIcons();
-        // axan #48: sidebar.iconOverflow, pushed by the page like the sizes (see the idl).
+        // axan #48: sidebar.largeIconsGrowRow, pushed by the page like the sizes (see the idl).
         // Returns true if it changed.
-        bool SetIconOverflow(bool overflow);
-        double IconPresenterSize() const noexcept;
-        winrt::Windows::UI::Xaml::Thickness IconPresenterMargin() const noexcept;
-        bool IconHitTestVisible() const noexcept { return !_iconOverflow; }
+        bool SetLargeIconsGrowRow(bool grow);
+        double IconBoxSize() const noexcept;
         double RowOpacity() const noexcept { return _idleEffect(Axan::IdleEffects::kDim) ? 0.55 : 1.0; }
         double RowMinHeight() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? _idleRowHeight : _rowHeightPx; }
         // Returns true if the mask changed.
@@ -309,10 +307,6 @@ namespace winrt::TerminalApp::implementation
         // Both pushed by TerminalPage::_RecomputeSections via SetFold.
         uint32_t IdleTuckedCount() const noexcept { return _idleTucked; }
         winrt::Windows::UI::Xaml::Visibility IdleTuckVisibility() const noexcept;
-        hstring IdleTuckBadge() const;
-        winrt::Windows::UI::Xaml::Visibility IdleTuckBadgeVisibility() const noexcept;
-        double IdleTuckDotSize() const noexcept;
-        double IdleTuckBadgeFontSize() const noexcept;
         hstring FoldToolTip() const noexcept { return _foldToolTip; }
         winrt::Windows::UI::Xaml::Visibility FoldToolTipVisibility() const noexcept;
         winrt::Windows::Foundation::IInspectable HeaderToolTip() const;
@@ -389,7 +383,6 @@ namespace winrt::TerminalApp::implementation
         // axan #46
         uint32_t _idleTucked{ 0 };
         hstring _foldToolTip;
-        bool _idleTuckShowsBadge() const noexcept { return _stateLineFontSize >= 9.0; }
         void _setDeEmphasised(bool value);
         winrt::Windows::UI::Color _textColor() const;
         std::pair<hstring, hstring> _computeSubLabel(winrt::Windows::Foundation::DateTime now) const; // {message, age}
@@ -398,7 +391,7 @@ namespace winrt::TerminalApp::implementation
         double _labelFontSize{ 14.0 };
         double _stateLineFontSize{ 11.0 };
         double _iconSize{ 16.0 };
-        bool _iconOverflow{ false }; // axan #48
+        bool _largeIconsGrowRow{ false }; // axan #48
         double _stateGlyphSize{ 12.0 };
         double _idleLabelFontSize{ 12.0 }; // axan #47
         double _idleRowHeight{ 24.0 }; // axan #47

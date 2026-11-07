@@ -112,9 +112,9 @@
             <StackPanel x:Name="IconFontsPanel"
                         Spacing="8" />
         </local:SettingContainer>
-        <!--  axan #48: sidebar.iconOverflow, draw a large glyph whole over the row padding instead of cutting it at the icon box  -->
-        <local:SettingContainer x:Uid="Globals_SidebarIconOverflow">
-            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarIconOverflow, Mode=TwoWay}"
+        <!--  axan #48: sidebar.largeIconsGrowRow, a large glyph grows its icon box and the row instead of being clipped  -->
+        <local:SettingContainer x:Uid="Globals_SidebarLargeIconsGrowRow">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarLargeIconsGrowRow, Mode=TwoWay}"
                           Style="{StaticResource ToggleSwitchInExpanderStyle}" />
         </local:SettingContainer>
 

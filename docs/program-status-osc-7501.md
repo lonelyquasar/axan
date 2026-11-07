@@ -244,7 +244,7 @@ All are in `settings.json` at the root, next to `startupSessions`, and on the **
 | Key | Default | Meaning |
 |---|---|---|
 | `sidebar.idleAfterMinutes` | `15` | Minutes idle, with no input or output, before a row is de-emphasised. `0` turns it off |
-| `sidebar.idleEffects` | `["dim", "smaller"]` | Any of `dim`, `smaller`, `gray` (a coloured row turns gray), `collapse` (idle rows under an expanded section header or parent row are tucked away while active ones stay; a hollow dot with the hidden count shows in the chevron slot; clicking cycles idle-collapsed → fully collapsed → expanded, and a manual expand holds the node open until it is collapsed again). `[]` = no visible effect |
+| `sidebar.idleEffects` | `["dim", "smaller"]` | Any of `dim`, `smaller`, `gray` (a coloured row turns gray), `collapse` (idle rows under an expanded section header or parent row are tucked away while active ones stay; a hollow dot shows in the chevron slot, with the hidden count in the tooltip; clicking cycles idle-collapsed → fully collapsed → expanded, and a manual expand holds the node open until it is collapsed again). `[]` = no visible effect |
 | `sidebar.needsYouGroup` | `false` | Show the hoisted group above the tree |
 | `sidebar.hoistStates` | `["blocked", "error", "done"]` | States that put a row in the hoisted group: `idle`, `working`, `blocked`, `done`, `error`, `running`, `permission`, `question`, `auth` |
 | `sidebar.hoistPreview` | `false` | A previewed row is hoisted by its previewed state instead of its real one (**Preview state** menu) |
@@ -259,7 +259,7 @@ All are in `settings.json` at the root, next to `startupSessions`, and on the **
 | `sidebar.iconSize` | `16` | Size of a row's icon box in pixels, 8–48. The glyph is drawn at 3/4 of it |
 | `sidebar.iconFontScale` | unset | Per-font-family icon scale, for example `{ "Segoe UI Historic": 1.5 }`. A family left out keeps its built-in scale. Values are clamped to 0.5–3 |
 | `sidebar.iconFontWeight` | unset | Per-font-family icon weight, `"normal"`, `"semibold"` or `"bold"`, for example `{ "Segoe UI Historic": "bold" }`. A font with no bold face, such as Segoe UI Historic, gets a synthesised one. A family left out, or an unknown value, draws at normal |
-| `sidebar.iconOverflow` | `false` | Draw a glyph larger than its icon box whole, centred on the box, instead of cutting it at the box edge. The row height is unchanged; the glyph may overlap the row's padding |
+| `sidebar.largeIconsGrowRow` | `false` | A glyph larger than its icon box grows the box to the glyph's full size, and the row gets taller to fit. Off clips the glyph to the icon box. Image icons stay at `sidebar.iconSize` either way |
 | `sidebar.idleLabelFontSize` | `12` | Font size of an idle row's name while the `smaller` idle effect is on, 8–32. This is an absolute size and is not clamped to the active row size |
 | `sidebar.idleRowHeight` | `24` | Minimum height in pixels of an idle row while the `smaller` idle effect is on, 16–64. This is an absolute size and is not clamped to the active row size |
 

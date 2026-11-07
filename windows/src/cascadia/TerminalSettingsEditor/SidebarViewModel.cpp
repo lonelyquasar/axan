@@ -457,7 +457,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _StoreIconFontScales(map);
     }
 
-    // ---- axan #48: sidebar.iconFontWeight / sidebar.iconOverflow ----
+    // ---- axan #48: sidebar.iconFontWeight ----
     //
     // Same family-name rules as the scales above. A value is stored by its canonical name
     // (AxanGlyphWeight::WeightName); "normal" is stored as "no override".

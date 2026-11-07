@@ -130,10 +130,9 @@ namespace Microsoft.Terminal.Settings.Model
         // with an unknown value, draws at Normal; a font with no bold face gets a synthesised
         // one. Unset by default.
         INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA String>, SidebarIconFontWeight);
-        // axan #48: a glyph scaled past the icon box is drawn whole, centred on the box, and
-        // may spill into the row's padding (the row height is unchanged). Default false: the
-        // glyph is cut at the box edge.
-        INHERITABLE_SETTING(Boolean, SidebarIconOverflow);
+        // axan #48: a glyph scaled past the icon box grows the box to the glyph's full size and
+        // the row gets taller to fit. Default false: the glyph is clipped to the icon box.
+        INHERITABLE_SETTING(Boolean, SidebarLargeIconsGrowRow);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

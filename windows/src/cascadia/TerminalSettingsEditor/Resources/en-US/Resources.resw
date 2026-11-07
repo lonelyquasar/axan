@@ -1004,13 +1004,13 @@
     <value>{0} weight</value>
     <comment>axan #48: Accessible name of a font family's icon weight drop-down. {0} is the font family name, e.g. "Segoe UI Historic".</comment>
   </data>
-  <data name="Globals_SidebarIconOverflow.Header" xml:space="preserve">
-    <value>Let large glyphs overflow the icon box</value>
-    <comment>axan #48: Header for a toggle: a sidebar icon glyph scaled larger than its box is drawn whole instead of being cut at the box edge.</comment>
+  <data name="Globals_SidebarLargeIconsGrowRow.Header" xml:space="preserve">
+    <value>Let large glyphs grow the row</value>
+    <comment>axan #48: Header for a toggle: a sidebar icon glyph scaled larger than its box enlarges the box and makes the row taller, instead of being clipped.</comment>
   </data>
-  <data name="Globals_SidebarIconOverflow.HelpText" xml:space="preserve">
-    <value>The row height is unchanged; glyphs may overlap the padding.</value>
-    <comment>axan #48: A description for the "overflow the icon box" setting. Presented near "Globals_SidebarIconOverflow.Header".</comment>
+  <data name="Globals_SidebarLargeIconsGrowRow.HelpText" xml:space="preserve">
+    <value>The icon box expands to the glyph's full size and the row gets taller to fit. Off clips the glyph to the icon box.</value>
+    <comment>axan #48: A description for the "large glyphs grow the row" setting. Presented near "Globals_SidebarLargeIconsGrowRow.Header".</comment>
   </data>
   <data name="Sidebar_GlyphsHeader.Text" xml:space="preserve">
     <value>Status glyphs</value>
