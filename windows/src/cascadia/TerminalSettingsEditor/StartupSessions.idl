@@ -9,5 +9,23 @@ namespace Microsoft.Terminal.Settings.Editor
     {
         StartupSessions();
         StartupSessionsViewModel ViewModel { get; };
+
+        // axan #38: list-row formatting for the row template's function bindings (the row
+        // VM carries only stored fields; these derive the visible text from them).
+        // The row's visible text: the name, "(default name)" for an unnamed session, or
+        // the kind (+ a height hint) for an unlabelled separator.
+        static String RowLabel(String name, Boolean isSeparator, String separatorStyle, Double height);
+        // Muted when the row shows a placeholder rather than a user-given name.
+        static Double RowLabelOpacity(String name);
+        // Labelled separators read as section headers.
+        static Windows.UI.Text.FontWeight RowLabelWeight(String name, Boolean isSeparator);
+        // A labelled separator's collapse state (display only; the editor list never
+        // collapses): chevron right = starts collapsed, down = starts expanded. "" otherwise.
+        static String SeparatorChevron(String name, Boolean collapsed);
+        // The rule after a separator's caption: drawn for line separators, not for spaces.
+        static Windows.UI.Xaml.Visibility SeparatorRuleVisibility(String separatorStyle);
+        // Narrator: "<name>, level <n>" for sessions, "Separator: <label>" for separators.
+        static String RowAccessibleName(String name, Boolean isSeparator, Int32 depth);
+        static Windows.UI.Xaml.Automation.Peers.AutomationHeadingLevel RowHeadingLevel(Boolean isSeparator);
     }
 }
