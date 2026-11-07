@@ -590,6 +590,7 @@ namespace winrt::TerminalApp::implementation
             winrt::Windows::UI::Xaml::FrameworkElement host{ nullptr };
             winrt::Windows::UI::Xaml::Controls::TextBlock text{ nullptr };
             bool inTree{ false }; // a tree row (else the hoisted group); for the log only
+            bool starting{ false }; // axan #49 (UAT): set while a start runs; its own SizeChanged is ignored
             int64_t textToken{ 0 };
             int64_t fontToken{ 0 };
             winrt::Windows::UI::Xaml::Media::Animation::Storyboard storyboard{ nullptr };

@@ -4344,9 +4344,8 @@ namespace winrt::TerminalApp::implementation
         }
         if (wasRunning)
         {
-            // Back to the template's layout exactly: no explicit width / alignment / transform
-            // on the TextBlock, no clip on the host, the ellipsis restored.
-            entry.text.ClearValue(FrameworkElement::WidthProperty());
+            // Back to the template's state: the ellipsis restored, no transform or (running-only)
+            // alignment on the TextBlock, no clip on the host. The marquee never sets a Width.
             entry.text.ClearValue(FrameworkElement::HorizontalAlignmentProperty());
             entry.text.ClearValue(UIElement::RenderTransformProperty());
             entry.text.TextTrimming(TextTrimming::CharacterEllipsis);
@@ -4409,19 +4408,25 @@ namespace winrt::TerminalApp::implementation
             clip.Rect({ 0, 0, static_cast<float>(available), static_cast<float>(entry.host.ActualHeight()) });
             entry.host.Clip(clip);
         };
-        if (entry.storyboard && std::abs(entry.distance - distance) < 0.5)
+        if (entry.storyboard && std::abs(entry.distance - distance) < 2.0)
         {
-            setClip(); // already scrolling this text over this width; follow a height change
+            // Already scrolling this text over (nearly) this width: keep running, follow the
+            // host's current size with the clip.
+            setClip();
             return;
         }
+        // axan #49 (UAT): re-entrancy guard; a SizeChanged raised while starting is ours.
+        entry.starting = true;
+        const auto clearStarting = wil::scope_exit([&]() { entry.starting = false; });
         _StopStateLineMarquee(entry, nullptr);
 
-        // axan #49 (UAT): Left, not the default Stretch: an element with an explicit Width
-        // wider than its cell is centred by Stretch, which put the text's start left of the
-        // clip ("iew: waiting for"). Left pins x = 0 of the text to x = 0 of the host.
+        // axan #49 (UAT): the marquee never changes layout. No Width on the TextBlock (an
+        // explicit Width grew the content-sized host, which raised SizeChanged and restarted
+        // the marquee about every 10 ms). A NoWrap TextBlock with TextTrimming None draws its
+        // whole line past its arrange bounds; the host's clip crops it, and the transform
+        // slides it. Left (only while running) pins the text's start to x = 0 of the host.
         entry.text.HorizontalAlignment(WUX::HorizontalAlignment::Left); // qualified: TerminalPage has a HorizontalAlignment() member
         entry.text.TextTrimming(TextTrimming::None);
-        entry.text.Width(full);
         // A fresh transform at X = 0, so the first pause shows the text flush left.
         WUX::Media::TranslateTransform transform;
         transform.X(0);
@@ -4553,17 +4558,36 @@ namespace winrt::TerminalApp::implementation
         _stateLineMarquees.erase(it);
     }
 
-    void TerminalPage::_OnStateLineHostSizeChanged(const winrt::Windows::Foundation::IInspectable& sender, const SizeChangedEventArgs& /*args*/)
+    void TerminalPage::_OnStateLineHostSizeChanged(const winrt::Windows::Foundation::IInspectable& sender, const SizeChangedEventArgs& args)
     {
         const auto host = sender.try_as<FrameworkElement>();
         if (!host)
         {
             return;
         }
-        if (const auto it = _stateLineMarquees.find(_stateLineHostKey(host)); it != _stateLineMarquees.end())
+        const auto it = _stateLineMarquees.find(_stateLineHostKey(host));
+        if (it == _stateLineMarquees.end())
         {
-            _UpdateStateLineMarquee(it->second, "size changed");
+            return;
         }
+        auto& entry = it->second;
+        if (entry.starting)
+        {
+            return; // axan #49 (UAT): raised by our own start; never restart from inside it
+        }
+        // axan #49 (UAT): a sub-pixel width change (or a height-only one) only refreshes the
+        // clip of a running marquee; it never re-evaluates or restarts it.
+        if (std::abs(args.NewSize().Width - args.PreviousSize().Width) < 1.0)
+        {
+            if (entry.storyboard)
+            {
+                WUX::Media::RectangleGeometry clip;
+                clip.Rect({ 0, 0, static_cast<float>(host.ActualWidth()), static_cast<float>(host.ActualHeight()) });
+                host.Clip(clip);
+            }
+            return;
+        }
+        _UpdateStateLineMarquee(entry, "size changed");
     }
 
     // axan #34: the hoist override stored on a startup entry ("" when the entry is unknown,
