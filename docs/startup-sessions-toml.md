@@ -117,9 +117,9 @@ In order of preference:
 | `$user`, `$host`, `$hostname` | Windows user name, computer name |
 | `${file:path}` | First line of a file (`~` allowed) |
 
-The directory-based variables depend on the shell reporting its directory, which axan sets up automatically for a **plain** PowerShell, cmd or WSL shell. They stay empty until the first prompt, outside a git repo (for `$repo` and `$branch`), and always for a PowerShell or WSL row with a `command`, because axan does not inject its reporting into a shell started for a command.
+The directory-based variables use only the directory the shell reports (OSC 9;9); the row's `directory` is not used as a fallback. axan sets up that reporting automatically for a **plain** PowerShell, cmd or WSL shell, at every prompt. So the variables are empty until the first prompt, and `$repo` and `$branch` are empty outside a git repo. A PowerShell or WSL row with a `command` gets no reporting from axan, so its labels stay empty unless something else sends OSC 9;9: the program itself, or your own PowerShell profile or `.bashrc` once a prompt appears after the command exits. A cmd row with a `command` does get axan's reporting, but only from cmd's prompt, which appears after the command exits.
 
-Recommendation: **use a literal name** (`name = "billing-api"`) for any row with a `command`, and wherever you want the label fixed. `"$repo"` or `"$repo $branch"` suit plain shell rows that move between repos. The Startup sessions list shows each row as `name · folder`, using the last segment of `directory` and leaving it off when it equals the name, so a literal repo name stays readable there.
+Recommendation: **use a literal name** (`name = "billing-api"`) for any row with a `command`, and wherever you want the label fixed. A plain shell row is where `$repo` works reliably. `"$repo"` or `"$repo $branch"` suit plain shell rows that move between repos. The Startup sessions list shows each row as `name · folder`, using the last segment of `directory` and leaving it off when it equals the name, so a literal repo name stays readable there.
 
 ## 5. Icons
 
@@ -223,7 +223,7 @@ id           = "778d428f-964d-4338-83b6-18157bca226e"     # referenced by its ch
 parent-id    = ""                                         # root level, under the Contoso header
 profile      = "61c54bbd-c2c6-5271-96e7-009a87ff44bf"     # stock Windows PowerShell GUID
 profile-name = "Windows PowerShell"                       # name fallback if the GUID is missing
-name         = "billing-api"                              # literal label: rows with a command get no live cwd
+name         = "billing-api"                              # literal label: axan reports no cwd for a command row
 directory    = '~\src\billing-api'                        # literal string, so backslashes stay as typed
 command      = "claude"                                   # runs as: powershell -NoExit -Command "claude"
 icon         = "robot"                                    # Segoe Fluent Icons glyph name
