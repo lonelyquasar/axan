@@ -53,6 +53,14 @@ namespace Microsoft.Terminal.Settings.Editor
         void ResetSidebarHoistStates();
         String SidebarHoistStatesSummary { get; };
 
+        // axan: sidebar.idleEffects, what an idle row does (AxanIdleEffects.h names: dim,
+        // smaller, gray, collapse). Unset = ["dim", "smaller"]. Summary is the expander's
+        // one-line current value.
+        Boolean SidebarIdleEffectEnabled(String name);
+        void SetSidebarIdleEffectEnabled(String name, Boolean enabled);
+        void ResetSidebarIdleEffects();
+        String SidebarIdleEffectsSummary { get; };
+
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarMatchesProfileTransparency);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Int32, SidebarIdleAfterMinutes); // axan #31
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarNeedsYouGroup); // axan #34

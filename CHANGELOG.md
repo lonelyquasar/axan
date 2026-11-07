@@ -30,8 +30,13 @@ All notable changes to axan are documented here.
   nothing more urgent is there, including while it works without a message
   (the terminal title Claude Code sets from `claude --name`;
   `sidebar.showAgentName`, default on). Windows only.
-- Idle rows are dimmed and shrunk after `sidebar.idleAfterMinutes` (default 15;
-  `0` turns it off); the focused row is never dimmed. Windows only. (#31)
+- Idle rows are de-emphasised after `sidebar.idleAfterMinutes` (default 15;
+  `0` turns it off); the focused row never is. `sidebar.idleEffects` picks how:
+  `dim`, `smaller` (the default pair), `gray` (a coloured session loses its
+  colour) and `collapse` (a session folds its child sessions away once they're
+  all idle, and reopens on activity), with a checkbox each on the Sidebar
+  settings page. Windows only. (#31)
+- The right-click menu on empty sidebar space has a Settings item. Windows only.
 - Optional "Needs you" group above the session tree
   (`sidebar.needsYouGroup`, default off) listing sessions that are blocked,
   errored or finished and unseen, longest-waiting first. Windows only. (#34)

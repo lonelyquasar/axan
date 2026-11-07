@@ -52,6 +52,15 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void ResetSidebarHoistStates();
         winrt::hstring SidebarHoistStatesSummary() const;
 
+        // axan: sidebar.idleEffects (see the idl)
+        bool SidebarIdleEffectEnabled(const winrt::hstring& name) const;
+        void SetSidebarIdleEffectEnabled(const winrt::hstring& name, bool enabled);
+        void ResetSidebarIdleEffects();
+        winrt::hstring SidebarIdleEffectsSummary() const;
+        // The localized checkbox label / help for an effect name ("" for an unknown one).
+        static winrt::hstring IdleEffectLabel(std::wstring_view name);
+        static winrt::hstring IdleEffectHelp(std::wstring_view name);
+
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarMatchesProfileTransparency);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarIdleAfterMinutes); // axan #31
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarNeedsYouGroup); // axan #34

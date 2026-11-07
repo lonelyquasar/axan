@@ -11,6 +11,7 @@
 #include <LibraryResources.h>
 #include <AxanStateGlyphs.h> // sidebar.stateGlyphs keys / defaults / resolution
 #include <AxanHoistRule.h> // axan #34: sidebar.hoistStates
+#include <AxanIdleEffects.h> // axan: sidebar.idleEffects
 
 using namespace winrt;
 using namespace winrt::Windows::UI::Xaml;
@@ -70,6 +71,108 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     winrt::hstring SidebarViewModel::SidebarHoistStatesSummary() const
     {
         return winrt::hstring{ Axan::HoistRule::Describe(_hoistMask(_GlobalSettings)) };
+    }
+
+    // ---- axan: sidebar.idleEffects ----
+    // Same storage shape as sidebar.hoistStates: an array of names, unset = the default.
+
+    static Axan::IdleEffects::Mask _idleEffectsMask(const Model::GlobalAppSettings& globals)
+    {
+        if (!globals.HasSidebarIdleEffects() || !globals.SidebarIdleEffects())
+        {
+            return Axan::IdleEffects::kDefault;
+        }
+        return Axan::IdleEffects::MaskFromNames(globals.SidebarIdleEffects());
+    }
+
+    winrt::hstring SidebarViewModel::IdleEffectLabel(std::wstring_view name)
+    {
+        if (name == L"dim")
+        {
+            return RS_(L"Globals_SidebarIdleEffectDim");
+        }
+        if (name == L"smaller")
+        {
+            return RS_(L"Globals_SidebarIdleEffectSmaller");
+        }
+        if (name == L"gray")
+        {
+            return RS_(L"Globals_SidebarIdleEffectGray");
+        }
+        if (name == L"collapse")
+        {
+            return RS_(L"Globals_SidebarIdleEffectCollapse");
+        }
+        return {};
+    }
+
+    winrt::hstring SidebarViewModel::IdleEffectHelp(std::wstring_view name)
+    {
+        if (name == L"dim")
+        {
+            return RS_(L"Globals_SidebarIdleEffectDimHelp");
+        }
+        if (name == L"smaller")
+        {
+            return RS_(L"Globals_SidebarIdleEffectSmallerHelp");
+        }
+        if (name == L"gray")
+        {
+            return RS_(L"Globals_SidebarIdleEffectGrayHelp");
+        }
+        if (name == L"collapse")
+        {
+            return RS_(L"Globals_SidebarIdleEffectCollapseHelp");
+        }
+        return {};
+    }
+
+    bool SidebarViewModel::SidebarIdleEffectEnabled(const winrt::hstring& name) const
+    {
+        const auto bit = Axan::IdleEffects::Bit(name);
+        return bit != 0 && (_idleEffectsMask(_GlobalSettings) & bit) != 0;
+    }
+
+    void SidebarViewModel::SetSidebarIdleEffectEnabled(const winrt::hstring& name, bool enabled)
+    {
+        const auto bit = Axan::IdleEffects::Bit(name);
+        if (bit == 0)
+        {
+            return;
+        }
+        const auto before = _idleEffectsMask(_GlobalSettings);
+        const auto after = static_cast<Axan::IdleEffects::Mask>(enabled ? (before | bit) : (before & ~bit));
+        if (after == before && _GlobalSettings.HasSidebarIdleEffects())
+        {
+            return;
+        }
+        std::vector<winrt::hstring> names;
+        for (const auto n : Axan::IdleEffects::NamesFromMask(after))
+        {
+            names.emplace_back(n);
+        }
+        _GlobalSettings.SidebarIdleEffects(winrt::single_threaded_vector<winrt::hstring>(std::move(names)));
+        _NotifyChanges(L"SidebarIdleEffectsSummary");
+    }
+
+    void SidebarViewModel::ResetSidebarIdleEffects()
+    {
+        _GlobalSettings.ClearSidebarIdleEffects();
+        _NotifyChanges(L"SidebarIdleEffectsSummary");
+    }
+
+    winrt::hstring SidebarViewModel::SidebarIdleEffectsSummary() const
+    {
+        std::wstring out;
+        for (const auto n : Axan::IdleEffects::NamesFromMask(_idleEffectsMask(_GlobalSettings)))
+        {
+            if (!out.empty())
+            {
+                out += L", ";
+            }
+            out += IdleEffectLabel(n);
+        }
+        return out.empty() ? RS_(L"Globals_SidebarIdleEffectsNone") : winrt::hstring{ out };
     }
 
     // ---- axan: sidebar.stateGlyphs ----

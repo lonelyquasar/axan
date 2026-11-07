@@ -109,6 +109,22 @@
         </local:SettingContainer>
 
         <!--
+            axan: sidebar.idleEffects, what a de-emphasised row does (dim, smaller, gray,
+            collapse). One checkbox per effect, built in code-behind
+            (Sidebar::_BuildIdleEffectBoxes); each box's tooltip explains its effect.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarIdleEffects"
+                                CurrentValue="{x:Bind ViewModel.SidebarIdleEffectsSummary, Mode=OneWay}"
+                                Style="{StaticResource ExpanderSettingContainerStyle}">
+            <StackPanel Spacing="8">
+                <VariableSizedWrapGrid x:Name="IdleEffectsPanel"
+                                       Orientation="Horizontal" />
+                <HyperlinkButton x:Uid="Globals_SidebarIdleEffectsReset"
+                                 Click="IdleEffectsReset_Click" />
+            </StackPanel>
+        </local:SettingContainer>
+
+        <!--
             The header carries an info button: its tooltip says where the states come from
             (OSC 7501 reports, with OSC 133 and the bell as fallbacks) and a click opens the
             README section that documents them (StatusGlyphsInfo_Click).

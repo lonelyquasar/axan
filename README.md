@@ -146,7 +146,7 @@ Windows only for now (the Linux/VTE build doesn't implement it yet). Each row in
 1. **OSC 7501, the Program Status Protocol.** A program reports its own state (idle, working, done, blocked, error). If a pane has any 7501 records they are authoritative for that pane: Claude Code sitting at its own prompt reports `idle` while the shell around it is technically still running `claude`, and idle is the truth.
 2. **OSC 133 command lifecycle** (shell integration): a command executing is *running*, otherwise idle. A non-zero exit is deliberately not an error state; a failed `ls` isn't worth flagging.
 3. **The bell.** If the tab is otherwise idle and its bell indicator is up, the row shows as done-unseen with the message `bell`. Windows Terminal already clears the indicator when the tab gains focus, so `make; printf '\a'` works as a "finished" signal in a plain shell.
-4. **Ambient idle.** Nothing to report and no input or output for `sidebar.idleAfterMinutes`: the row is dimmed and shrinks (see the settings below).
+4. **Ambient idle.** Nothing to report and no input or output for `sidebar.idleAfterMinutes`: the row is de-emphasised, by default dimmed and smaller (`sidebar.idleEffects`, see the settings below).
 
 **Handshake.** A program that wants to report should first ask whether the terminal understands the protocol, so it never sends reports into a terminal that would print them. It sends `ESC ] 7501 ; ? ESC \`, and axan answers on the program's input with
 
@@ -181,7 +181,7 @@ Receivers are strict about the parts that identify and bound a report, and forgi
 | `done`, after you've opened it | No dot. With `sidebar.statusAfterSeen` = `keep` (the default) the report stays as a muted second line with its age until it is replaced or cleared; with `clear` the row returns to plain |
 | `error`, not yet seen | Red dot; second line `message · age` (`error · age` with no message); after it's seen it follows the same keep/clear rule as `done` |
 | `working` | Lightning-bolt glyph in the right-edge slot; the second line is the message, with no age |
-| `idle` | Robot glyph in the right-edge slot whenever a status-reporting program is present and at rest, including a done or error report you've already seen; no glyph when no program has reported. When nothing else owns the second line, it shows the agent's session name, muted (`sidebar.showAgentName`). The row is dimmed and smaller after `sidebar.idleAfterMinutes` |
+| `idle` | Robot glyph in the right-edge slot whenever a status-reporting program is present and at rest, including a done or error report you've already seen; no glyph when no program has reported. When nothing else owns the second line, it shows the agent's session name, muted (`sidebar.showAgentName`). The row is de-emphasised (`sidebar.idleEffects`) after `sidebar.idleAfterMinutes` |
 | running (shell, OSC 133) | Play glyph in the right-edge slot. Only for a pane with no 7501 records |
 | `clear` | Removes the records, so the row falls back to the next source |
 
@@ -197,11 +197,12 @@ When a tab has several records or panes, the strongest state wins: blocked, then
 
 **"Seen".** Only `done` and `error` can be unread; a `blocked` row stays lit for as long as the program reports `blocked`. A done or error report counts as seen when you select the tab or one of its panes gains focus, and also when the window is activated while that tab is the focused one. A report that arrives while the tab is already focused in an active window is seen immediately, so it never shows the unread dot. To see the unread dot in a test, report from a tab you aren't looking at, for example `sleep 5; tools/axan-status.sh done --msg Finished` and then switch to another tab before it fires.
 
-**Settings** (in `settings.json`, at the root next to `startupSessions`; `sidebar.needsYouGroup` and `sidebar.statusAfterSeen` are also in the sidebar's right-click menu; all of them are on the **Sidebar** page in the Settings **Sessions** group):
+**Settings** (in `settings.json`, at the root next to `startupSessions`; `sidebar.needsYouGroup` and `sidebar.statusAfterSeen` are also in the right-click menu of empty sidebar space, which also opens Settings; all of them are on the **Sidebar** page in the Settings **Sessions** group):
 
 | Key | Default | Meaning |
 |---|---|---|
-| `sidebar.idleAfterMinutes` | `15` | Minutes of no input or output, while idle, before a row is dimmed and shrunk. `0` turns it off. The focused row is never dimmed |
+| `sidebar.idleAfterMinutes` | `15` | Minutes of no input or output, while idle, before a row is de-emphasised. `0` turns it off. The focused row is never de-emphasised |
+| `sidebar.idleEffects` | `["dim", "smaller"]` | How an idle row is de-emphasised, any of: `dim` (faded), `smaller` (smaller name, shorter row), `gray` (a session with a colour shows its icon and name in gray; uncoloured sessions are unaffected), `collapse` (a session with child sessions folds them away once it and all of them are idle, and opens again when any becomes active; one holding the focused pane never collapses, and one you collapsed yourself is left alone). `[]` = no visible effect; unknown names are ignored |
 | `sidebar.needsYouGroup` | `false` | Show the hoisted group above the session tree: every session in one of the `sidebar.hoistStates` states, longest-waiting first |
 | `sidebar.hoistStates` | `["blocked", "error", "done"]` | Which states put a session in that group (see below) |
 | `sidebar.statusAfterSeen` | `"keep"` | `"keep"` or `"clear"`: what a row does with a done/error report once you've seen it. Either way it stops counting as needing you |

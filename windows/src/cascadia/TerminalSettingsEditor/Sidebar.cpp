@@ -6,6 +6,7 @@
 #include "pch.h"
 #include "Sidebar.h"
 #include "Sidebar.g.cpp"
+#include "SidebarViewModel.h" // IdleEffectLabel / IdleEffectHelp
 
 #include <LibraryResources.h>
 #include "..\WinRTUtils\inc\Utils.h" // OpenImagePicker
@@ -13,6 +14,7 @@
 #include <AxanStateGlyphs.h> // sidebar.stateGlyphs defaults
 #include <AxanCheckBoxWrap.h> // full-label columns for the hoist-state checkboxes
 #include <AxanHoistRule.h> // axan #34: sidebar.hoistStates vocabulary
+#include <AxanIdleEffects.h> // axan: sidebar.idleEffects vocabulary
 
 using namespace winrt;
 using namespace winrt::Windows::UI::Xaml;
@@ -32,6 +34,47 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     {
         _ViewModel = e.Parameter().as<Editor::SidebarViewModel>();
         _BuildHoistStateBoxes(); // axan #34
+        _BuildIdleEffectBoxes();
+    }
+
+    // axan: one checkbox per idle effect, canonical order, each with its help as the tooltip
+    // and the accessible help text. Each toggle writes sidebar.idleEffects at once.
+    void Sidebar::_BuildIdleEffectBoxes()
+    {
+        const auto panel = IdleEffectsPanel();
+        const auto vm = _ViewModel;
+        if (!panel || !vm)
+        {
+            return;
+        }
+        panel.Children().Clear();
+        for (const auto name : Axan::IdleEffects::kNames)
+        {
+            CheckBox box;
+            const winrt::hstring key{ name };
+            const auto help = implementation::SidebarViewModel::IdleEffectHelp(name);
+            box.Content(winrt::box_value(implementation::SidebarViewModel::IdleEffectLabel(name)));
+            ToolTipService::SetToolTip(box, winrt::box_value(help));
+            Automation::AutomationProperties::SetHelpText(box, help);
+            box.IsChecked(vm.SidebarIdleEffectEnabled(key));
+            box.Click([vm, key](const IInspectable& s, const RoutedEventArgs&) {
+                if (const auto b = s.try_as<CheckBox>())
+                {
+                    vm.SetSidebarIdleEffectEnabled(key, b.IsChecked() && b.IsChecked().Value());
+                }
+            });
+            panel.Children().Append(box);
+        }
+        Axan::Ui::CheckBoxWrap::FitItemWidth(panel);
+    }
+
+    void Sidebar::IdleEffectsReset_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        if (_ViewModel)
+        {
+            _ViewModel.ResetSidebarIdleEffects();
+            _BuildIdleEffectBoxes();
+        }
     }
 
     // axan #34: one checkbox per hoist state name, labelled with the words the row's state
