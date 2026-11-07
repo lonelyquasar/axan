@@ -7,6 +7,7 @@
 #include "../types/inc/utils.hpp"
 
 #include <AxanGlyphNames.h> // axan #39: glyph names -> Segoe Fluent codepoints
+#include <AxanGlyphScale.h> // axan: per-font size multiplier (hieroglyphs, runes)
 
 #include <Shlobj.h>
 #include <Shlobj_core.h>
@@ -160,7 +161,10 @@ namespace winrt::Microsoft::Terminal::UI::implementation
                         // Note: you _do_ need to manually set the font here.
                         icon.FontFamily(winrt::Windows::UI::Xaml::Media::FontFamily{ L"Segoe UI" });
                     }
-                    icon.FontSize(12);
+                    // axan: a glyph whose fallback font draws it small (Segoe UI
+                    // Historic's hieroglyphs and runes) is scaled up to match the rest;
+                    // 1.0 for everything else. See src/inc/AxanGlyphScale.h.
+                    icon.FontSize(12 * Axan::GlyphScale::ScaleFor(iconPath));
                     icon.Glyph(iconPath);
                     iconSource = icon;
                 }
