@@ -636,6 +636,10 @@ namespace winrt::TerminalApp::implementation
         void _AcknowledgeFocusedNode(const char* reason);
         void _EnsureSessionStateClock();
         void _SessionStateClockTick();
+        // axan: sidebar.idleEffects resolved to a mask (unset = dim + smaller; unknown names
+        // logged once) and the "collapse" effect's per-tick pass over the tree.
+        uint8_t _ResolveIdleEffects() const;
+        void _ApplyIdleCollapse(bool enabled);
         Windows::UI::Xaml::DispatcherTimer _sessionStateClock{ nullptr };
 
         // axan M13: right-click a session node for its actions (rename label, set/clear icon,

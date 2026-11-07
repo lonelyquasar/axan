@@ -9,6 +9,7 @@
 #include <functional> // axan #427: type-erased recompute unsubscribers
 #include <utility> // axan #32: _computeSubLabel {message, age}
 #include <unordered_map> // axan #30: SeenRevisions
+#include <AxanIdleEffects.h> // axan: sidebar.idleEffects
 
 namespace winrt::TerminalApp::implementation
 {
@@ -224,9 +225,18 @@ namespace winrt::TerminalApp::implementation
 
         // axan #31: idle de-emphasis (see the idl).
         bool IsDeEmphasised() const noexcept { return _deEmphasised; }
-        double LabelFontSize() const noexcept { return _deEmphasised ? 12.0 : 14.0; }
-        double RowOpacity() const noexcept { return _deEmphasised ? 0.55 : 1.0; }
-        double RowMinHeight() const noexcept { return _deEmphasised ? std::round(_rowHeightPx * 0.75) : _rowHeightPx; }
+        // Which of the effects apply is sidebar.idleEffects (src/inc/AxanIdleEffects.h), pushed
+        // by the page on every clock tick (SetIdleEffects is a no-op when unchanged).
+        double LabelFontSize() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? 12.0 : 14.0; }
+        double RowOpacity() const noexcept { return _idleEffect(Axan::IdleEffects::kDim) ? 0.55 : 1.0; }
+        double RowMinHeight() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? std::round(_rowHeightPx * 0.75) : _rowHeightPx; }
+        // Returns true if the mask changed.
+        bool SetIdleEffects(Axan::IdleEffects::Mask effects);
+        // axan: idle "collapse" bookkeeping, owned by TerminalPage::_ApplyIdleCollapse.
+        // SubtreeIdle = this node and all its descendants were de-emphasised at the last tick;
+        // AutoCollapsed = the page closed this node's expander for that (so it may re-open it).
+        bool SubtreeIdle{ false };
+        bool AutoCollapsed{ false };
         // The full-size row floor (TreeViewItemMinHeight), pushed by the page at creation.
         void SetRowHeightPx(double px);
         // Re-evaluate against the threshold (0 = off). Returns true if the flag flipped.
@@ -312,6 +322,11 @@ namespace winrt::TerminalApp::implementation
         hstring _agentName;
         // axan #31
         bool _deEmphasised{ false };
+        Axan::IdleEffects::Mask _idleEffects{ Axan::IdleEffects::kDefault };
+        bool _idleEffect(Axan::IdleEffects::Mask effect) const noexcept { return _deEmphasised && (_idleEffects & effect) != 0; }
+        // The recolor token actually painted: the node's colour, or a neutral gray while the
+        // "gray" idle effect applies to a coloured node.
+        winrt::hstring _effectiveColorToken() const;
         // axan #33
         hstring _separatorLabel;
         bool _collapsed{ false };

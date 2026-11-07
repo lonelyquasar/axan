@@ -39,6 +39,7 @@
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
 #include <AxanHoistRule.h> // axan #34: the hoisted group's match rule
+#include <AxanIdleEffects.h> // axan: sidebar.idleEffects
 #include <AxanEntryIdentityEditor.h> // axan #38: the node editor's identity section, shared with Settings
 
 #include <shlobj.h>
@@ -3325,6 +3326,7 @@ namespace winrt::TerminalApp::implementation
         const auto now = winrt::clock::now();
         const auto idleAfterMinutes = _settings ? _settings.GlobalSettings().SidebarIdleAfterMinutes() : 0; // axan #31
         const auto focusedTab = _GetFocusedTab(); // axan #31: the row being looked at is never de-emphasised
+        const auto idleEffects = static_cast<Axan::IdleEffects::Mask>(_ResolveIdleEffects()); // axan: sidebar.idleEffects
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             const auto vm = _nodeVM(node);
             const auto tab = _nodeTab(node);
@@ -3339,11 +3341,91 @@ namespace winrt::TerminalApp::implementation
             }
             vm->SetLastActivity(latest);
             vm->RefreshAge(now); // axan #32: only rows showing an age ever change
+            vm->SetIdleEffects(idleEffects); // no-op unless the setting changed
             if (vm->UpdateDeEmphasis(now, tab == focusedTab ? 0 : idleAfterMinutes)) // axan #31
             {
                 Axan::Log::Debug("SessionState", vm->IsDeEmphasised() ? "row de-emphasised: idle" : "row promoted", { { "label", winrt::to_string(vm->Label()) }, { "idleAfterMinutes", std::to_string(idleAfterMinutes) } });
             }
         });
+        _ApplyIdleCollapse((idleEffects & Axan::IdleEffects::kCollapse) != 0);
+    }
+
+    // axan: sidebar.idleEffects -> mask. Unset = dim + smaller (the original #31 look); an
+    // empty list = no effects; unknown names are ignored and logged once per process.
+    uint8_t TerminalPage::_ResolveIdleEffects() const
+    {
+        if (!_settings || !_settings.GlobalSettings().HasSidebarIdleEffects())
+        {
+            return Axan::IdleEffects::kDefault;
+        }
+        const auto names = _settings.GlobalSettings().SidebarIdleEffects();
+        if (!names)
+        {
+            return Axan::IdleEffects::kDefault;
+        }
+        std::vector<std::wstring> unknown;
+        const auto mask = Axan::IdleEffects::MaskFromNames(names, &unknown);
+        static std::set<std::wstring> logged;
+        for (const auto& u : unknown)
+        {
+            if (logged.insert(u).second)
+            {
+                Axan::Log::Warn("SessionState", "sidebar.idleEffects: unknown effect name ignored", { { "name", winrt::to_string(u) } });
+            }
+        }
+        return mask;
+    }
+
+    // axan: the "collapse" idle effect. Rule: a session node with session children closes
+    // its expander when it AND every session descendant are de-emphasised (idle past
+    // sidebar.idleAfterMinutes). The focused session is never de-emphasised, so a node that
+    // is or contains the focused pane never qualifies. It fires on the transition into
+    // all-idle only, so a user who re-expands an idle subtree isn't fought every second.
+    // When any node in the subtree becomes active again (or the effect is turned off), a
+    // node the page collapsed is re-expanded, the same way dim/smaller are undone; a node
+    // the user collapsed by hand is never touched. Separators don't count either way.
+    void TerminalPage::_ApplyIdleCollapse(bool enabled)
+    {
+        const auto visit = [&](const auto& self, const MUX::Controls::TreeViewNode& node) -> bool {
+            bool childrenIdle = true;
+            bool hasSessionChild = false;
+            for (const auto& child : node.Children())
+            {
+                const bool childIdle = self(self, child);
+                if (!_nodeIsSeparator(child))
+                {
+                    hasSessionChild = true;
+                    childrenIdle = childrenIdle && childIdle;
+                }
+            }
+            const auto vm = _nodeVM(node);
+            if (!vm || vm->IsSeparator())
+            {
+                return true;
+            }
+            const bool subtreeIdle = enabled && vm->IsDeEmphasised() && childrenIdle;
+            if (subtreeIdle && !vm->SubtreeIdle && hasSessionChild && node.IsExpanded())
+            {
+                node.IsExpanded(false);
+                vm->AutoCollapsed = true;
+                Axan::Log::Debug("SessionState", "idle subtree collapsed", { { "label", winrt::to_string(vm->Label()) } });
+            }
+            else if (!subtreeIdle && vm->AutoCollapsed)
+            {
+                vm->AutoCollapsed = false;
+                if (!node.IsExpanded() && node.Children().Size() > 0)
+                {
+                    node.IsExpanded(true);
+                    Axan::Log::Debug("SessionState", enabled ? "idle subtree re-expanded: activity" : "idle subtree re-expanded: effect off", { { "label", winrt::to_string(vm->Label()) } });
+                }
+            }
+            vm->SubtreeIdle = subtreeIdle;
+            return subtreeIdle;
+        };
+        for (const auto& root : SessionTree().RootNodes())
+        {
+            visit(visit, root);
+        }
     }
 
     // ----- axan #33: section headers ---------------------------------------------------------

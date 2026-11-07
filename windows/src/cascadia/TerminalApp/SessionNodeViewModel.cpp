@@ -319,6 +319,50 @@ namespace winrt::TerminalApp::implementation
         {
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
         }
+        // "gray" repaints the glyph and the label; only a coloured node has anything to gray.
+        if ((_idleEffects & Axan::IdleEffects::kGray) && !_iconColor.empty())
+        {
+            for (const auto name : { L"Icon", L"LabelBrush", L"StateGlyphIcon" })
+            {
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+            }
+        }
+    }
+
+    bool SessionNodeViewModel::SetIdleEffects(Axan::IdleEffects::Mask effects)
+    {
+        if (effects == _idleEffects)
+        {
+            return false;
+        }
+        const auto changed = static_cast<Axan::IdleEffects::Mask>(effects ^ _idleEffects);
+        _idleEffects = effects;
+        if (!_deEmphasised)
+        {
+            return true; // nothing on screen depends on the mask until the row goes idle
+        }
+        for (const auto name : { L"LabelFontSize", L"RowOpacity", L"RowMinHeight" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+        if ((changed & Axan::IdleEffects::kGray) && !_iconColor.empty())
+        {
+            for (const auto name : { L"Icon", L"LabelBrush", L"StateGlyphIcon" })
+            {
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+            }
+        }
+        return true;
+    }
+
+    winrt::hstring SessionNodeViewModel::_effectiveColorToken() const
+    {
+        if (_idleEffect(Axan::IdleEffects::kGray) && !ResolveColorToken(_iconColor, _isDarkTheme).empty())
+        {
+            // Neutral mid-grays that stay legible on the sidebar in each theme.
+            return _isDarkTheme ? winrt::hstring{ L"#8A8A8A" } : winrt::hstring{ L"#6E6E6E" };
+        }
+        return _iconColor;
     }
 
     // Idle long enough = no input/output since the threshold AND idle state for that long
@@ -568,7 +612,7 @@ namespace winrt::TerminalApp::implementation
     {
         // Only tint the icon when the recolor target includes the icon; otherwise leave the
         // glyph on the theme foreground (the text may still be recolored via LabelBrush).
-        const auto iconColor = _targetIncludesIcon(ColorTarget) ? _iconColor : winrt::hstring{};
+        const auto iconColor = _targetIncludesIcon(ColorTarget) ? _effectiveColorToken() : winrt::hstring{};
         const auto icon{ BuildIcon(_iconPath, iconColor, _isDarkTheme) };
         if (icon)
         {
@@ -587,7 +631,7 @@ namespace winrt::TerminalApp::implementation
         {
             // Resolve the stored token (palette name / "#hex") to the active theme's hex first,
             // so a name like "blue" paints the label in the theme-legible blue.
-            if (const auto c = _parseHexColor(ResolveColorToken(_iconColor, _isDarkTheme)))
+            if (const auto c = _parseHexColor(ResolveColorToken(_effectiveColorToken(), _isDarkTheme)))
             {
                 return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ *c };
             }

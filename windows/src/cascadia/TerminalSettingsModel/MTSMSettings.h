@@ -48,6 +48,7 @@ using IAxanStringMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstr
     X(bool, UseAcrylicInTabRow, "useAcrylicInTabRow", false)                                                                                                                                          \
     X(bool, SidebarMatchesProfileTransparency, "sidebarMatchesProfileTransparency", false)                                                                                                            \
     X(int32_t, SidebarIdleAfterMinutes, "sidebar.idleAfterMinutes", 15)                                                                                                                              \
+    X(winrt::Windows::Foundation::Collections::IVector<winrt::hstring>, SidebarIdleEffects, "sidebar.idleEffects", nullptr)                                                                          \
     X(bool, SidebarNeedsYouGroup, "sidebar.needsYouGroup", false)                                                                                                                                    \
     X(winrt::Windows::Foundation::Collections::IVector<winrt::hstring>, SidebarHoistStates, "sidebar.hoistStates", nullptr)                                                                          \
     X(Model::SidebarStatusAfterSeen, SidebarStatusAfterSeen, "sidebar.statusAfterSeen", Model::SidebarStatusAfterSeen::Keep)                                                                         \

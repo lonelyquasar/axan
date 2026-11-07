@@ -114,8 +114,10 @@ namespace TerminalApp
         Windows.UI.Xaml.Visibility StateToolTipVisibility { get; };
 
         // axan #31: idle de-emphasis. An idle node with no input/output for the configured
-        // sidebar.idleAfterMinutes renders dimmed (RowOpacity), with a smaller label
-        // (LabelFontSize 12 vs 14) and a shorter row floor (RowMinHeight). needs-you /
+        // sidebar.idleAfterMinutes is de-emphasised. sidebar.idleEffects picks how: "dim"
+        // (RowOpacity), "smaller" (LabelFontSize 12 vs 14 and a shorter RowMinHeight), "gray"
+        // (a coloured node's Icon / LabelBrush go neutral gray), "collapse" (the page closes
+        // the expander of an all-idle subtree; see AxanIdleEffects.h). needs-you /
         // done-unseen / error are never de-emphasised; any activity or a working/running
         // state promotes the row back on the next update. No animation.
         Boolean IsDeEmphasised { get; };

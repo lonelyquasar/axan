@@ -29,6 +29,7 @@
     <ClCompile Include="AxanSessionStateTest.cpp" />
     <ClCompile Include="AxanLaunchEntryWireTest.cpp" />
     <ClCompile Include="AxanHoistRuleTest.cpp" />
+    <ClCompile Include="AxanIdleEffectsTest.cpp" />
     <ClCompile Include="AxanEntryTreeOpsTest.cpp" />
     <ClCompile Include="AxanGlyphNamesTest.cpp" />
   </ItemGroup>

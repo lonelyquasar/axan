@@ -124,6 +124,15 @@ winrt::com_ptr<GlobalAppSettings> GlobalAppSettings::Copy() const
             globals->_SidebarHoistStates->Append(name);
         }
     }
+    // axan: sidebar.idleEffects is a vector too.
+    if (_SidebarIdleEffects && *_SidebarIdleEffects)
+    {
+        globals->_SidebarIdleEffects = winrt::single_threaded_vector<hstring>();
+        for (const auto& name : *_SidebarIdleEffects)
+        {
+            globals->_SidebarIdleEffects->Append(name);
+        }
+    }
     if (_DisabledProfileSources)
     {
         globals->_DisabledProfileSources = winrt::single_threaded_vector<hstring>();
