@@ -541,7 +541,7 @@
     <comment>axan: Header for a set of checkboxes: how an idle session's sidebar row is de-emphasised.</comment>
   </data>
   <data name="Globals_SidebarIdleEffects.HelpText" xml:space="preserve">
-    <value>What happens to an idle session's row once the time above has passed: dim it, draw it smaller, gray out its colour, or fold its child sessions away. Hover a choice for details. Uncheck all of them to leave idle rows unchanged.</value>
+    <value>What happens to an idle session's row once the time above has passed: dim it, draw it smaller, gray out its colour, or tuck idle sessions away. Hover a choice for details. Uncheck all of them to leave idle rows unchanged.</value>
     <comment>axan: A description for the "when a session goes idle" setting. Presented near "Globals_SidebarIdleEffects.Header".</comment>
   </data>
   <data name="Globals_SidebarIdleEffectsReset.Content" xml:space="preserve">
@@ -578,10 +578,10 @@
   </data>
   <data name="Globals_SidebarIdleEffectCollapse" xml:space="preserve">
     <value>Collapse</value>
-    <comment>axan: Idle-effect checkbox: an idle session folds its child sessions away.</comment>
+    <comment>axan: Idle-effect checkbox: idle sessions are tucked away under their expanded parent or section header.</comment>
   </data>
   <data name="Globals_SidebarIdleEffectCollapseHelp" xml:space="preserve">
-    <value>A session with child sessions folds them away once it and all of them are idle, and opens again when any of them becomes active. A session holding the focused pane never collapses, and one you collapsed yourself is left alone.</value>
+    <value>Idle sessions under an expanded session or section header are tucked away while active ones stay; a hollow ring in the chevron slot marks it, with the count in the tooltip. A tucked session reappears on activity. Expanding by hand holds it open until you collapse it again. The focused session is never tucked.</value>
     <comment>axan: Tooltip for the "Collapse" idle-effect checkbox.</comment>
   </data>
   <data name="Globals_SidebarStatusAfterSeen.Header" xml:space="preserve">

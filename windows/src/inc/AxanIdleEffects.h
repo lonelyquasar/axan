@@ -15,8 +15,8 @@
 //             (nodes without a colour are unaffected)
 //   collapse  (axan #46) an expanded section header or session row with children tucks
 //             away its idle members/children (a row counts as idle when it AND every
-//             descendant are idle) while active ones stay visible; a hollow dot with the
-//             hidden count marks the expander slot. A tucked row reappears as soon as it
+//             descendant are idle) while active ones stay visible; a hollow ring marks the
+//             expander slot (the count is in the tooltip). A tucked row reappears as soon as it
 //             is active again. A manual expand holds the node open until it is manually
 //             collapsed. The focused session never counts as idle.
 //
