@@ -104,6 +104,39 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
     }
 
+    // ---- drag reorder ----
+    // The ListView's built-in reorder moves only the dragged row; the view-model's
+    // NormalizeAfterDrag brings its children along and re-derives its parent. List
+    // selection echo is suppressed from the start of the drag until the fix-up has
+    // re-selected the row, so the reorder's selection clear never reaches the view-model.
+
+    void StartupSessions::EntriesList_DragItemsStarting(const IInspectable& /*sender*/, const DragItemsStartingEventArgs& args)
+    {
+        const auto items = args.Items();
+        const auto head = items.Size() == 1 ? items.GetAt(0).try_as<Editor::LaunchEntryViewModel>() : nullptr;
+        if (!_ViewModel || !head)
+        {
+            args.Cancel(true);
+            return;
+        }
+        _dragHead = head;
+        _ignoreListSelection = true;
+        _ViewModel.BeginDrag(head);
+    }
+
+    void StartupSessions::EntriesList_DragItemsCompleted(const ListViewBase& /*sender*/, const DragItemsCompletedEventArgs& /*args*/)
+    {
+        // DropResult isn't consulted: the view-model compares the row's index with where
+        // the drag started, which also covers a drop outside the list (no move).
+        const auto head = std::exchange(_dragHead, nullptr);
+        if (!head || !_ViewModel)
+        {
+            _ignoreListSelection = false;
+            return;
+        }
+        _runOp([&] { _ViewModel.NormalizeAfterDrag(head); }); // clears _ignoreListSelection
+    }
+
     void StartupSessions::_syncListSelection()
     {
         const auto list = EntriesList();

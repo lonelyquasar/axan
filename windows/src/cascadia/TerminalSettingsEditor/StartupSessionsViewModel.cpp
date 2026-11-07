@@ -185,6 +185,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     // (profile combo populate, icon/color previews, text boxes), a visible pause per click
     // on longer lists. Removing then re-inserting only the block touches just those rows.
     // After the removals the vector is the block-less list, so insertAt is a live index.
+    // The block is reinserted in the order listed (a drag fix-up lists the head first even
+    // when it sits below its children), so removal goes by descending index on a copy.
     void StartupSessionsViewModel::_applyBlockMove(const Axan::EntryTree::BlockMove& move)
     {
         std::vector<Editor::LaunchEntryViewModel> block;
@@ -193,9 +195,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         {
             block.push_back(_Entries.GetAt(static_cast<uint32_t>(i)));
         }
-        for (auto it = move.block.rbegin(); it != move.block.rend(); ++it)
+        auto removal = move.block;
+        std::sort(removal.begin(), removal.end(), std::greater<>{});
+        for (const auto i : removal)
         {
-            _Entries.RemoveAt(static_cast<uint32_t>(*it));
+            _Entries.RemoveAt(static_cast<uint32_t>(i));
         }
         for (size_t k = 0; k < block.size(); ++k)
         {
@@ -462,6 +466,75 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     void StartupSessionsViewModel::MoveEntryDown(const Editor::LaunchEntryViewModel& vm)
     {
         _moveEntry(vm, false);
+    }
+
+    // axan #38: drag reorder. The ListView's built-in reorder RemoveAt/InsertAt's only the
+    // dragged row (the head) on Entries; nothing else changes until the drop. Commits are
+    // suspended for the duration so no intermediate state can reach the settings clone
+    // (the reorder itself raises no row PropertyChanged, but an edit racing the drag must
+    // not commit a list whose head sits away from its children either).
+    void StartupSessionsViewModel::BeginDrag(const Editor::LaunchEntryViewModel& head)
+    {
+        if (!_dragging)
+        {
+            _dragWasSuspended = std::exchange(_suspendCommit, true);
+            _dragging = true;
+        }
+        _dragHead = head;
+        _dragStartIndex = _indexOf(head);
+        _dragOldDepth = head ? head.Depth() : 0;
+        Axan::Log::Debug("StartupSessionsViewModel", "drag starting", { { "id", head ? winrt::to_string(head.Id()) : std::string{} }, { "index", _dragStartIndex ? std::to_string(*_dragStartIndex) : std::string{ "none" } } });
+    }
+
+    // After the drop: carry the head's subtree to sit right after it and re-derive the
+    // head's parent from where it landed (rules: AxanEntryTreeOps.h NormalizeAfterDrag),
+    // recompute depths, then commit once and re-select the head (the reorder cleared the
+    // ListView's selection).
+    void StartupSessionsViewModel::NormalizeAfterDrag(const Editor::LaunchEntryViewModel& head)
+    {
+        const auto startIndex = std::exchange(_dragStartIndex, std::nullopt);
+        const auto oldDepth = _dragOldDepth;
+        const auto expected = std::exchange(_dragHead, nullptr);
+        const auto wasDragging = std::exchange(_dragging, false);
+        const auto releaseCommit = [&]() {
+            if (wasDragging)
+            {
+                _suspendCommit = _dragWasSuspended;
+            }
+        };
+
+        const auto index = _indexOf(head);
+        if (!index || head != expected || index == startIndex)
+        {
+            // Cancelled, dropped in place, or not the drag BeginDrag saw: nothing moved.
+            releaseCommit();
+            Axan::Log::Debug("StartupSessionsViewModel", "drag ended without a move");
+            _select(_selectedEntry);
+            return;
+        }
+
+        const auto fix = Axan::EntryTree::NormalizeAfterDrag(_nodes(), *index, oldDepth);
+        if (fix)
+        {
+            head.ParentId(hstring{ fix->headParentId }); // still suspended: no commit
+            _applyBlockMove(fix->move);
+        }
+        _recomputeDepths();
+
+        if (!Axan::EntryTree::IsWellFormed(_nodes()))
+        {
+            // Should be unreachable (the fix-up only ever parents onto an earlier session
+            // row). The settings clone still holds the last committed tree; restore it.
+            releaseCommit();
+            Axan::Log::Error("StartupSessionsViewModel", "drag fix-up left a parent after its child or under a separator; restoring the last committed tree", { { "id", winrt::to_string(head.Id()) } });
+            _rebuildFromSettings();
+            return;
+        }
+
+        releaseCommit();
+        _commit();
+        Axan::Log::Info("StartupSessionsViewModel", "drag reorder applied", { { "id", winrt::to_string(head.Id()) }, { "from", startIndex ? std::to_string(*startIndex) : std::string{ "none" } }, { "to", std::to_string(_indexOf(head).value_or(0)) }, { "parent", fix ? winrt::to_string(hstring{ fix->headParentId }) : std::string{} }, { "rows", fix ? std::to_string(fix->move.block.size()) : std::string{ "0" } } });
+        _select(head);
     }
 
     // D19: resolve an imported entry's profile reference against the live profiles —

@@ -202,14 +202,23 @@
                     InsertAt clears a ListView's selection and the op re-selects the row.
                     The accelerators are scoped to the list in the constructor (ScopeOwner), so
                     Delete / Ctrl+D / Alt+arrows typed in the detail panel never reach them.
+                    Drag reorder is the ListView's built-in one (it moves only the dragged row
+                    in Entries, in place); DragItemsCompleted runs the view-model's fix-up,
+                    which brings the row's children along and re-derives its parent. The
+                    toolbar and the accelerators remain the complete, accessible mechanism.
                 -->
                 <ListView x:Name="EntriesList"
                           MaxHeight="560"
+                          AllowDrop="True"
                           AutomationProperties.Name="Startup sessions"
                           Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                           BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                           BorderThickness="1"
+                          CanDragItems="True"
+                          CanReorderItems="True"
                           CornerRadius="{StaticResource ControlCornerRadius}"
+                          DragItemsCompleted="EntriesList_DragItemsCompleted"
+                          DragItemsStarting="EntriesList_DragItemsStarting"
                           ItemsSource="{x:Bind ViewModel.Entries, Mode=OneWay}"
                           KeyboardAcceleratorPlacementMode="Hidden"
                           Loaded="EntriesList_Loaded"

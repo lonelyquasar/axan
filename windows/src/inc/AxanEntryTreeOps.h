@@ -184,8 +184,9 @@ namespace Axan::EntryTree
         return std::wstring{};
     }
 
-    // A subtree move: lift the rows at `block` (ascending original indices, kept in that
-    // order), then insert them as one run at `insertAt`, an index into the list with the
+    // A subtree move: lift the rows at `block` (original indices, reinserted in the order
+    // listed; MoveAmongSiblings lists them ascending, NormalizeAfterDrag lists the head
+    // first), then insert them as one run at `insertAt`, an index into the list with the
     // block removed. Rows outside the block keep their relative order.
     struct BlockMove
     {
@@ -262,5 +263,127 @@ namespace Axan::EntryTree
             return std::min(deletedIndex - 1, after.size() - 1);
         }
         return std::nullopt;
+    }
+
+    // axan #38: the fix-up after the editor list's built-in drag reorder. The ListView moves
+    // only the dragged row (the head); its descendants stay where they were and its
+    // ParentId is untouched. `after` is the list as the drop left it, `headIndex` the
+    // head's index in it, `oldDepth` the head's depth before the drag.
+    //
+    // - The subtree is the transitive closure of ParentId from the head, by id rather than
+    //   by position: the head may now sit below its own children, where the forward pass of
+    //   SubtreeMask would no longer see them. Non-contiguous children are found the same way.
+    // - The anchor is the nearest row above the head that is not in the subtree (none = the
+    //   head was dropped at the top). A head dropped among its own children therefore
+    //   anchors on the row above the whole family.
+    // - The block (head first, then its descendants in their list order) is reinserted as
+    //   one run directly after the anchor; every other row keeps its relative order.
+    // - The head's depth is its old depth clamped to what the landing spot allows: at most
+    //   anchor depth + 1 (a child of the anchor), at least the depth of the row that now
+    //   follows the block (so a head dropped between a parent and its child becomes that
+    //   child's sibling instead of visually adopting it), capped at the maximum. Dropped at
+    //   the very end, nothing below constrains it and a root stays a root.
+    // - The new parent is the anchor (depth + 1) or the anchor's ancestor at newDepth - 1.
+    //   axan #28: a separator is never a parent, so a head that would become a separator's
+    //   child becomes its next sibling instead (inserted after it at its depth).
+    // Descendants keep their ParentIds, so their depths relative to the head are preserved.
+    struct DragFixup
+    {
+        BlockMove move;
+        std::wstring headParentId;
+    };
+
+    inline std::optional<DragFixup> NormalizeAfterDrag(const Nodes& after, size_t headIndex, int32_t oldDepth)
+    {
+        if (headIndex >= after.size())
+        {
+            return std::nullopt;
+        }
+
+        std::unordered_set<std::wstring> subtree{ after[headIndex].id };
+        for (bool grew = true; grew;)
+        {
+            grew = false;
+            for (const auto& n : after)
+            {
+                if (!n.parentId.empty() && subtree.count(n.parentId) && subtree.insert(n.id).second)
+                {
+                    grew = true;
+                }
+            }
+        }
+
+        DragFixup fix;
+        fix.move.block.push_back(headIndex);
+        Nodes rest;
+        rest.reserve(after.size());
+        std::optional<size_t> anchor; // index into rest
+        for (size_t i = 0; i < after.size(); ++i)
+        {
+            if (subtree.count(after[i].id))
+            {
+                if (i != headIndex)
+                {
+                    fix.move.block.push_back(i);
+                }
+                continue;
+            }
+            if (i < headIndex)
+            {
+                anchor = rest.size();
+            }
+            rest.push_back(after[i]);
+        }
+        fix.move.insertAt = anchor ? *anchor + 1 : 0;
+
+        // No rest row's parent is in the subtree (it would be in the subtree itself), so
+        // the depths of the rest are the pre-drag depths.
+        const auto depths = Depths(rest);
+        const int32_t maxDepth = anchor ? depths[*anchor] + 1 : 0;
+        const int32_t below = fix.move.insertAt < rest.size() ? depths[fix.move.insertAt] : 0;
+        const int32_t minDepth = std::min(below, maxDepth);
+        auto newDepth = std::clamp(oldDepth, minDepth, maxDepth);
+        if (anchor && newDepth == maxDepth && rest[*anchor].separator)
+        {
+            newDepth = depths[*anchor];
+        }
+
+        if (newDepth > 0)
+        {
+            // Walk up from the anchor to its ancestor at newDepth - 1. Every row on the way
+            // has depth > 0, so its parent resolves to an earlier rest row.
+            std::unordered_map<std::wstring, size_t> byId;
+            for (size_t i = 0; i < rest.size(); ++i)
+            {
+                byId.emplace(rest[i].id, i);
+            }
+            auto cur = *anchor;
+            while (depths[cur] > newDepth - 1)
+            {
+                cur = byId.at(rest[cur].parentId);
+            }
+            fix.headParentId = rest[cur].id;
+        }
+        return fix;
+    }
+
+    // The tree's structural invariant: every ParentId is empty or names an EARLIER row
+    // that is not a separator. The view-model checks it after a drag fix-up.
+    inline bool IsWellFormed(const Nodes& nodes)
+    {
+        std::unordered_map<std::wstring, bool> seen; // id -> separator
+        for (const auto& n : nodes)
+        {
+            if (!n.parentId.empty())
+            {
+                const auto it = seen.find(n.parentId);
+                if (it == seen.end() || it->second)
+                {
+                    return false;
+                }
+            }
+            seen.emplace(n.id, n.separator);
+        }
+        return true;
     }
 }

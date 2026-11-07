@@ -57,6 +57,14 @@ namespace Microsoft.Terminal.Settings.Editor
         // delete-and-re-add. No-op when the row is already first/last among its siblings.
         void MoveEntryUp(LaunchEntryViewModel vm);
         void MoveEntryDown(LaunchEntryViewModel vm);
+        // axan #38: the page's built-in drag reorder. BeginDrag (on DragItemsStarting)
+        // records the dragged row and suspends commits: the ListView moves only that row,
+        // in place, and the tree is inconsistent until the drop. NormalizeAfterDrag (on
+        // DragItemsCompleted, always paired with BeginDrag) moves the row's subtree after
+        // it, re-derives its parent from where it landed, commits once and re-selects it.
+        // A drag that left the row where it was commits nothing.
+        void BeginDrag(LaunchEntryViewModel head);
+        void NormalizeAfterDrag(LaunchEntryViewModel head);
         // Replace the tree with the startup sessions parsed from a portable profile TOML.
         Boolean ImportFromToml(String path);
         // axan #14: replace the tree with a snapshot of the live session tree (pulled

@@ -57,6 +57,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // axan #38: list <-> ViewModel.SelectedEntry.
         void EntriesList_Loaded(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void EntriesList_SelectionChanged(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Controls::SelectionChangedEventArgs& args);
+        // axan #38: built-in drag reorder, bracketed by the view-model's BeginDrag /
+        // NormalizeAfterDrag.
+        void EntriesList_DragItemsStarting(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Controls::DragItemsStartingEventArgs& args);
+        void EntriesList_DragItemsCompleted(const Windows::UI::Xaml::Controls::ListViewBase& sender, const Windows::UI::Xaml::Controls::DragItemsCompletedEventArgs& args);
 
         // Detail panel handlers.
         void ProfileCombo_SelectionChanged(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Controls::SelectionChangedEventArgs& args);
@@ -103,6 +107,11 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // True while a structural op runs or the page itself sets the ListView's selection;
         // EntriesList_SelectionChanged ignores the list's selection changes then.
         bool _ignoreListSelection{ false };
+        // The row being dragged, between DragItemsStarting and DragItemsCompleted (null
+        // otherwise). _ignoreListSelection is held for the whole drag: the reorder's
+        // RemoveAt/InsertAt clears the list's selection, which must not blank the detail
+        // panel.
+        Editor::LaunchEntryViewModel _dragHead{ nullptr };
         // The row the detail panel was last built for; the identity editor is rebuilt only
         // when the selected row is a different one.
         Editor::LaunchEntryViewModel _detailFor{ nullptr };

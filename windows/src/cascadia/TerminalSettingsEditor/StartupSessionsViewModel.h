@@ -28,6 +28,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void OutdentEntry(const Editor::LaunchEntryViewModel& vm);
         void MoveEntryUp(const Editor::LaunchEntryViewModel& vm);
         void MoveEntryDown(const Editor::LaunchEntryViewModel& vm);
+        void BeginDrag(const Editor::LaunchEntryViewModel& head);
+        void NormalizeAfterDrag(const Editor::LaunchEntryViewModel& head);
         bool ImportFromToml(hstring path);
 
         // axan #38: selection model (see the IDL).
@@ -76,6 +78,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         Axan::EntryTree::Nodes _nodes() const;
         std::optional<uint32_t> _indexOf(const Editor::LaunchEntryViewModel& vm) const;
         void _applyBlockMove(const Axan::EntryTree::BlockMove& move);
+
+        // axan #38: drag state between BeginDrag and NormalizeAfterDrag.
+        bool _dragging{ false };
+        // _suspendCommit as it was before the drag, restored afterwards.
+        bool _dragWasSuspended{ false };
+        Editor::LaunchEntryViewModel _dragHead{ nullptr };
+        std::optional<uint32_t> _dragStartIndex;
+        int32_t _dragOldDepth{ 0 };
         hstring _resolveImportedProfile(const std::string& bareGuid, const std::string& name);
     };
 }
