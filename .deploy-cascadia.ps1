@@ -151,11 +151,13 @@ try {
   # clears it), but a NEW full name registers fine. The full name includes the version, so
   # bumping the 4th field in the LAYOUT manifest (never the source manifest) sidesteps it.
   # Verified 2026-11-06: 0.1.2.0 refused, 0.1.2.1 registered on the first try, no reboot.
-  # Keep the layout version strictly above whatever is registered, or a later plain deploy
-  # would be a downgrade against the bumped registration. The comparison is the full
-  # four-part [version] compare: a registered build newer in Major/Minor/Build (deployed
-  # from another branch) is only beaten by taking ITS Major.Minor.Build, not by bumping
-  # the layout's own revision.
+  # The bump only matters on that fallback path: DeployAppRecipe UNREGISTERS the current
+  # package and recreates the layout from the recipe before registering (observed
+  # 2026-11-07: 0.1.2.1 registered, plain deploy of 0.1.2.0 went through on attempt 1 with
+  # no downgrade refusal), so there is no pre-bump before it — one would be overwritten
+  # anyway. The fallback's bump is a full four-part [version] compare: a registered build
+  # newer in Major/Minor/Build (deployed from another branch) is only beaten by taking ITS
+  # Major.Minor.Build, not by bumping the layout's own revision.
   $layoutManifest = Join-Path $root 'src\cascadia\CascadiaPackage\bin\x64\Debug\AppX\AppxManifest.xml'
   function Get-LayoutVersion { [version](([xml](Get-Content $layoutManifest -Raw)).Package.Identity.Version) }
   # A version strictly greater than both inputs: the higher of the two, revision + 1.
@@ -187,16 +189,8 @@ try {
     Note "layout manifest version set to $New ($Why; the source manifest is untouched)"
     $New
   }
-  $layoutVersion = Get-LayoutVersion
   $registered = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
-  $registeredVersion = if ($registered) { [version]$registered.Version } else { $null }
-  # Equal versions are NOT bumped here: re-registering the same version is the normal F5
-  # path, and bumping on equality would creep the revision on every deploy. The equal-name
-  # refusal of #43 is handled by the 0x80070020 fallback below.
-  if ($registeredVersion -and $registeredVersion -gt $layoutVersion) {
-    Set-LayoutVersion (Get-FreshVersion $layoutVersion $registeredVersion) `
-      "raised above the registered build $registeredVersion, which is newer than this layout's $layoutVersion; deploying $layoutVersion would be refused as a downgrade" | Out-Null
-  }
+  Note ("registered before deploy: " + $(if ($registered) { $registered.PackageFullName } else { '<none>' }))
 
   $dcode = 1
   $deployOut = ''
