@@ -87,6 +87,15 @@ All notable changes to axan are documented here.
   as if it were in any state (needs answer, done, error, ...), for checking how
   sizes and glyphs look. It is purely visual, marked "Preview" in the tooltip,
   and ends on "Clear preview" or the session's next real report. Windows only.
+- "Open profile in Settings" is gone from the titlebar app menu, which already
+  has Settings, and from a session's right-click menu, where a plain Settings
+  item replaces it. It opened Settings without going to the session's profile.
+  Windows only.
+
+### Security
+
+- Cherry-picked upstream Windows Terminal #20409: DRCS soft-font sixel
+  writes are bounds-checked (CVE-2026-59117). Windows only. (#25)
 
 ### Fixes
 

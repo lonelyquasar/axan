@@ -115,10 +115,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
     }
 
-    // The README section on session state: OSC 7501 (the Program Status Protocol) and its
-    // fallbacks, which the status glyphs below reflect. GitHub's anchor for the heading
-    // "### Session state in the sidebar".
-    static constexpr std::wstring_view kStatusGlyphsDocsUrl{ L"https://github.com/lonelyquasar/axan#session-state-in-the-sidebar" };
+    // The implementer doc for OSC 7501 (the Program Status Protocol) and its fallbacks,
+    // which the status glyphs below reflect. docs/program-status-osc-7501.md on main; the
+    // README's "Session state in the sidebar" section is the short form and links there.
+    static constexpr std::wstring_view kStatusGlyphsDocsUrl{ L"https://github.com/lonelyquasar/axan/blob/main/docs/program-status-osc-7501.md" };
 
     safe_void_coroutine Sidebar::StatusGlyphsInfo_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
     {
