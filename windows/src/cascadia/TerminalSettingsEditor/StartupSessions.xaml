@@ -56,9 +56,26 @@
         </ResourceDictionary>
     </Page.Resources>
 
-    <StackPanel x:Name="PageRoot"
-                MaxWidth="1400"
-                HorizontalAlignment="Stretch">
+    <!--
+        A Grid, not a StackPanel, so the rows split a known height: in the wide layout
+        code-behind (_fitToViewport) sizes PageRoot to the settings content area's visible
+        height, the list row (*) takes what the other rows leave, and the list and the
+        detail panel scroll on their own instead of the whole page. In the narrow layout
+        PageRoot's height is unset, the * rows act as Auto, and the page scrolls as one
+        column under MainPage's ScrollViewer like every other settings page.
+    -->
+    <Grid x:Name="PageRoot"
+          MaxWidth="1400"
+          HorizontalAlignment="Stretch">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="LayoutStates">
                 <!--  Wide (the XAML default): list and detail panel side by side.  -->
@@ -74,26 +91,30 @@
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
                         <Setter Target="DetailColumn.Width" Value="0" />
-                        <Setter Target="DetailPanel.(Grid.Column)" Value="0" />
-                        <Setter Target="DetailPanel.(Grid.Row)" Value="1" />
-                        <Setter Target="DetailPanel.Margin" Value="0,24,0,0" />
+                        <Setter Target="DetailScroller.(Grid.Column)" Value="0" />
+                        <Setter Target="DetailScroller.(Grid.Row)" Value="1" />
+                        <Setter Target="DetailScroller.Margin" Value="0,24,0,0" />
                         <Setter Target="EntriesList.MaxHeight" Value="380" />
+                        <Setter Target="EntriesList.MinHeight" Value="0" />
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
 
-        <TextBlock Margin="0,0,0,4"
+        <TextBlock Grid.Row="0"
+                   Margin="0,0,0,4"
                    Style="{StaticResource TextBlockSubHeaderStyle}"
                    Text="Startup sessions" />
-        <TextBlock Margin="0,0,0,12"
+        <TextBlock Grid.Row="1"
+                   Margin="0,0,0,12"
                    Foreground="{ThemeResource SubgroupHeaderBrush}"
                    Style="{StaticResource CaptionTextBlockStyle}"
                    Text="The shells axan opens at launch, in list order. Select a row to edit it; indent a row to nest it under the one above. A separator row is a divider in the sidebar tree (a line or an open gap) that spawns nothing. Honored on a plain launch; command-line shells take precedence."
                    TextWrapping="Wrap" />
 
         <!--  Page commands: add rows, or replace the whole list.  -->
-        <StackPanel Margin="0,0,0,12"
+        <StackPanel Grid.Row="2"
+                    Margin="0,0,0,12"
                     Orientation="Horizontal"
                     Spacing="8">
             <Button x:Name="AddEntryButton"
@@ -163,6 +184,7 @@
         -->
         <muxc:InfoBar x:Name="ImportFailureBar"
                       Title="Import failed"
+                      Grid.Row="3"
                       Margin="0,0,0,8"
                       IsClosable="True"
                       IsOpen="False"
@@ -172,13 +194,16 @@
         <!--  axan #14: a zero-session capture (nothing live to save) never wipes the list.  -->
         <muxc:InfoBar x:Name="CaptureFailureBar"
                       Title="Nothing captured"
+                      Grid.Row="4"
                       Margin="0,0,0,8"
                       IsClosable="True"
                       IsOpen="False"
                       Message="No live sessions to capture from the window; the list was left unchanged."
                       Severity="Warning" />
 
-        <Grid ColumnSpacing="24">
+        <Grid x:Name="MainGrid"
+              Grid.Row="5"
+              ColumnSpacing="24">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*"
                                   MinWidth="260" />
@@ -186,15 +211,22 @@
                                   Width="3*" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!--  Left: the list (structure only) and the toolbar that acts on its selection.  -->
-            <StackPanel Grid.Row="0"
-                        Grid.Column="0"
-                        VerticalAlignment="Top"
-                        Spacing="8">
+            <!--
+                Left: the list (structure only) and the toolbar that acts on its selection. The
+                list fills the column's height (row *) and scrolls inside it; the toolbar stays
+                under it.
+            -->
+            <Grid Grid.Row="0"
+                  Grid.Column="0"
+                  RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <!--
                     Selection is synced in code-behind (EntriesList_SelectionChanged pushes the
                     user's pick into ViewModel.SelectedEntry; the view-model's SelectedEntry
@@ -208,7 +240,8 @@
                     toolbar and the accelerators remain the complete, accessible mechanism.
                 -->
                 <ListView x:Name="EntriesList"
-                          MaxHeight="560"
+                          Grid.Row="0"
+                          MinHeight="200"
                           AllowDrop="True"
                           AutomationProperties.Name="Startup sessions"
                           Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -346,7 +379,8 @@
                     (axan #429). A move carries the row's whole subtree among its siblings (#13);
                     the glyphs match the NewTabMenu page's reorder buttons.
                 -->
-                <StackPanel Orientation="Horizontal"
+                <StackPanel Grid.Row="1"
+                            Orientation="Horizontal"
                             Spacing="4">
                     <Button AutomationProperties.Name="Move up"
                             Click="MoveEntryUp_Click"
@@ -398,199 +432,208 @@
                                   Glyph="&#xE74D;" />
                     </Button>
                 </StackPanel>
-            </StackPanel>
+            </Grid>
 
             <!--
                 Right: the detail panel for ViewModel.SelectedEntry. Every SelectedEntry.X path
                 sits under the HasSelection-gated panel, so a null selection never shows a
                 stale field. Text boxes commit on every keystroke (UpdateSourceTrigger) so a
                 click on another row can't strand an edit that a LostFocus commit would have
-                written after the selection had already moved.
+                written after the selection had already moved. Its own ScrollViewer scrolls
+                it independently of the list in the wide layout (a bounded row); in the
+                narrow layout its height is unbounded, so the page scrolls instead.
             -->
-            <StackPanel x:Name="DetailPanel"
-                        Grid.Row="0"
-                        Grid.Column="1"
-                        VerticalAlignment="Top">
-                <TextBlock Margin="0,32,0,0"
-                           HorizontalAlignment="Center"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Text="Select a session to edit it"
-                           Visibility="{x:Bind mtu:Converters.InvertedBooleanToVisibility(ViewModel.HasSelection), Mode=OneWay}" />
+            <ScrollViewer x:Name="DetailScroller"
+                          Grid.Row="0"
+                          Grid.Column="1"
+                          Padding="0,0,12,0"
+                          HorizontalScrollMode="Disabled"
+                          VerticalScrollBarVisibility="Auto"
+                          ViewChanging="ViewChanging">
+                <StackPanel x:Name="DetailPanel"
+                            VerticalAlignment="Top">
+                    <TextBlock Margin="0,32,0,0"
+                               HorizontalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Text="Select a session to edit it"
+                               Visibility="{x:Bind mtu:Converters.InvertedBooleanToVisibility(ViewModel.HasSelection), Mode=OneWay}" />
 
-                <StackPanel Visibility="{x:Bind ViewModel.HasSelection, Mode=OneWay}">
-                    <!--  Session rows: Identity, Launch.  -->
-                    <StackPanel Spacing="24"
-                                Visibility="{x:Bind ViewModel.SelectedEntry.SessionVisibility, Mode=OneWay}">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource StartupGroupHeaderStyle}"
-                                       Text="Identity" />
-                            <Border Style="{StaticResource StartupCardStyle}">
-                                <StackPanel Spacing="12">
-                                    <!--
-                                        The shared identity editor (src/inc/AxanEntryIdentityEditor.h,
-                                        also the sidebar's live node card): name / label template,
-                                        icon grid + Browse, colour swatches, colour target. Built in
-                                        code-behind per selected row (_rebuildIdentity).
-                                    -->
-                                    <ContentPresenter x:Name="IdentityHost" />
-                                    <!--
-                                        Settings-only extra: the icon as text, for what the grid
-                                        doesn't offer (an emoji, a builtin:NAME token, a path).
-                                        Routed through the editor (SetIcon) so its preview and grid
-                                        highlight stay in step.
-                                    -->
-                                    <StackPanel Spacing="4">
-                                        <TextBlock FontWeight="SemiBold"
-                                                   Text="Icon as text" />
-                                        <TextBox x:Name="IconTextBox"
-                                                 AutomationProperties.Name="Icon as text"
-                                                 IsSpellCheckEnabled="False"
-                                                 PlaceholderText="A glyph name, an emoji, a builtin:NAME token, or an image path"
-                                                 TextChanged="IconTextBox_TextChanged" />
+                    <StackPanel Visibility="{x:Bind ViewModel.HasSelection, Mode=OneWay}">
+                        <!--  Session rows: Identity, Launch.  -->
+                        <StackPanel Spacing="24"
+                                    Visibility="{x:Bind ViewModel.SelectedEntry.SessionVisibility, Mode=OneWay}">
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource StartupGroupHeaderStyle}"
+                                           Text="Identity" />
+                                <Border Style="{StaticResource StartupCardStyle}">
+                                    <StackPanel Spacing="12">
+                                        <!--
+                                            The shared identity editor (src/inc/AxanEntryIdentityEditor.h,
+                                            also the sidebar's live node card): name / label template,
+                                            icon grid + Browse, colour swatches, colour target. Built in
+                                            code-behind per selected row (_rebuildIdentity).
+                                        -->
+                                        <ContentPresenter x:Name="IdentityHost" />
+                                        <!--
+                                            Settings-only extra: the icon as text, for what the grid
+                                            doesn't offer (an emoji, a builtin:NAME token, a path).
+                                            Routed through the editor (SetIcon) so its preview and grid
+                                            highlight stay in step.
+                                        -->
+                                        <StackPanel Spacing="4">
+                                            <TextBlock FontWeight="SemiBold"
+                                                       Text="Icon as text" />
+                                            <TextBox x:Name="IconTextBox"
+                                                     AutomationProperties.Name="Icon as text"
+                                                     IsSpellCheckEnabled="False"
+                                                     PlaceholderText="A glyph name, an emoji, a builtin:NAME token, or an image path"
+                                                     TextChanged="IconTextBox_TextChanged" />
+                                        </StackPanel>
                                     </StackPanel>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                                </Border>
+                            </StackPanel>
 
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource StartupGroupHeaderStyle}"
-                                       Text="Launch" />
-                            <!--
-                                ItemsSource and the current pick are set in code-behind
-                                (_syncProfileCombo): a classic {Binding} can't resolve property
-                                paths on a C++/WinRT page, and DisplayMemberPath reflects on
-                                Model.Profile, hence the explicit item template.
-                            -->
-                            <local:SettingContainer Header="Profile"
-                                                    HelpText="Which shell to spawn">
-                                <ComboBox x:Name="ProfileCombo"
-                                          AutomationProperties.Name="Profile"
-                                          SelectionChanged="ProfileCombo_SelectionChanged"
-                                          Style="{StaticResource ComboBoxSettingStyle}">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate x:DataType="model:Profile">
-                                            <TextBlock Text="{x:Bind Name}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-                            </local:SettingContainer>
-                            <local:SettingContainer Header="Directory"
-                                                    HelpText="Working directory; ~ is home. Empty uses the profile's.">
-                                <StackPanel>
-                                    <TextBox AutomationProperties.Name="Directory"
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource StartupGroupHeaderStyle}"
+                                           Text="Launch" />
+                                <!--
+                                    ItemsSource and the current pick are set in code-behind
+                                    (_syncProfileCombo): a classic {Binding} can't resolve property
+                                    paths on a C++/WinRT page, and DisplayMemberPath reflects on
+                                    Model.Profile, hence the explicit item template.
+                                -->
+                                <local:SettingContainer Header="Profile"
+                                                        HelpText="Which shell to spawn">
+                                    <ComboBox x:Name="ProfileCombo"
+                                              AutomationProperties.Name="Profile"
+                                              SelectionChanged="ProfileCombo_SelectionChanged"
+                                              Style="{StaticResource ComboBoxSettingStyle}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="model:Profile">
+                                                <TextBlock Text="{x:Bind Name}" />
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </local:SettingContainer>
+                                <local:SettingContainer Header="Directory"
+                                                        HelpText="Working directory; ~ is home. Empty uses the profile's.">
+                                    <StackPanel>
+                                        <TextBox AutomationProperties.Name="Directory"
+                                                 IsSpellCheckEnabled="False"
+                                                 PlaceholderText="Directory"
+                                                 Style="{StaticResource TextBoxSettingStyle}"
+                                                 Text="{x:Bind ViewModel.SelectedEntry.Directory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <Button Margin="0,8,0,0"
+                                                HorizontalAlignment="Right"
+                                                AutomationProperties.Name="Browse for a directory"
+                                                Click="BrowseDirectory_Click"
+                                                Content="Browse…" />
+                                    </StackPanel>
+                                </local:SettingContainer>
+                                <local:SettingContainer Header="Command"
+                                                        HelpText="Command to run; empty runs the profile's shell">
+                                    <TextBox AutomationProperties.Name="Command"
                                              IsSpellCheckEnabled="False"
-                                             PlaceholderText="Directory"
+                                             PlaceholderText="Command"
                                              Style="{StaticResource TextBoxSettingStyle}"
-                                             Text="{x:Bind ViewModel.SelectedEntry.Directory, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <Button Margin="0,8,0,0"
-                                            HorizontalAlignment="Right"
-                                            AutomationProperties.Name="Browse for a directory"
-                                            Click="BrowseDirectory_Click"
-                                            Content="Browse…" />
-                                </StackPanel>
-                            </local:SettingContainer>
-                            <local:SettingContainer Header="Command"
-                                                    HelpText="Command to run; empty runs the profile's shell">
-                                <TextBox AutomationProperties.Name="Command"
-                                         IsSpellCheckEnabled="False"
-                                         PlaceholderText="Command"
-                                         Style="{StaticResource TextBoxSettingStyle}"
-                                         Text="{x:Bind ViewModel.SelectedEntry.Command, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            </local:SettingContainer>
+                                             Text="{x:Bind ViewModel.SelectedEntry.Command, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </local:SettingContainer>
+                            </StackPanel>
+
+                            <!--
+                                axan #34: the row's hoist override (LaunchEntry.Hoist, src/inc/AxanHoistRule.h),
+                                the same Default / Never / Custom choice as the sidebar's node card.
+                                Default follows sidebar.hoistStates (Sessions > Sidebar). The combo's
+                                pick and the state checkboxes are synced in code-behind (_syncHoist);
+                                the checkboxes are built once in the constructor and shown only for
+                                Custom.
+                            -->
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource StartupGroupHeaderStyle}"
+                                           Text="Hoisted group" />
+                                <local:SettingContainer Header="Hoist in the sidebar"
+                                                        HelpText="Default follows the states checked on the Sidebar page; Never keeps this session out of the group; Custom picks its own states">
+                                    <ComboBox x:Name="HoistModeCombo"
+                                              AutomationProperties.Name="Hoist in the sidebar"
+                                              SelectionChanged="HoistModeCombo_SelectionChanged"
+                                              Style="{StaticResource ComboBoxSettingStyle}">
+                                        <ComboBoxItem Content="Default" />
+                                        <ComboBoxItem Content="Never" />
+                                        <ComboBoxItem Content="Custom" />
+                                    </ComboBox>
+                                </local:SettingContainer>
+                                <Border x:Name="HoistStatesCard"
+                                        Style="{StaticResource StartupCardStyle}"
+                                        Visibility="Collapsed">
+                                    <VariableSizedWrapGrid x:Name="HoistStatesPanel"
+                                                           AutomationProperties.Name="Hoist this session in these states"
+                                                           Orientation="Horizontal" />
+                                </Border>
+                            </StackPanel>
                         </StackPanel>
 
                         <!--
-                            axan #34: the row's hoist override (LaunchEntry.Hoist, src/inc/AxanHoistRule.h),
-                            the same Default / Never / Custom choice as the sidebar's node card.
-                            Default follows sidebar.hoistStates (Sessions > Sidebar). The combo's
-                            pick and the state checkboxes are synced in code-behind (_syncHoist);
-                            the checkboxes are built once in the constructor and shown only for
-                            Custom.
+                            Separator rows (axan #3, #33). Style and Placement are literal-item
+                            ComboBoxes bound through the row's index twins (SeparatorStyleIndex /
+                            PlacementIndex). Height is in session-row units; the row's setter clamps
+                            to [0.1, 10] and rounds to tenths.
                         -->
-                        <StackPanel>
+                        <StackPanel Visibility="{x:Bind ViewModel.SelectedEntry.SeparatorVisibility, Mode=OneWay}">
                             <TextBlock Style="{StaticResource StartupGroupHeaderStyle}"
-                                       Text="Hoisted group" />
-                            <local:SettingContainer Header="Hoist in the sidebar"
-                                                    HelpText="Default follows the states checked on the Sidebar page; Never keeps this session out of the group; Custom picks its own states">
-                                <ComboBox x:Name="HoistModeCombo"
-                                          AutomationProperties.Name="Hoist in the sidebar"
-                                          SelectionChanged="HoistModeCombo_SelectionChanged"
+                                       Text="Separator" />
+                            <local:SettingContainer Header="Label"
+                                                    HelpText="A label makes this separator a section header in the sidebar; click it there to collapse the rows below it up to the next separator">
+                                <TextBox AutomationProperties.Name="Separator label"
+                                         PlaceholderText="Label (optional)"
+                                         Style="{StaticResource TextBoxSettingStyle}"
+                                         Text="{x:Bind ViewModel.SelectedEntry.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </local:SettingContainer>
+                            <local:SettingContainer Header="Start collapsed"
+                                                    HelpText="Start this labelled section collapsed (only meaningful with a label)">
+                                <ToggleSwitch AutomationProperties.Name="Start collapsed"
+                                              IsOn="{x:Bind ViewModel.SelectedEntry.Collapsed, Mode=TwoWay}"
+                                              Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+                            </local:SettingContainer>
+                            <local:SettingContainer Header="Style"
+                                                    HelpText="Line draws a rule across the sidebar; Space leaves an open gap">
+                                <ComboBox AutomationProperties.Name="Separator style"
+                                          SelectedIndex="{x:Bind ViewModel.SelectedEntry.SeparatorStyleIndex, Mode=TwoWay}"
                                           Style="{StaticResource ComboBoxSettingStyle}">
-                                    <ComboBoxItem Content="Default" />
-                                    <ComboBoxItem Content="Never" />
-                                    <ComboBoxItem Content="Custom" />
+                                    <ComboBoxItem Content="Line" />
+                                    <ComboBoxItem Content="Space" />
                                 </ComboBox>
                             </local:SettingContainer>
-                            <Border x:Name="HoistStatesCard"
-                                    Style="{StaticResource StartupCardStyle}"
-                                    Visibility="Collapsed">
-                                <VariableSizedWrapGrid x:Name="HoistStatesPanel"
-                                                       AutomationProperties.Name="Hoist this session in these states"
-                                                       Orientation="Horizontal" />
-                            </Border>
+                            <local:SettingContainer Header="Height"
+                                                    HelpText="In session rows: 1 is one row, 0.5 half a row, 2 double-space">
+                                <muxc:NumberBox MinWidth="140"
+                                                AutomationProperties.Name="Separator height"
+                                                LargeChange="1"
+                                                Maximum="10"
+                                                Minimum="0.1"
+                                                SmallChange="0.5"
+                                                SpinButtonPlacementMode="Compact"
+                                                Value="{x:Bind ViewModel.SelectedEntry.Height, Mode=TwoWay}" />
+                            </local:SettingContainer>
+                            <local:SettingContainer Header="Placement"
+                                                    HelpText="Inline keeps this position in the list; Bottom pins the separator below its siblings, so sessions added later land above it">
+                                <ComboBox AutomationProperties.Name="Separator placement"
+                                          SelectedIndex="{x:Bind ViewModel.SelectedEntry.PlacementIndex, Mode=TwoWay}"
+                                          Style="{StaticResource ComboBoxSettingStyle}">
+                                    <ComboBoxItem Content="Inline" />
+                                    <ComboBoxItem Content="Bottom" />
+                                </ComboBox>
+                            </local:SettingContainer>
                         </StackPanel>
                     </StackPanel>
-
-                    <!--
-                        Separator rows (axan #3, #33). Style and Placement are literal-item
-                        ComboBoxes bound through the row's index twins (SeparatorStyleIndex /
-                        PlacementIndex). Height is in session-row units; the row's setter clamps
-                        to [0.1, 10] and rounds to tenths.
-                    -->
-                    <StackPanel Visibility="{x:Bind ViewModel.SelectedEntry.SeparatorVisibility, Mode=OneWay}">
-                        <TextBlock Style="{StaticResource StartupGroupHeaderStyle}"
-                                   Text="Separator" />
-                        <local:SettingContainer Header="Label"
-                                                HelpText="A label makes this separator a section header in the sidebar; click it there to collapse the rows below it up to the next separator">
-                            <TextBox AutomationProperties.Name="Separator label"
-                                     PlaceholderText="Label (optional)"
-                                     Style="{StaticResource TextBoxSettingStyle}"
-                                     Text="{x:Bind ViewModel.SelectedEntry.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                        </local:SettingContainer>
-                        <local:SettingContainer Header="Start collapsed"
-                                                HelpText="Start this labelled section collapsed (only meaningful with a label)">
-                            <ToggleSwitch AutomationProperties.Name="Start collapsed"
-                                          IsOn="{x:Bind ViewModel.SelectedEntry.Collapsed, Mode=TwoWay}"
-                                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
-                        </local:SettingContainer>
-                        <local:SettingContainer Header="Style"
-                                                HelpText="Line draws a rule across the sidebar; Space leaves an open gap">
-                            <ComboBox AutomationProperties.Name="Separator style"
-                                      SelectedIndex="{x:Bind ViewModel.SelectedEntry.SeparatorStyleIndex, Mode=TwoWay}"
-                                      Style="{StaticResource ComboBoxSettingStyle}">
-                                <ComboBoxItem Content="Line" />
-                                <ComboBoxItem Content="Space" />
-                            </ComboBox>
-                        </local:SettingContainer>
-                        <local:SettingContainer Header="Height"
-                                                HelpText="In session rows: 1 is one row, 0.5 half a row, 2 double-space">
-                            <muxc:NumberBox MinWidth="140"
-                                            AutomationProperties.Name="Separator height"
-                                            LargeChange="1"
-                                            Maximum="10"
-                                            Minimum="0.1"
-                                            SmallChange="0.5"
-                                            SpinButtonPlacementMode="Compact"
-                                            Value="{x:Bind ViewModel.SelectedEntry.Height, Mode=TwoWay}" />
-                        </local:SettingContainer>
-                        <local:SettingContainer Header="Placement"
-                                                HelpText="Inline keeps this position in the list; Bottom pins the separator below its siblings, so sessions added later land above it">
-                            <ComboBox AutomationProperties.Name="Separator placement"
-                                      SelectedIndex="{x:Bind ViewModel.SelectedEntry.PlacementIndex, Mode=TwoWay}"
-                                      Style="{StaticResource ComboBoxSettingStyle}">
-                                <ComboBoxItem Content="Inline" />
-                                <ComboBoxItem Content="Bottom" />
-                            </ComboBox>
-                        </local:SettingContainer>
-                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
+            </ScrollViewer>
         </Grid>
 
-        <TextBlock Margin="0,16,0,0"
+        <TextBlock Grid.Row="6"
+                   Margin="0,16,0,0"
                    Foreground="{ThemeResource SubgroupHeaderBrush}"
                    Style="{StaticResource CaptionTextBlockStyle}"
                    Text="A portable .toml mirror is written automatically when you save: find startup-sessions.toml (this list) and per-profile mirrors in the app's LocalState 'profiles' folder. Import startup-sessions.toml on another machine to carry these sessions across."
                    TextWrapping="Wrap" />
-    </StackPanel>
+    </Grid>
 </Page>

@@ -114,6 +114,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
         Windows::UI::Xaml::Data::INotifyPropertyChanged::PropertyChanged_revoker _vmChangedRevoker;
 
+        // The wide layout's fill-the-window sizing: the hosting ScrollViewer (MainPage's),
+        // its SizeChanged subscription, and the frame padding between it and the page.
+        void _attachToHostScroller();
+        void _fitToViewport();
+        winrt::weak_ref<Windows::UI::Xaml::Controls::ScrollViewer> _hostScroller;
+        Windows::UI::Xaml::FrameworkElement::SizeChanged_revoker _hostSizeRevoker;
+        double _hostPadding{ 0 };
+
         // True while a structural op runs or the page itself sets the ListView's selection;
         // EntriesList_SelectionChanged ignores the list's selection changes then.
         bool _ignoreListSelection{ false };

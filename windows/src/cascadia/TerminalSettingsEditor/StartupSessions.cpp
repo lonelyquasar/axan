@@ -35,6 +35,88 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
 
         _buildHoistStateBoxes(); // axan #34
+
+        // The wide layout fills the settings content area's height (see _fitToViewport).
+        Loaded([weak = get_weak()](const IInspectable&, const RoutedEventArgs&) {
+            if (const auto self = weak.get())
+            {
+                self->_attachToHostScroller();
+            }
+        });
+        Unloaded([weak = get_weak()](const IInspectable&, const RoutedEventArgs&) {
+            if (const auto self = weak.get())
+            {
+                self->_hostSizeRevoker.revoke();
+            }
+        });
+        LayoutStates().CurrentStateChanged([weak = get_weak()](const IInspectable&, const VisualStateChangedEventArgs&) {
+            if (const auto self = weak.get())
+            {
+                self->_fitToViewport();
+            }
+        });
+    }
+
+    // ---- fill the window's height ----
+    //
+    // The page is hosted in MainPage's ScrollViewer (SettingsMainPage_ScrollViewer, around
+    // contentFrame), which gives it unbounded height, so a * row alone can't fill the
+    // window. In the wide layout PageRoot gets the viewport's height (less the frame's
+    // padding): its * row hands the list and the detail panel what the header and footer
+    // rows leave, and both scroll on their own while the page itself fits and doesn't.
+    // Below kMinFitHeight the page keeps that height and the outer ScrollViewer takes
+    // over. The narrow layout clears the height: one column that scrolls as a whole.
+
+    void StartupSessions::_attachToHostScroller()
+    {
+        _hostSizeRevoker.revoke();
+        _hostScroller = nullptr;
+        _hostPadding = 0;
+        for (auto node = Media::VisualTreeHelper::GetParent(*this); node; node = Media::VisualTreeHelper::GetParent(node))
+        {
+            if (const auto frame = node.try_as<winrt::Windows::UI::Xaml::Controls::Frame>())
+            {
+                const auto pad = frame.Padding();
+                _hostPadding += pad.Top + pad.Bottom;
+            }
+            if (const auto scroller = node.try_as<ScrollViewer>())
+            {
+                _hostScroller = winrt::make_weak(scroller);
+                _hostSizeRevoker = scroller.SizeChanged(winrt::auto_revoke, [weak = get_weak()](const IInspectable&, const SizeChangedEventArgs&) {
+                    if (const auto self = weak.get())
+                    {
+                        self->_fitToViewport();
+                    }
+                });
+                break;
+            }
+        }
+        _fitToViewport();
+    }
+
+    void StartupSessions::_fitToViewport()
+    {
+        static constexpr double kMinFitHeight = 520;
+        const auto root = PageRoot();
+        const auto state = LayoutStates().CurrentState();
+        const auto narrow = state && state.Name() == L"NarrowLayout";
+        const auto scroller = _hostScroller.get();
+        if (narrow || !scroller)
+        {
+            root.ClearValue(FrameworkElement::HeightProperty());
+            return;
+        }
+        auto viewport = scroller.ViewportHeight();
+        if (viewport <= 0)
+        {
+            viewport = scroller.ActualHeight();
+        }
+        // Floor, so rounding never leaves the outer ScrollViewer a sub-pixel to scroll.
+        const auto height = std::max(kMinFitHeight, std::floor(viewport - _hostPadding));
+        if (root.Height() != height)
+        {
+            root.Height(height);
+        }
     }
 
     void StartupSessions::OnNavigatedTo(const NavigationEventArgs& e)
