@@ -266,7 +266,7 @@ namespace Axan::HoistRule
         return (global & ~kAttention) == 0;
     }
 
-    // ---- UI vocabulary (the three pickers: Settings > Appearance, the Startup sessions row,
+    // ---- UI vocabulary (the three pickers: Settings > Sidebar, the Startup sessions row,
     // the sidebar's node editor) ----
 
     // The order the pickers list the names in.

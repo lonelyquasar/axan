@@ -657,7 +657,7 @@
     <comment>axan #34: Header for a set of checkboxes: which session states list a session in the group at the top of the sidebar.</comment>
   </data>
   <data name="Globals_SidebarHoistStates.HelpText" xml:space="preserve">
-    <value>When the hoisted group is on (sidebar right-click menu), a session in any checked state is also listed at the top of the sidebar, longest-waiting first. The group is titled "Needs you" while only attention states are checked, "Hoisted" otherwise. A session can override this from the sidebar's Edit node card.</value>
+    <value>When the hoisted group is on (sidebar right-click menu), a session in any checked state is also listed at the top of the sidebar, longest-waiting first. The group is titled "Needs you" while only attention states are checked, "Hoisted" otherwise. A session can override this on the Startup sessions page or from the sidebar's Edit node card.</value>
     <comment>axan #34: A description for the "hoist sessions in these states" setting. Presented near "Globals_SidebarHoistStates.Header". "Needs you" and "Hoisted" are the group's titles.</comment>
   </data>
   <data name="Globals_SidebarHoistStatesReset.Content" xml:space="preserve">

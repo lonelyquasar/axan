@@ -9,6 +9,7 @@
 #include "..\WinRTUtils\inc\Utils.h"
 #include "../../types/inc/utils.hpp" // GuidToString
 #include <AxanEntryIdentityEditor.h> // axan #38: the identity section shared with the sidebar's node card
+#include <AxanHoistRule.h> // axan #34: the per-entry hoist override
 #include <AxanIconRegistry.h> // builtin:NAME <-> glyph for the icon text box
 #include <AxanLog.h>
 #include <AxanSessionPalette.h> // resolve the preview's colour token
@@ -32,6 +33,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         {
             accelerator.ScopeOwner(list);
         }
+
+        _buildHoistStateBoxes(); // axan #34
     }
 
     void StartupSessions::OnNavigatedTo(const NavigationEventArgs& e)
@@ -415,6 +418,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 };
                 _identity = IdentityEditor::Build(std::move(options));
                 IdentityHost().Content(_identity->Root());
+                // Only on a row change, like the identity editor: an emptied Custom list is
+                // stored as "never" but the combo stays on Custom while the row is shown
+                // (the sidebar's node card behaves the same).
+                _syncHoist();
                 Axan::Log::Debug("StartupSessions", "detail panel rebuilt for the selected row", { { "id", winrt::to_string(row.Id()) } });
             }
         }
@@ -552,6 +559,120 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             {
                 row.Profile(g);
             }
+        }
+    }
+
+    // ---- axan #34: the Hoisted group ----
+    //
+    // The row's Hoist is the AxanHoistRule.h canonical string: "" = Default (follow
+    // sidebar.hoistStates), "never", or the chosen names. The same vocabulary and the same
+    // transitions as the sidebar's node card (TerminalPage::_BuildNodeEditHoistSection):
+    // Default writes "", Never writes "never", Custom starts from the built-in default list
+    // unless the row already has its own; unchecking the last box writes "never". Every
+    // write goes to the row (which commits), and only on a real change.
+
+    void StartupSessions::_buildHoistStateBoxes()
+    {
+        const auto panel = HoistStatesPanel();
+        panel.Children().Clear();
+        for (const auto name : Axan::HoistRule::kDisplayOrder)
+        {
+            CheckBox box;
+            box.MinWidth(0);
+            box.Margin(Thickness{ 0, 0, 16, 0 });
+            box.Tag(winrt::box_value(winrt::hstring{ name }));
+            box.Content(winrt::box_value(winrt::hstring{ Axan::HoistRule::DisplayName(name) }));
+            // Click, not Checked/Unchecked: it fires only for the user, never for _syncHoist.
+            box.Click({ get_weak(), &StartupSessions::_hoistStateBox_Click });
+            panel.Children().Append(box);
+        }
+    }
+
+    // The boxes show the row's own list (none checked unless it is Custom); the card shows
+    // while the combo is on Custom.
+    void StartupSessions::_syncHoistStates(const Editor::LaunchEntryViewModel& row, bool custom)
+    {
+        using namespace Axan::HoistRule;
+        const auto o = Parse(row.Hoist());
+        for (const auto& child : HoistStatesPanel().Children())
+        {
+            if (const auto box = child.try_as<CheckBox>())
+            {
+                const auto key = winrt::unbox_value_or<winrt::hstring>(box.Tag(), winrt::hstring{});
+                box.IsChecked(o.mode == Mode::Custom && Has(o.mask, key));
+            }
+        }
+        HoistStatesCard().Visibility(custom ? Visibility::Visible : Visibility::Collapsed);
+    }
+
+    void StartupSessions::_syncHoist()
+    {
+        using namespace Axan::HoistRule;
+        const auto row = _selected();
+        if (!row || !row.IsSession())
+        {
+            return;
+        }
+        const auto mode = Parse(row.Hoist()).mode;
+        {
+            _hoistSyncing = true;
+            const auto restore = wil::scope_exit([&]() noexcept { _hoistSyncing = false; });
+            HoistModeCombo().SelectedIndex(static_cast<int32_t>(mode));
+        }
+        _syncHoistStates(row, mode == Mode::Custom);
+    }
+
+    void StartupSessions::HoistModeCombo_SelectionChanged(const IInspectable& sender, const SelectionChangedEventArgs& /*args*/)
+    {
+        using namespace Axan::HoistRule;
+        if (_hoistSyncing)
+        {
+            return; // _syncHoist's programmatic selection, not a user pick
+        }
+        const auto combo = sender.try_as<ComboBox>();
+        const auto row = _selected();
+        if (!combo || !row || !row.IsSession() || combo.SelectedIndex() < 0)
+        {
+            return;
+        }
+        const auto idx = combo.SelectedIndex();
+        const auto current = Parse(row.Hoist());
+        Override next{};
+        if (idx == static_cast<int32_t>(Mode::Never))
+        {
+            next = { Mode::Never, 0 };
+        }
+        else if (idx == static_cast<int32_t>(Mode::Custom))
+        {
+            next = current.mode == Mode::Custom ? current : FromMask(kDefault); // start from the default list
+        }
+        if (!(next == current))
+        {
+            row.Hoist(winrt::hstring{ Format(next) });
+            Axan::Log::Debug("StartupSessions", "hoist override set", { { "id", winrt::to_string(row.Id()) }, { "hoist", winrt::to_string(row.Hoist()) } });
+        }
+        // Re-sync only the boxes and the card: the combo keeps the user's pick.
+        _syncHoistStates(row, idx == static_cast<int32_t>(Mode::Custom));
+    }
+
+    void StartupSessions::_hoistStateBox_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
+    {
+        using namespace Axan::HoistRule;
+        const auto box = sender.try_as<CheckBox>();
+        const auto row = _selected();
+        if (!box || !row || !row.IsSession())
+        {
+            return;
+        }
+        const auto key = winrt::unbox_value_or<winrt::hstring>(box.Tag(), winrt::hstring{});
+        const auto current = Parse(row.Hoist());
+        const Mask cur = current.mode == Mode::Custom ? current.mask : 0;
+        // An emptied custom list is written as "never" (FromMask); the combo stays on Custom.
+        const auto next = FromMask(With(cur, key, box.IsChecked() && box.IsChecked().Value()));
+        if (!(next == current))
+        {
+            row.Hoist(winrt::hstring{ Format(next) });
+            Axan::Log::Debug("StartupSessions", "hoist override set", { { "id", winrt::to_string(row.Id()) }, { "hoist", winrt::to_string(row.Hoist()) } });
         }
     }
 

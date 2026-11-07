@@ -494,6 +494,37 @@
                                          Text="{x:Bind ViewModel.SelectedEntry.Command, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </local:SettingContainer>
                         </StackPanel>
+
+                        <!--
+                            axan #34: the row's hoist override (LaunchEntry.Hoist, src/inc/AxanHoistRule.h),
+                            the same Default / Never / Custom choice as the sidebar's node card.
+                            Default follows sidebar.hoistStates (Sessions > Sidebar). The combo's
+                            pick and the state checkboxes are synced in code-behind (_syncHoist);
+                            the checkboxes are built once in the constructor and shown only for
+                            Custom.
+                        -->
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource StartupGroupHeaderStyle}"
+                                       Text="Hoisted group" />
+                            <local:SettingContainer Header="Hoist in the sidebar"
+                                                    HelpText="Default follows the states checked on the Sidebar page; Never keeps this session out of the group; Custom picks its own states">
+                                <ComboBox x:Name="HoistModeCombo"
+                                          AutomationProperties.Name="Hoist in the sidebar"
+                                          SelectionChanged="HoistModeCombo_SelectionChanged"
+                                          Style="{StaticResource ComboBoxSettingStyle}">
+                                    <ComboBoxItem Content="Default" />
+                                    <ComboBoxItem Content="Never" />
+                                    <ComboBoxItem Content="Custom" />
+                                </ComboBox>
+                            </local:SettingContainer>
+                            <Border x:Name="HoistStatesCard"
+                                    Style="{StaticResource StartupCardStyle}"
+                                    Visibility="Collapsed">
+                                <VariableSizedWrapGrid x:Name="HoistStatesPanel"
+                                                       AutomationProperties.Name="Hoist this session in these states"
+                                                       Orientation="Horizontal" />
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
 
                     <!--

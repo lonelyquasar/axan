@@ -66,6 +66,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void ProfileCombo_SelectionChanged(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Controls::SelectionChangedEventArgs& args);
         safe_void_coroutine BrowseDirectory_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         void IconTextBox_TextChanged(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Controls::TextChangedEventArgs& args);
+        // axan #34: the Hoisted group's Default / Never / Custom pick.
+        void HoistModeCombo_SelectionChanged(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Controls::SelectionChangedEventArgs& args);
 
         // axan #38: row-template formatting (see the IDL).
         static hstring RowLabel(const hstring& name, bool isSeparator, const hstring& separatorStyle, double height);
@@ -100,6 +102,13 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void _rebuildDetail();
         void _syncProfileCombo();
         void _syncIconText();
+        // axan #34: the Hoisted group. The state checkboxes are built once (they don't depend
+        // on the row; a click writes to the selected row); _syncHoist sets the combo, the
+        // boxes and the card's visibility from the selected row's Hoist.
+        void _buildHoistStateBoxes();
+        void _syncHoist();
+        void _syncHoistStates(const Editor::LaunchEntryViewModel& row, bool custom);
+        void _hoistStateBox_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
         safe_void_coroutine _PickIconImage(Editor::LaunchEntryViewModel vm);
 
         Windows::UI::Xaml::Data::INotifyPropertyChanged::PropertyChanged_revoker _vmChangedRevoker;
@@ -127,6 +136,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // SelectionChanged skips the commit then (#435 item 1 — without this, selecting a
         // follow-the-default entry would pin it to the current default's GUID).
         bool _profileComboLoading{ false };
+
+        // axan #34: true while _syncHoist sets HoistModeCombo's selection; SelectionChanged
+        // writes nothing then, so building the panel for a row never commits.
+        bool _hoistSyncing{ false };
     };
 }
 

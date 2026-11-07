@@ -2320,7 +2320,7 @@ namespace winrt::TerminalApp::implementation
     }
 
     // axan #34: "Hoisted group": Default (follow sidebar.hoistStates) / Never / Custom, the
-    // Custom list as the same state checkboxes as Settings > Appearance, shown inline only
+    // Custom list as the same state checkboxes as Settings > Sidebar, shown inline only
     // while Custom is chosen. Applied on Save, like the rest of the card.
     StackPanel TerminalPage::_BuildNodeEditHoistSection()
     {
@@ -2335,7 +2335,7 @@ namespace winrt::TerminalApp::implementation
         mode.Items().Append(winrt::box_value(winrt::hstring{ L"Never" }));
         mode.Items().Append(winrt::box_value(winrt::hstring{ L"Custom" }));
         WUX::Automation::AutomationProperties::SetName(mode, L"Hoist in the sidebar");
-        ToolTipService::SetToolTip(mode, winrt::box_value(winrt::hstring{ L"Default follows Settings > Appearance; Never keeps this session out of the group; Custom picks its own states" }));
+        ToolTipService::SetToolTip(mode, winrt::box_value(winrt::hstring{ L"Default follows Settings > Sidebar; Never keeps this session out of the group; Custom picks its own states" }));
         mode.SelectedIndex(static_cast<int32_t>(Parse(_nodeEditHoist).mode));
 
         WUX::Controls::VariableSizedWrapGrid boxes{};

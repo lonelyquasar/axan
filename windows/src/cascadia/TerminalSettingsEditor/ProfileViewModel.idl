@@ -83,8 +83,8 @@ namespace Microsoft.Terminal.Settings.Editor
         // collapsible section header; Collapsed is whether it starts collapsed.
         Boolean Collapsed;
         // axan #34 (sessions only): the hoist override in AxanHoistRule.h canonical form
-        // ("" = follow sidebar.hoistStates, "never", or comma-joined names). Not edited on
-        // this page (the sidebar's node editor sets it); carried so a commit round-trips it.
+        // ("" = follow sidebar.hoistStates, "never", or comma-joined names). Edited by the
+        // Startup sessions detail panel's Hoisted group and the sidebar's node editor.
         String Hoist;
         // Placement as a picker index (0 = inline, 1 = bottom). Backed by Placement.
         Int32 PlacementIndex;
