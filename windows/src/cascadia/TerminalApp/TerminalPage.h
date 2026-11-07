@@ -590,9 +590,9 @@ namespace winrt::TerminalApp::implementation
         void _SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply);
         void _RecomputeAllNodeStates();
         // axan: hand sidebar.iconFontScale to IconPathConverter (process-wide) and rebuild
-        // this window's node icons when the map differs from what this page last applied.
+        // this window's node icons when its generation differs from what this page last applied.
         void _ApplyIconFontScales();
-        std::optional<std::map<std::wstring, double>> _appliedIconFontScales;
+        std::optional<uint64_t> _appliedIconFontScales;
         Windows::Foundation::Collections::IObservableVector<winrt::TerminalApp::SessionNodeViewModel> _needsYouItems{ nullptr };
         void _RealizeStartupSeparators();
         void _MarkStartupSpawnComplete();

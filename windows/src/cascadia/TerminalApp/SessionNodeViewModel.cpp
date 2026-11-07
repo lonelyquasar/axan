@@ -562,13 +562,10 @@ namespace winrt::TerminalApp::implementation
 
     // For a non-idle state: the state, its kind, the absolute local time it began and the
     // full message, e.g. "needs-you (permission) since 14:32:05" / "Allow Bash: ...".
-    // Shown under the label in the row tooltip; Collapsed when idle.
+    // Shown under the label in the row tooltip; Collapsed when idle with nothing to explain.
+    // A preview follows the same rule: its "Preview - " prefix alone is not worth a line.
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateToolTipVisibility() const noexcept
     {
-        if (_realWhilePreviewing && !_isSeparator)
-        {
-            return winrt::Windows::UI::Xaml::Visibility::Visible; // it starts "Preview - "
-        }
         return _isSeparator || (_state == L"idle" && !ShowsRetained() && _slotExplanation.empty()) ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
     }
 

@@ -10,6 +10,8 @@
 #include "ViewModelHelpers.h"
 #include "Utils.h"
 
+#include <AxanSidebarSizes.h> // axan: row size ranges and defaults
+
 namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 {
     struct SidebarViewModel : SidebarViewModelT<SidebarViewModel>, ViewModelHelper<SidebarViewModel>
@@ -66,10 +68,35 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarNeedsYouGroup); // axan #34
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateLabels);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarShowAgentName);
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarLabelFontSize);
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateLineFontSize);
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarIconSize);
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateGlyphSize);
+
+        // axan: the row sizes. A cleared NumberBox pushes NaN through its TwoWay binding; it
+        // reads as the setting's default (and any value is clamped to the box's range), so NaN
+        // never reaches settings.json or the sidebar's FontSize bindings. The change is
+        // announced even when the stored value stays put, so a cleared box shows it again.
+        double SidebarLabelFontSize() const { return _GlobalSettings.SidebarLabelFontSize(); }
+        void SidebarLabelFontSize(double value)
+        {
+            _SetSize(value, Axan::SidebarSizes::kLabelFontSize, L"SidebarLabelFontSize", L"HasSidebarLabelFontSize", _GlobalSettings.SidebarLabelFontSize(), [&](double v) { _GlobalSettings.SidebarLabelFontSize(v); });
+        }
+        bool HasSidebarLabelFontSize() const { return _GlobalSettings.HasSidebarLabelFontSize(); }
+        double SidebarStateLineFontSize() const { return _GlobalSettings.SidebarStateLineFontSize(); }
+        void SidebarStateLineFontSize(double value)
+        {
+            _SetSize(value, Axan::SidebarSizes::kStateLineFontSize, L"SidebarStateLineFontSize", L"HasSidebarStateLineFontSize", _GlobalSettings.SidebarStateLineFontSize(), [&](double v) { _GlobalSettings.SidebarStateLineFontSize(v); });
+        }
+        bool HasSidebarStateLineFontSize() const { return _GlobalSettings.HasSidebarStateLineFontSize(); }
+        double SidebarIconSize() const { return _GlobalSettings.SidebarIconSize(); }
+        void SidebarIconSize(double value)
+        {
+            _SetSize(value, Axan::SidebarSizes::kIconSize, L"SidebarIconSize", L"HasSidebarIconSize", _GlobalSettings.SidebarIconSize(), [&](double v) { _GlobalSettings.SidebarIconSize(v); });
+        }
+        bool HasSidebarIconSize() const { return _GlobalSettings.HasSidebarIconSize(); }
+        double SidebarStateGlyphSize() const { return _GlobalSettings.SidebarStateGlyphSize(); }
+        void SidebarStateGlyphSize(double value)
+        {
+            _SetSize(value, Axan::SidebarSizes::kStateGlyphSize, L"SidebarStateGlyphSize", L"HasSidebarStateGlyphSize", _GlobalSettings.SidebarStateGlyphSize(), [&](double v) { _GlobalSettings.SidebarStateGlyphSize(v); });
+        }
+        bool HasSidebarStateGlyphSize() const { return _GlobalSettings.HasSidebarStateGlyphSize(); }
 
         // axan: sidebar.iconFontScale (see the idl)
         winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> SidebarIconFontFamilies() const;
@@ -85,6 +112,20 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
     private:
         Model::GlobalAppSettings _GlobalSettings;
+        template<typename Store>
+        void _SetSize(double value, const Axan::SidebarSizes::SizeRange& range, std::wstring_view name, std::wstring_view hasName, double current, Store&& store)
+        {
+            const auto sanitized = Axan::SidebarSizes::SanitizeSize(value, range);
+            if (current != sanitized)
+            {
+                store(sanitized);
+                _NotifyChanges(hasName, name);
+            }
+            else if (sanitized != value)
+            {
+                _NotifyChanges(name);
+            }
+        }
         std::vector<winrt::hstring> _extraIconSources;
         void _StoreIconFontScales(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>& map);
 

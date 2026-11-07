@@ -200,9 +200,9 @@ namespace winrt::TerminalApp::implementation
         bool ClearPreview(winrt::Windows::Foundation::DateTime now); // true if one was shown
         bool IsPreviewing() const noexcept { return _realWhilePreviewing.has_value(); }
         hstring PreviewId() const noexcept { return _previewId; }
-        // The sum over the tab's panes of their newest OSC 7501 record revision when the
-        // preview was set; a larger sum later means a real report arrived.
-        uint64_t PreviewBaselineRevision{ 0 };
+        // Each pane's newest OSC 7501 record revision when the preview was set; a pane that
+        // later exceeds its own (Axan::SessionState::HasNewReport) means a real report arrived.
+        std::unordered_map<uint64_t, uint64_t> PreviewBaselineRevisions;
 
         // axan #32: row presentation of the state (see the idl).
         winrt::Windows::UI::Xaml::Visibility StateDotVisibility() const noexcept;

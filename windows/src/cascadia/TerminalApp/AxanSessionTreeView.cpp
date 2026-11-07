@@ -35,6 +35,7 @@
 #include "AxanLabelTemplate.h"
 #include "AxanSessionState.h" // axan #30
 #include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs
+#include <AxanSidebarSizes.h> // axan: sidebar row size ranges and defaults
 #include "SessionNodeViewModel.h"
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
@@ -3180,6 +3181,18 @@ namespace winrt::TerminalApp::implementation
         { L"done-seen", USES_RESOURCE(L"AxanPreviewStateDoneSeen"), L"idle", L"", L"idle", L"", L"done" },
     } };
 
+    // axan: a pane's highest OSC 7501 record revision (0 for none): what "seen" and the state
+    // preview's baseline are measured in.
+    static uint64_t _maxRecordRevision(const winrt::Windows::Foundation::Collections::IVector<winrt::Microsoft::Terminal::Control::ProgramStatusRecord>& records)
+    {
+        uint64_t maxRevision = 0;
+        for (const auto& r : records)
+        {
+            maxRevision = std::max(maxRevision, r.Revision);
+        }
+        return maxRevision;
+    }
+
     void TerminalPage::_RecomputeNodeState(const MUX::Controls::TreeViewNode& node)
     {
         const auto vm = _nodeVM(node);
@@ -3188,15 +3201,17 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
-        // axan: the row sizes (sidebar.labelFontSize etc.), clamped to the settings page's
-        // ranges. A no-op unless one changed; this runs on node creation and settings reload.
+        // axan: the row sizes (sidebar.labelFontSize etc.), NaN read as the default and
+        // clamped to the settings page's ranges. A no-op unless one changed; this runs on node
+        // creation and settings reload.
         if (_settings)
         {
+            namespace Sizes = Axan::SidebarSizes;
             const auto globals = _settings.GlobalSettings();
-            vm->SetSizes(std::clamp(globals.SidebarLabelFontSize(), 8.0, 32.0),
-                         std::clamp(globals.SidebarStateLineFontSize(), 8.0, 32.0),
-                         std::clamp(globals.SidebarIconSize(), 8.0, 48.0),
-                         std::clamp(globals.SidebarStateGlyphSize(), 8.0, 48.0));
+            vm->SetSizes(Sizes::SanitizeSize(globals.SidebarLabelFontSize(), Sizes::kLabelFontSize),
+                         Sizes::SanitizeSize(globals.SidebarStateLineFontSize(), Sizes::kStateLineFontSize),
+                         Sizes::SanitizeSize(globals.SidebarIconSize(), Sizes::kIconSize),
+                         Sizes::SanitizeSize(globals.SidebarStateGlyphSize(), Sizes::kStateGlyphSize));
         }
         const auto tabImpl = winrt::get_self<Tab>(tab);
         const auto controls = tabImpl->AxanTerminalControls();
@@ -3212,19 +3227,15 @@ namespace winrt::TerminalApp::implementation
         // addresses while the inputs are built.
         std::deque<winrt::hstring> texts;
         std::vector<Axan::SessionState::PaneInput> panes;
-        uint64_t reportRevisionSum = 0; // axan: a new report ends a state preview
+        Axan::SessionState::RevisionsByPane reportRevisions; // axan: a new report ends a state preview
         for (const auto& control : controls)
         {
             // One snapshot per control (each call takes the terminal read lock and
             // allocates); it feeds both the focused-tab acknowledge and the inputs.
             const auto records = control.ProgramStatusRecords();
             const auto contentId = control.ContentId();
-            uint64_t maxRevision = 0;
-            for (const auto& r : records)
-            {
-                maxRevision = std::max(maxRevision, r.Revision);
-            }
-            reportRevisionSum += maxRevision;
+            const auto maxRevision = _maxRecordRevision(records);
+            reportRevisions[contentId] = maxRevision;
             if (focused)
             {
                 auto& seen = vm->SeenRevisions[contentId];
@@ -3271,7 +3282,7 @@ namespace winrt::TerminalApp::implementation
         }
         // axan: a new OSC 7501 report ends a state preview, so a preview is never mistaken for
         // what the program said. (SetSessionState also ends it on a real state change.)
-        if (vm->IsPreviewing() && reportRevisionSum > vm->PreviewBaselineRevision && vm->ClearPreview(now))
+        if (vm->IsPreviewing() && Axan::SessionState::HasNewReport(vm->PreviewBaselineRevisions, reportRevisions) && vm->ClearPreview(now))
         {
             Axan::Log::Debug("TerminalPage", "state preview cleared: new report", { { "label", winrt::to_string(vm->Label()) } });
         }
@@ -3358,15 +3369,10 @@ namespace winrt::TerminalApp::implementation
             }
             return;
         }
-        uint64_t revisionSum = 0;
+        Axan::SessionState::RevisionsByPane baseline;
         for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
         {
-            uint64_t maxRevision = 0;
-            for (const auto& r : control.ProgramStatusRecords())
-            {
-                maxRevision = std::max(maxRevision, r.Revision);
-            }
-            revisionSum += maxRevision;
+            baseline[control.ContentId()] = _maxRecordRevision(control.ProgramStatusRecords());
         }
         SessionRestingState resting;
         _fillSlot(resting, _settings, spec->slot, spec->kind);
@@ -3376,7 +3382,7 @@ namespace winrt::TerminalApp::implementation
             resting.retainedMessage = winrt::hstring{ L"Preview: task finished" };
             resting.reportKey = winrt::hstring{ L"preview" };
         }
-        vm->PreviewBaselineRevision = revisionSum;
+        vm->PreviewBaselineRevisions = std::move(baseline);
         vm->SetPreview(winrt::hstring{ spec->id }, winrt::hstring{ spec->state }, winrt::hstring{ spec->message }, winrt::hstring{ spec->kind }, now - std::chrono::minutes{ 2 }, now, resting);
         Axan::Log::Debug("TerminalPage", "state preview set", { { "label", winrt::to_string(vm->Label()) }, { "preview", winrt::to_string(spec->id) }, { "state", winrt::to_string(spec->state) }, { "kind", winrt::to_string(spec->kind) } });
     }
@@ -3394,11 +3400,7 @@ namespace winrt::TerminalApp::implementation
         bool advanced = false;
         for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
         {
-            uint64_t maxRevision = 0;
-            for (const auto& r : control.ProgramStatusRecords())
-            {
-                maxRevision = std::max(maxRevision, r.Revision);
-            }
+            const auto maxRevision = _maxRecordRevision(control.ProgramStatusRecords());
             auto& seen = vm->SeenRevisions[control.ContentId()];
             if (maxRevision > seen)
             {
@@ -3427,32 +3429,25 @@ namespace winrt::TerminalApp::implementation
     }
 
     // axan: sidebar.iconFontScale. IconPathConverter keeps one process-wide copy (every
-    // window's icons, the Settings UI's previews included, render through it); each page
-    // tracks what it last applied so every window rebuilds its own node icons after a change,
-    // whichever window's reload pushed the new map first. Icons are only rebuilt on a change.
+    // window's icons, the Settings UI's previews included, render through it) and a generation
+    // that changes only when that copy does; each page tracks the generation it last applied
+    // so every window rebuilds its own node icons after a change, whichever window's reload
+    // pushed the new map first. Icons are only rebuilt on a change.
     void TerminalPage::_ApplyIconFontScales()
     {
-        std::map<std::wstring, double> next;
         winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double> map{ nullptr };
         if (_settings)
         {
             map = _settings.GlobalSettings().SidebarIconFontScale();
         }
-        if (map)
-        {
-            for (const auto& kv : map)
-            {
-                next.emplace(kv.Key().c_str(), kv.Value());
-            }
-        }
-        if (_appliedIconFontScales && *_appliedIconFontScales == next)
+        const auto generation = winrt::Microsoft::Terminal::UI::IconPathConverter::SetIconFontScales(map);
+        if (_appliedIconFontScales == generation)
         {
             return;
         }
         const bool firstApply = !_appliedIconFontScales;
-        winrt::Microsoft::Terminal::UI::IconPathConverter::SetIconFontScales(map);
-        _appliedIconFontScales = std::move(next);
-        Axan::Log::Debug("TerminalPage", "icon font scales applied", { { "families", std::to_string(_appliedIconFontScales->size()) } });
+        _appliedIconFontScales = generation;
+        Axan::Log::Debug("TerminalPage", "icon font scales applied", { { "families", std::to_string(map ? map.Size() : 0u) }, { "generation", std::to_string(generation) } });
         if (!firstApply && SessionTree())
         {
             _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {

@@ -55,6 +55,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace Axan::SessionState
@@ -418,5 +419,27 @@ namespace Axan::SessionState
             }
         }
         return best;
+    }
+
+    // ---- state preview (the sidebar's "Preview state" menu) ----
+
+    // Per pane (control ContentId, which a new pane never reuses): the highest OSC 7501
+    // record revision it holds, 0 for none.
+    using RevisionsByPane = std::unordered_map<uint64_t, uint64_t>;
+
+    // True when a real report arrived since a preview's baseline was taken: some pane's
+    // highest revision now exceeds what it had then (a pane absent from the baseline had 0).
+    // A pane that closed since does not matter, so closing one never hides a later report.
+    inline bool HasNewReport(const RevisionsByPane& baseline, const RevisionsByPane& current)
+    {
+        for (const auto& [pane, revision] : current)
+        {
+            const auto it = baseline.find(pane);
+            if (revision > (it == baseline.end() ? 0 : it->second))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

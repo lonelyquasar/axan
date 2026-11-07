@@ -9,7 +9,9 @@
 
 #include "../TerminalApp/AxanSessionState.h"
 #include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs resolution
+#include <AxanSidebarSizes.h> // axan: sidebar row sizes
 
+#include <limits>
 #include <map>
 #include <optional>
 
@@ -482,6 +484,39 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_EQUAL(std::wstring{ L"Claude Code" }, CleanTerminalTitle(L"Claude Code"));
             VERIFY_ARE_EQUAL(std::wstring{ L"~/src" }, CleanTerminalTitle(L"~/src"));
             VERIFY_ARE_EQUAL(std::wstring{}, CleanTerminalTitle(L"\x2733 "));
+        }
+
+        TEST_METHOD(PreviewBaselineIsPerPane)
+        {
+            Log::Comment(L"Nothing new: the preview stays");
+            const RevisionsByPane baseline{ { 1, 5 }, { 2, 9 } };
+            VERIFY_IS_FALSE(HasNewReport(baseline, { { 1, 5 }, { 2, 9 } }));
+            Log::Comment(L"A pane closed: its revisions leave, which must not mask a later report");
+            VERIFY_IS_FALSE(HasNewReport(baseline, { { 1, 5 } }));
+            VERIFY_IS_TRUE(HasNewReport(baseline, { { 1, 6 } })); // a sum (6 < 14) would have missed it
+            Log::Comment(L"A new report in any pane clears it");
+            VERIFY_IS_TRUE(HasNewReport(baseline, { { 1, 5 }, { 2, 10 } }));
+            Log::Comment(L"A new pane counts from 0: quiet it changes nothing, reporting it clears");
+            VERIFY_IS_FALSE(HasNewReport(baseline, { { 1, 5 }, { 2, 9 }, { 3, 0 } }));
+            VERIFY_IS_TRUE(HasNewReport(baseline, { { 1, 5 }, { 2, 9 }, { 3, 1 } }));
+            VERIFY_IS_TRUE(HasNewReport({}, { { 3, 1 } }));
+        }
+
+        TEST_METHOD(RowSizesTreatNaNAsTheDefault)
+        {
+            namespace Z = Axan::SidebarSizes;
+            const auto nan = std::numeric_limits<double>::quiet_NaN();
+            Log::Comment(L"NaN (a cleared NumberBox, JSON null) reads as the setting's default");
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kLabelFontSize), 14.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kStateLineFontSize), 11.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kIconSize), 16.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kStateGlyphSize), 12.0);
+            Log::Comment(L"Anything else is clamped to the page's range");
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(2.0, Z::kLabelFontSize), 8.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(100.0, Z::kLabelFontSize), 32.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(100.0, Z::kIconSize), 48.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(20.0, Z::kStateGlyphSize), 20.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(std::numeric_limits<double>::infinity(), Z::kIconSize), 48.0);
         }
     };
 }
