@@ -111,12 +111,76 @@ namespace Axan::GlyphScale
         return value < kMinScale ? kMinScale : (value > kMaxScale ? kMaxScale : value);
     }
 
+    // Font family names compare case-insensitively (ASCII), as Windows font lookup does, so a
+    // sidebar.iconFontScale key "segoe ui historic" is the Segoe UI Historic row.
+    constexpr wchar_t FoldFamilyChar(wchar_t ch) noexcept
+    {
+        return (ch >= L'A' && ch <= L'Z') ? static_cast<wchar_t>(ch - L'A' + L'a') : ch;
+    }
+
+    constexpr bool SameFamily(std::wstring_view a, std::wstring_view b) noexcept
+    {
+        if (a.size() != b.size())
+        {
+            return false;
+        }
+        for (size_t i = 0; i < a.size(); ++i)
+        {
+            if (FoldFamilyChar(a[i]) != FoldFamilyChar(b[i]))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // A case-insensitive, transparent ordering for maps and sets keyed by family name.
+    struct FamilyLess
+    {
+        using is_transparent = void;
+        constexpr bool operator()(std::wstring_view a, std::wstring_view b) const noexcept
+        {
+            const auto n = a.size() < b.size() ? a.size() : b.size();
+            for (size_t i = 0; i < n; ++i)
+            {
+                const auto x = FoldFamilyChar(a[i]);
+                const auto y = FoldFamilyChar(b[i]);
+                if (x != y)
+                {
+                    return x < y;
+                }
+            }
+            return a.size() < b.size();
+        }
+    };
+
+    // The kFonts spelling of a family ("Segoe UI Historic" for "segoe ui historic"), or ""
+    // when it has no kFonts row.
+    constexpr std::wstring_view KnownFamily(std::wstring_view family) noexcept
+    {
+        for (const auto& f : kFonts)
+        {
+            if (SameFamily(f.font, family))
+            {
+                return f.font;
+            }
+        }
+        return {};
+    }
+
+    // A family as stored: its kFonts spelling when it has a row, else as typed.
+    constexpr std::wstring_view CanonicalFamily(std::wstring_view family) noexcept
+    {
+        const auto known = KnownFamily(family);
+        return known.empty() ? family : known;
+    }
+
     // The built-in multiplier for a font family (1.0 for one with no kFonts row).
     constexpr double FontScaleFor(std::wstring_view font) noexcept
     {
         for (const auto& f : kFonts)
         {
-            if (f.font == font)
+            if (SameFamily(f.font, font))
             {
                 return f.scale;
             }

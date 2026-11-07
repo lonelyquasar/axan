@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <vector>
 
 #include <Shlobj.h>
 #include <Shlobj_core.h>
@@ -131,43 +132,80 @@ namespace winrt::Microsoft::Terminal::UI::implementation
     // - path: the unprocessed path to the icon.
     // Return Value:
     // - An IconElement with its IconSource set, if possible.
-    // axan #44: an icon string that reads as a glyph name but isn't one renders as the
-    // placeholder. Log it once per distinct string per process (renders repeat constantly,
-    // and this runs on every window's UI thread, hence the lock); the set is capped so a
-    // stream of distinct typos can't grow it without bound.
-    static void _warnUnknownGlyphNameOnce(const winrt::hstring& icon)
+    // axan #44: an icon string that reads as a glyph name but isn't one, or code-point text
+    // naming no usable character, renders as the placeholder. Log it once per distinct
+    // string per process (renders repeat constantly, and this runs on every window's UI
+    // thread, hence the lock); the set is capped so a stream of distinct typos can't grow
+    // it without bound.
+    static bool _firstSighting(std::wstring_view key)
     {
         static std::mutex lock;
-        static std::set<std::wstring> seen;
+        static std::set<std::wstring, std::less<>> seen;
+        const std::lock_guard guard{ lock };
+        return seen.size() < 256 && seen.emplace(key).second;
+    }
+
+    static void _warnUnresolvedIconOnce(const winrt::hstring& icon, Axan::GlyphNames::IconResolution kind)
+    {
+        using Axan::GlyphNames::IconResolution;
+        if ((kind != IconResolution::UnknownName && kind != IconResolution::InvalidCodepoint) || !_firstSighting(icon))
         {
-            const std::lock_guard guard{ lock };
-            if (seen.size() >= 256 || !seen.emplace(icon.c_str()).second)
-            {
-                return;
-            }
+            return;
         }
-        Axan::Log::Warn("IconPathConverter", "unknown glyph name; rendering the placeholder (see AxanSegoeFluentGlyphs.h for valid names)", { { "icon", winrt::to_string(icon) } });
+        if (kind == IconResolution::InvalidCodepoint)
+        {
+            Axan::Log::Warn("IconPathConverter", "invalid code point; rendering the placeholder (4-6 hex digits naming a character: no surrogates, non-characters or controls, at most U+10FFFF)", { { "icon", winrt::to_string(icon) } });
+        }
+        else
+        {
+            Axan::Log::Warn("IconPathConverter", "unknown glyph name; rendering the placeholder (see AxanSegoeFluentGlyphs.h for valid names)", { { "icon", winrt::to_string(icon) } });
+        }
     }
 
     // axan: sidebar.iconFontScale, the user's per-font-family multipliers (AxanGlyphScale.h
     // keeps the built-in ones). The app sets it on every settings load; every window's UI
     // thread reads it on each glyph render, hence the lock. A family absent here keeps its
-    // built-in scale.
+    // built-in scale. Keys compare case-insensitively; a built-in family is stored under its
+    // AxanGlyphScale spelling. s_fontScaleGeneration counts changes to the effective map.
+    using FontScaleMap = std::map<std::wstring, double, Axan::GlyphScale::FamilyLess>;
     static std::mutex s_fontScaleLock;
-    static std::map<std::wstring, double, std::less<>> s_fontScales;
+    static FontScaleMap s_fontScales;
+    static uint64_t s_fontScaleGeneration = 0;
 
-    void IconPathConverter::SetIconFontScales(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>& scales)
+    uint64_t IconPathConverter::SetIconFontScales(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>& scales)
     {
-        std::map<std::wstring, double, std::less<>> next;
+        FontScaleMap next;
+        std::vector<std::wstring> unknown;
         if (scales)
         {
             for (const auto& kv : scales)
             {
-                next.emplace(kv.Key().c_str(), kv.Value());
+                const std::wstring_view family{ kv.Key() };
+                const auto canonical = Axan::GlyphScale::CanonicalFamily(family);
+                // Clamped here (ScaleFor would clamp on every lookup anyway) so a NaN never
+                // makes two equal maps compare unequal.
+                if (next.emplace(canonical, Axan::GlyphScale::ClampScale(kv.Value())).second && Axan::GlyphScale::KnownFamily(family).empty())
+                {
+                    unknown.emplace_back(family);
+                }
+            }
+        }
+        // An unknown family may be a real font, so it is kept, but no icon is drawn from it
+        // (AxanGlyphScale::FontForGlyph names only built-in families): say so once.
+        for (const auto& family : unknown)
+        {
+            if (_firstSighting(L"iconFontScale:" + family))
+            {
+                Axan::Log::Warn("IconPathConverter", "sidebar.iconFontScale names a font family no icon is drawn from; it has no effect", { { "family", winrt::to_string(family) } });
             }
         }
         const std::lock_guard guard{ s_fontScaleLock };
-        s_fontScales.swap(next);
+        if (next != s_fontScales)
+        {
+            s_fontScales.swap(next);
+            ++s_fontScaleGeneration;
+        }
+        return s_fontScaleGeneration;
     }
 
     // The FontIcon size multiplier for a glyph: the user's value for the font it is drawn
@@ -192,11 +230,9 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         // axan #39: a Segoe Fluent glyph NAME ("robot", or a builtin alias like "git") renders
         // as its glyph; #44: so does code-point text ("U+131A3"). Everything else (paths,
         // emoji, literal glyphs) passes through unchanged.
-        const winrt::hstring iconPath{ Axan::GlyphNames::ResolveIcon(rawIconPath) };
-        if (Axan::GlyphNames::IsUnresolvedName(rawIconPath))
-        {
-            _warnUnknownGlyphNameOnce(rawIconPath);
-        }
+        const auto resolved = Axan::GlyphNames::Resolve(rawIconPath);
+        _warnUnresolvedIconOnce(rawIconPath, resolved.kind);
+        const winrt::hstring iconPath{ resolved.text };
 
         if (iconPath.size() != 0)
         {

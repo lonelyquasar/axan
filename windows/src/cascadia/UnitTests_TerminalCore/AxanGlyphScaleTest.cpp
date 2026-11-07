@@ -10,6 +10,7 @@
 #include <AxanGlyphScale.h>
 
 #include <limits>
+#include <map>
 #include <optional>
 
 using namespace WEX::Logging;
@@ -99,6 +100,31 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_EQUAL(S::ClampScale(0.5), 0.5);
             VERIFY_ARE_EQUAL(S::ClampScale(3.0), 3.0);
             VERIFY_ARE_EQUAL(S::ClampScale(1.25), 1.25);
+        }
+
+        TEST_METHOD(FamilyNamesAreCaseInsensitive)
+        {
+            Log::Comment(L"A sidebar.iconFontScale key in any case is the built-in family's row");
+            VERIFY_ARE_EQUAL(std::wstring{ S::KnownFamily(L"segoe ui historic") }, std::wstring{ L"Segoe UI Historic" });
+            VERIFY_ARE_EQUAL(std::wstring{ S::CanonicalFamily(L"SEGOE FLUENT ICONS") }, std::wstring{ L"Segoe Fluent Icons" });
+            VERIFY_ARE_EQUAL(S::FontScaleFor(L"segoe ui historic"), S::FontScaleFor(L"Segoe UI Historic"));
+            Log::Comment(L"An unknown family keeps its spelling");
+            VERIFY_IS_TRUE(S::KnownFamily(L"Noto Sans Egyptian Hieroglyphs").empty());
+            VERIFY_ARE_EQUAL(std::wstring{ S::CanonicalFamily(L"Noto Sans Egyptian Hieroglyphs") }, std::wstring{ L"Noto Sans Egyptian Hieroglyphs" });
+            Log::Comment(L"A FamilyLess map finds a key whatever case it was written in");
+            std::map<std::wstring, double, S::FamilyLess> scales;
+            scales.emplace(L"segoe ui historic", 2.0);
+            VERIFY_IS_FALSE(scales.emplace(L"Segoe UI Historic", 1.0).second);
+            const auto lookup = [&](std::wstring_view font) -> std::optional<double> {
+                if (const auto it = scales.find(font); it != scales.end())
+                {
+                    return it->second;
+                }
+                return std::nullopt;
+            };
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\x16A0", lookup), 2.0);
+            VERIFY_IS_TRUE(S::SameFamily(L"Segoe UI", L"segoe ui"));
+            VERIFY_IS_FALSE(S::SameFamily(L"Segoe UI", L"Segoe UI Emoji"));
         }
 
         TEST_METHOD(FamilyForIcon)

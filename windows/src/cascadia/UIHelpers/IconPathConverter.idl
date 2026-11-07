@@ -10,8 +10,10 @@ namespace Microsoft.Terminal.UI
         static Microsoft.UI.Xaml.Controls.IconSource IconSourceMUX(String path, Boolean convertToGrayscale);
         // axan: sidebar.iconFontScale (font family -> multiplier for one-character icons,
         // over the built-in table in src/inc/AxanGlyphScale.h). Process-wide; null clears it.
-        // Icons already rendered keep their size until they are rebuilt.
-        static void SetIconFontScales(Windows.Foundation.Collections.IMap<String, Double> scales);
+        // Icons already rendered keep their size until they are rebuilt. Family names match
+        // case-insensitively. Returns the scales' generation, which changes only when the
+        // effective map does, so each window can tell whether its icons need rebuilding.
+        static UInt64 SetIconFontScales(Windows.Foundation.Collections.IMap<String, Double> scales);
     };
 
 }
