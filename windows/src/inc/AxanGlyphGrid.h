@@ -3,7 +3,8 @@
 //
 // AxanGlyphGrid — the searchable Segoe Fluent Icons grid (#39): a search box over a
 // virtualized GridView of glyph + name cells covering the whole font (AxanSegoeFluentGlyphs.h,
-// ~1,400 glyphs), with an optional leading "No icon" cell.
+// ~1,400 glyphs), with an optional leading "No icon" cell and, after the font, the letters
+// and digits (AxanGlyphNames.h kTextIcons, drawn in Segoe UI).
 //
 // Shared by the identity editor (AxanEntryIdentityEditor.h: the sidebar's live node card and
 // the Settings Startup sessions detail panel) and the icon picker flyout (AxanIconPicker.h:
@@ -12,7 +13,10 @@
 //
 // Behaviour:
 //   - A pick stores the glyph's NAME ("robot"); AxanGlyphNames.h resolves it at render
-//     time. "No icon" stores "". The callback fires only on a real change of selection.
+//     time. A letter or digit stores the character itself ("a"). "No icon" stores "". The
+//     callback fires only on a real change of selection.
+//   - Search: a one-character query ("a") lists the matching letters first; otherwise the
+//     letters and digits follow the font glyphs.
 //   - Virtualized: the GridView's ItemsWrapGrid realizes only the visible cells, which are
 //     filled in ContainerContentChanging from a boxed index (no per-glyph elements, no
 //     bindings). The grid has a fixed Height so it scrolls inside a bounded host.
@@ -57,14 +61,32 @@ namespace Axan::Ui::GlyphGrid
     };
 
     inline constexpr int32_t kNoneItem = -1;
+    // A letter / digit cell's item is kTextItemBase + its kTextIcons index (font items are
+    // indices into All(), well below it).
+    inline constexpr int32_t kTextItemBase = 1 << 16;
+
+    inline const Axan::GlyphNames::TextIcon* TextIconForItem(int32_t item) noexcept
+    {
+        const auto& texts = Axan::GlyphNames::kTextIcons;
+        if (item >= kTextItemBase && static_cast<size_t>(item - kTextItemBase) < texts.size())
+        {
+            return &texts[static_cast<size_t>(item - kTextItemBase)];
+        }
+        return nullptr;
+    }
 
     // The icon's grid item: kNoneItem for "", the font index for anything that resolves to a
-    // named glyph, nullopt for what the grid can't show (an emoji, a path, an unnamed PUA).
+    // named glyph, a text item for a letter / digit, nullopt for what the grid can't show
+    // (an emoji, a path, an unnamed PUA).
     inline std::optional<int32_t> ItemForIcon(std::wstring_view icon)
     {
         if (icon.empty())
         {
             return kNoneItem;
+        }
+        if (const auto t = Axan::GlyphNames::FindTextIcon(icon))
+        {
+            return kTextItemBase + static_cast<int32_t>(t - Axan::GlyphNames::kTextIcons.data());
         }
         if (const auto cp = Axan::GlyphNames::ResolveCodepoint(icon))
         {
@@ -128,6 +150,8 @@ namespace Axan::Ui::GlyphGrid
 
             _search = winrt::make_weak(search);
             _grid = winrt::make_weak(grid);
+            _symbolFont = WUX::Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" };
+            _textFont = WUX::Media::FontFamily{ L"Segoe UI" };
 
             const auto self = shared_from_this();
             grid.ContainerContentChanging([self](const auto&, const Controls::ContainerContentChangingEventArgs& args) {
@@ -209,11 +233,19 @@ namespace Axan::Ui::GlyphGrid
             winrt::hstring glyph;
             winrt::hstring display;
             winrt::hstring tip;
+            bool isText = false;
             if (item == kNoneItem)
             {
                 glyph = winrt::hstring{ L"\xE711" }; // Cancel
                 display = _options.strings.noIconName;
                 tip = display;
+            }
+            else if (const auto textIcon = TextIconForItem(item))
+            {
+                isText = true;
+                glyph = winrt::hstring{ std::wstring(1, textIcon->character) };
+                display = winrt::hstring{ textIcon->displayName };
+                tip = winrt::hstring{ std::wstring{ textIcon->displayName } + L" (" + std::wstring{ textIcon->key } + L")" };
             }
             else
             {
@@ -233,6 +265,8 @@ namespace Axan::Ui::GlyphGrid
             }
             if (icon)
             {
+                // Containers are recycled between font and text cells: set the font each time.
+                icon.FontFamily(isText ? _textFont : _symbolFont);
                 icon.Glyph(glyph);
             }
             if (text)
@@ -246,7 +280,11 @@ namespace Axan::Ui::GlyphGrid
         void _pick(int32_t item)
         {
             winrt::hstring value;
-            if (item != kNoneItem && item >= 0 && static_cast<size_t>(item) < Axan::GlyphNames::All().size())
+            if (const auto t = TextIconForItem(item))
+            {
+                value = winrt::hstring{ std::wstring(1, t->character) };
+            }
+            else if (item != kNoneItem && item >= 0 && static_cast<size_t>(item) < Axan::GlyphNames::All().size())
             {
                 value = winrt::hstring{ Axan::GlyphNames::All()[static_cast<size_t>(item)].key };
             }
@@ -270,14 +308,30 @@ namespace Axan::Ui::GlyphGrid
             const auto query = search ? search.Text() : winrt::hstring{};
             std::vector<winrt::Windows::Foundation::IInspectable> items;
             const auto hits = Axan::GlyphNames::Search(query);
-            items.reserve(hits.size() + 1);
+            const auto textHits = Axan::GlyphNames::SearchTextIcons(query);
+            items.reserve(hits.size() + textHits.size() + 1);
             if (_options.showNone && Axan::GlyphNames::NormalizeName(query).empty())
             {
                 items.push_back(winrt::box_value(kNoneItem));
             }
+            const auto pushText = [&]() {
+                for (const auto i : textHits)
+                {
+                    items.push_back(winrt::box_value(kTextItemBase + static_cast<int32_t>(i)));
+                }
+            };
+            const auto textFirst = Axan::GlyphNames::IsSingleCharacterQuery(query);
+            if (textFirst)
+            {
+                pushText();
+            }
             for (const auto i : hits)
             {
                 items.push_back(winrt::box_value(static_cast<int32_t>(i)));
+            }
+            if (!textFirst)
+            {
+                pushText();
             }
             _items = winrt::single_threaded_vector<winrt::Windows::Foundation::IInspectable>(std::move(items));
             _syncing = true;
@@ -321,6 +375,8 @@ namespace Axan::Ui::GlyphGrid
         winrt::Windows::Foundation::Collections::IVector<winrt::Windows::Foundation::IInspectable> _items{ nullptr };
         winrt::weak_ref<winrt::Windows::UI::Xaml::Controls::TextBox> _search;
         winrt::weak_ref<winrt::Windows::UI::Xaml::Controls::GridView> _grid;
+        winrt::Windows::UI::Xaml::Media::FontFamily _symbolFont{ nullptr };
+        winrt::Windows::UI::Xaml::Media::FontFamily _textFont{ nullptr };
     };
 
     struct Built

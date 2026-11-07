@@ -3,7 +3,8 @@
 
 // axan #39: the Segoe Fluent glyph name table (src/inc/AxanSegoeFluentGlyphs.h) and its
 // lookups (src/inc/AxanGlyphNames.h): name -> codepoint, the eleven builtin aliases, the
-// forms that must NOT resolve (paths, emoji, unknown names), search, and the export mapping.
+// forms that must NOT resolve (paths, emoji, unknown names), search, the export mapping,
+// and the letters and digits offered as text icons.
 
 #include "pch.h"
 #include <WexTestClass.h>
@@ -114,6 +115,68 @@ namespace TerminalCoreUnitTests
             Log::Comment(L"An alias finds its glyph under the font's own name");
             VERIFY_IS_TRUE(contains(G::Search(L"terminal"), L"command-prompt"));
             VERIFY_ARE_EQUAL(size_t{ 0 }, G::Search(L"zzzz-no-match").size());
+        }
+
+        TEST_METHOD(LettersAndDigitsAreTextIcons)
+        {
+            const auto& texts = G::kTextIcons;
+            VERIFY_ARE_EQUAL(size_t{ 62 }, texts.size());
+            for (size_t i = 0; i < texts.size(); ++i)
+            {
+                const auto ch = texts[i].character;
+                VERIFY_IS_TRUE((ch >= L'a' && ch <= L'z') || (ch >= L'A' && ch <= L'Z') || (ch >= L'0' && ch <= L'9'));
+                for (size_t j = 0; j < i; ++j)
+                {
+                    VERIFY_IS_TRUE(texts[j].character != ch); // one cell per character
+                    VERIFY_ARE_NOT_EQUAL(std::wstring{ texts[j].key }, std::wstring{ texts[i].key });
+                }
+                const std::wstring stored(1, ch);
+                VERIFY_IS_TRUE(&texts[i] == G::FindTextIcon(stored));
+                Log::Comment(L"Stored as the character itself, which renders as text unchanged");
+                VERIFY_ARE_EQUAL(stored, G::ResolveIcon(stored));
+                VERIFY_IS_FALSE(G::ResolveCodepoint(stored).has_value());
+            }
+            VERIFY_ARE_EQUAL(std::wstring{ L"letter-a" }, std::wstring{ G::FindTextIcon(L"a")->key });
+            VERIFY_ARE_EQUAL(std::wstring{ L"letter-A" }, std::wstring{ G::FindTextIcon(L"A")->key });
+            VERIFY_ARE_EQUAL(std::wstring{ L"digit-0" }, std::wstring{ G::FindTextIcon(L"0")->key });
+            for (const auto* icon : { L"", L"ab", L"-", L"\U0001F916", L"letter-a" })
+            {
+                Log::Comment(icon);
+                VERIFY_IS_NULL(G::FindTextIcon(icon));
+            }
+            VERIFY_IS_NULL(G::FindTextIcon(std::wstring(1, wchar_t{ 0xE756 })));
+        }
+
+        TEST_METHOD(SearchFindsLettersAndDigits)
+        {
+            const auto chars = [](const std::vector<size_t>& hits) {
+                std::wstring out;
+                for (const auto i : hits)
+                {
+                    out.push_back(G::kTextIcons[i].character);
+                }
+                return out;
+            };
+            VERIFY_ARE_EQUAL(size_t{ 62 }, G::SearchTextIcons(L"").size());
+            Log::Comment(L"One character finds that letter in both cases, not every 'letter-...'");
+            VERIFY_ARE_EQUAL(std::wstring{ L"aA" }, chars(G::SearchTextIcons(L"a")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"aA" }, chars(G::SearchTextIcons(L" A ")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"eE" }, chars(G::SearchTextIcons(L"e")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"7" }, chars(G::SearchTextIcons(L"7")));
+            Log::Comment(L"Longer words match the label");
+            VERIFY_ARE_EQUAL(size_t{ 52 }, G::SearchTextIcons(L"letter").size());
+            VERIFY_ARE_EQUAL(size_t{ 10 }, G::SearchTextIcons(L"DIGIT").size());
+            VERIFY_ARE_EQUAL(std::wstring{ L"qQ" }, chars(G::SearchTextIcons(L"letter q")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"3" }, chars(G::SearchTextIcons(L"digit-3")));
+            VERIFY_ARE_EQUAL(size_t{ 0 }, G::SearchTextIcons(L"robot").size());
+
+            VERIFY_IS_TRUE(G::IsSingleCharacterQuery(L"a"));
+            VERIFY_IS_TRUE(G::IsSingleCharacterQuery(L" 9 "));
+            for (const auto* query : { L"", L"  ", L"ab", L"-", L"a b" })
+            {
+                Log::Comment(query);
+                VERIFY_IS_FALSE(G::IsSingleCharacterQuery(query));
+            }
         }
 
         TEST_METHOD(ExportMapsBuiltinGlyphNamesToPortableTokens)
