@@ -105,6 +105,44 @@ winrt::com_ptr<GlobalAppSettings> GlobalAppSettings::Copy() const
             globals->_StartupSessions->Append(get_self<LaunchEntry>(entry)->Copy());
         }
     }
+    // axan: sidebar.stateGlyphs is a map; copy it so a settings clone never shares it.
+    if (_SidebarStateGlyphs && *_SidebarStateGlyphs)
+    {
+        auto glyphs = winrt::single_threaded_map<winrt::hstring, winrt::hstring>();
+        for (const auto& kv : *_SidebarStateGlyphs)
+        {
+            glyphs.Insert(kv.Key(), kv.Value());
+        }
+        globals->_SidebarStateGlyphs = glyphs;
+    }
+    // axan: sidebar.iconFontScale is a map too.
+    if (_SidebarIconFontScale && *_SidebarIconFontScale)
+    {
+        auto scales = winrt::single_threaded_map<winrt::hstring, double>();
+        for (const auto& kv : *_SidebarIconFontScale)
+        {
+            scales.Insert(kv.Key(), kv.Value());
+        }
+        globals->_SidebarIconFontScale = scales;
+    }
+    // axan #34: sidebar.hoistStates is a vector; copy it so a settings clone never shares it.
+    if (_SidebarHoistStates && *_SidebarHoistStates)
+    {
+        globals->_SidebarHoistStates = winrt::single_threaded_vector<hstring>();
+        for (const auto& name : *_SidebarHoistStates)
+        {
+            globals->_SidebarHoistStates->Append(name);
+        }
+    }
+    // axan: sidebar.idleEffects is a vector too.
+    if (_SidebarIdleEffects && *_SidebarIdleEffects)
+    {
+        globals->_SidebarIdleEffects = winrt::single_threaded_vector<hstring>();
+        for (const auto& name : *_SidebarIdleEffects)
+        {
+            globals->_SidebarIdleEffects->Append(name);
+        }
+    }
     if (_DisabledProfileSources)
     {
         globals->_DisabledProfileSources = winrt::single_threaded_vector<hstring>();

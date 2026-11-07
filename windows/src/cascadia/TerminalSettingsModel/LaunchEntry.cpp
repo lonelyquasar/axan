@@ -6,6 +6,7 @@
 #include "LaunchEntry.g.cpp"
 
 #include <AxanLaunchEntryWire.h> // the shared wire-format key definitions (#431 item 6)
+#include <AxanHoistRule.h> // axan #34
 
 using namespace Microsoft::Terminal::Settings::Model;
 
@@ -30,6 +31,8 @@ static constexpr std::string_view KindKey{ Axan::LaunchEntryWire::JsonKey::Kind 
 static constexpr std::string_view StyleKey{ Axan::LaunchEntryWire::JsonKey::Style };
 static constexpr std::string_view HeightKey{ Axan::LaunchEntryWire::JsonKey::Height };
 static constexpr std::string_view PlacementKey{ Axan::LaunchEntryWire::JsonKey::Placement };
+static constexpr std::string_view CollapsedKey{ Axan::LaunchEntryWire::JsonKey::Collapsed }; // axan #33
+static constexpr std::string_view HoistKey{ Axan::LaunchEntryWire::JsonKey::Hoist }; // axan #34
 
 namespace winrt::Microsoft::Terminal::Settings::Model::implementation
 {
@@ -50,6 +53,25 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         JsonUtils::GetValueForKey(json, StyleKey, result->_SeparatorStyle);
         JsonUtils::GetValueForKey(json, HeightKey, result->_Height);
         JsonUtils::GetValueForKey(json, PlacementKey, result->_Placement);
+        JsonUtils::GetValueForKey(json, CollapsedKey, result->_Collapsed); // axan #33
+        // axan #34: "hoist" is "never" (or "default") or an array of state names; stored in
+        // the canonical string form (unknown names dropped, see AxanHoistRule.h).
+        if (const auto& hoist = json[JsonKey(HoistKey)]; hoist.isString())
+        {
+            result->_Hoist = winrt::hstring{ Axan::HoistRule::Normalize(winrt::to_hstring(hoist.asString())) };
+        }
+        else if (hoist.isArray())
+        {
+            std::vector<std::wstring> names;
+            for (const auto& v : hoist)
+            {
+                if (v.isString())
+                {
+                    names.emplace_back(winrt::to_hstring(v.asString()));
+                }
+            }
+            result->_Hoist = winrt::hstring{ Axan::HoistRule::Format(Axan::HoistRule::FromMask(Axan::HoistRule::MaskFromNames(names))) };
+        }
         if (result->IsSeparator())
         {
             result->_Height = Axan::LaunchEntryWire::NormalizeSeparatorHeight(result->_Height);
@@ -85,6 +107,15 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
             {
                 JsonUtils::SetValueForKey(json, PlacementKey, _Placement);
             }
+            // axan #33: the header label (in "name") and collapsed state, both sparse.
+            if (!_Name.empty())
+            {
+                JsonUtils::SetValueForKey(json, NameKey, _Name);
+            }
+            if (_Collapsed)
+            {
+                JsonUtils::SetValueForKey(json, CollapsedKey, _Collapsed);
+            }
             return json;
         }
         JsonUtils::SetValueForKey(json, ProfileKey, _Profile);
@@ -101,6 +132,20 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         if (!_ColorTarget.empty() && _ColorTarget != L"both")
         {
             JsonUtils::SetValueForKey(json, ColorTargetKey, _ColorTarget);
+        }
+        // axan #34: sparse; "never" as a string, a custom list as an array of names.
+        if (const auto hoist = Axan::HoistRule::Parse(_Hoist); hoist.mode == Axan::HoistRule::Mode::Never)
+        {
+            json[JsonKey(HoistKey)] = std::string{ "never" };
+        }
+        else if (hoist.mode == Axan::HoistRule::Mode::Custom)
+        {
+            Json::Value names{ Json::arrayValue };
+            for (const auto n : Axan::HoistRule::NamesFromMask(hoist.mask))
+            {
+                names.append(winrt::to_string(n));
+            }
+            json[JsonKey(HoistKey)] = names;
         }
         // axan #3: a session row never writes kind/style/height/placement, so its on-disk
         // shape is byte-identical to before separators existed.
@@ -125,6 +170,8 @@ namespace winrt::Microsoft::Terminal::Settings::Model::implementation
         entry->_SeparatorStyle = _SeparatorStyle;
         entry->_Height = _Height;
         entry->_Placement = _Placement;
+        entry->_Collapsed = _Collapsed;
+        entry->_Hoist = _Hoist;
         return *entry;
     }
 }

@@ -24,6 +24,20 @@ namespace winrt::TerminalApp::implementation
         // mode: we want full control of and responsibility for the foreground
         // and background colors that we draw in XAML.
         HighContrastAdjustment(::winrt::Windows::UI::Xaml::ApplicationHighContrastAdjustment::None);
+
+        // axan: backstop for clipboard failures escaping XAML event handlers (a
+        // selectable TextBlock's built-in Ctrl+C, a search box's Ctrl+C, ...).
+        // CLIPBRD_E_CANT_OPEN just means another process held the clipboard at
+        // that instant; unhandled, XAML turns it into a fail-fast of the whole
+        // process. The copy is lost, the app is not. Everything else stays fatal.
+        UnhandledException([](const IInspectable&, const UnhandledExceptionEventArgs& e) {
+            const auto hr = static_cast<HRESULT>(e.Exception());
+            if (hr >= CLIPBRD_E_FIRST && hr <= CLIPBRD_E_LAST)
+            {
+                LOG_HR_MSG(hr, "Swallowed unhandled clipboard error");
+                e.Handled(true);
+            }
+        });
     }
 
     void App::Initialize()

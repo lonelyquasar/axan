@@ -30,6 +30,11 @@ namespace Microsoft::Terminal::Core
     class ControlKeyStates;
 }
 
+namespace Axan::Ui::IdentityEditor
+{
+    class Editor; // axan #38: AxanEntryIdentityEditor.h, the node editor's identity section
+}
+
 namespace winrt::TerminalApp::implementation
 {
     struct TerminalSettingsCache;
@@ -309,6 +314,12 @@ namespace winrt::TerminalApp::implementation
         // frozen for the duration so releasing Ctrl/Alt mid-drag can't disable the container
         // being dragged; the keyboard state is re-read once the drop lands.
         bool _separatorDragActive{ false };
+        // axan #28: true between DragItemsStarting and DragItemsCompleted ONLY (unlike
+        // _separatorDragActive, window deactivation doesn't clear it). While set, separator
+        // containers are enabled drop targets even when locked, so a drop onto one runs the
+        // node-level drop instead of falling through to TreeViewList's flat-list reorder
+        // (which desynced from RootNodes and duplicated the dragged row).
+        bool _sessionTreeDragInFlight{ false };
         Microsoft::UI::Xaml::Controls::TreeViewList _sessionTreeList{ nullptr };
 
         std::shared_ptr<Toast> _windowIdToast{ nullptr };
@@ -327,13 +338,16 @@ namespace winrt::TerminalApp::implementation
         // before a glyph is picked. The label field is focused on its 2nd LayoutUpdated.
         winrt::weak_ref<Microsoft::UI::Xaml::Controls::TreeViewNode> _nodeEditTarget;
         winrt::Windows::UI::Xaml::Controls::TextBox _nodeEditLabelBox{ nullptr }; // Session name field
-        winrt::Windows::UI::Xaml::Controls::ContentPresenter _nodeEditPreview{ nullptr };
+        // axan #38: the shared identity editor (name, icon, colour, colour target) hosted in the
+        // card; it owns the preview and stages its edits into the strings below via onChanged.
+        std::shared_ptr<Axan::Ui::IdentityEditor::Editor> _nodeEditor;
         // axan M13 (design handoff): the icon is chosen via the button row / Browse (no text
         // field), so the current choice + recolor + recolor-target are tracked as strings.
         winrt::hstring _nodeEditIconOverride;
         winrt::hstring _nodeEditColor;
         winrt::hstring _nodeEditColorTarget{ L"both" };
         winrt::hstring _nodeEditFallbackPath;
+        winrt::hstring _nodeEditHoist; // axan #34: AxanHoistRule.h canonical form
         // axan #422: the dialog's resolved theme (sidebar ActualTheme), captured on open. The
         // color swatches store palette NAMES but fill with the theme-resolved hex (WYSIWYG), and
         // the live preview resolves the same way, so both must know which palette set is active.
@@ -555,7 +569,31 @@ namespace winrt::TerminalApp::implementation
         // startup entries. Startup separators are inserted once every startup session node
         // exists; "bottom" placement sinks a separator to the end of its sibling scope after
         // every tree mutation. Definitions in AxanSessionTreeView.cpp.
-        Microsoft::UI::Xaml::Controls::TreeViewNode _CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement);
+        Microsoft::UI::Xaml::Controls::TreeViewNode _CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement, const winrt::hstring& label = {}, bool collapsed = false);
+        // axan #33: section headers (labelled separators). See AxanSessionTreeView.cpp.
+        void _RecomputeSections();
+        void _SetSectionCollapsed(const Microsoft::UI::Xaml::Controls::TreeViewNode& header, bool collapsed, const char* reason);
+        Microsoft::UI::Xaml::Controls::TreeViewNode _SectionHeaderFor(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        void _ExpandSectionsContaining(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const char* reason);
+        void _ActivateSectionBadge(const Microsoft::UI::Xaml::Controls::TreeViewNode& header);
+        void _ShowSectionHeaderMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& header, const winrt::Windows::Foundation::Point& position);
+        // axan #34: the hoisted "Needs you" group (a projection of the same node VMs).
+        void _RefreshNeedsYouGroup();
+        void _OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args);
+        void _SetNeedsYouGroupEnabled(bool enabled);
+        void _AppendNeedsYouGroupToggle(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout);
+        // axan #34: per-entry hoist overrides, seeded from / re-synced with startupSessions.
+        winrt::hstring _HoistOverrideForEntry(const winrt::hstring& entryId) const;
+        void _SyncHoistOverridesFromSettings();
+        // axan: the sidebar.statusAfterSeen menu toggle (appended by
+        // _AppendNeedsYouGroupToggle) and the re-derive they (and a settings reload) trigger.
+        void _SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply);
+        void _RecomputeAllNodeStates();
+        // axan: hand sidebar.iconFontScale to IconPathConverter (process-wide) and rebuild
+        // this window's node icons when its generation differs from what this page last applied.
+        void _ApplyIconFontScales();
+        std::optional<uint64_t> _appliedIconFontScales;
+        Windows::Foundation::Collections::IObservableVector<winrt::TerminalApp::SessionNodeViewModel> _needsYouItems{ nullptr };
         void _RealizeStartupSeparators();
         void _MarkStartupSpawnComplete();
         void _ReconcileSeparatorsWithSettings();
@@ -564,8 +602,11 @@ namespace winrt::TerminalApp::implementation
         double _SessionRowHeightPx();
         void _HookSessionTreeList();
         void _OnSessionTreeContainerContentChanging(const Windows::UI::Xaml::Controls::ListViewBase& sender, const Windows::UI::Xaml::Controls::ContainerContentChangingEventArgs& args);
-        void _ApplySeparatorContainerState(const Microsoft::UI::Xaml::Controls::TreeViewItem& container, bool isSeparator);
+        void _ApplySeparatorContainerState(const Microsoft::UI::Xaml::Controls::TreeViewItem& container, bool isSeparator, bool isSectionHeader = false, bool sectionHidden = false);
         void _ApplySeparatorContainerStates();
+        // axan #28: after a drop, check TreeViewList's flat item list against RootNodes and
+        // rebuild the view from RootNodes if they've desynced.
+        void _VerifySessionTreeFlatList(const char* reason);
         void _SetSeparatorsUnlocked(bool unlocked, const char* reason);
         void _UpdateSeparatorUnlockFromKeyboard(const char* reason);
         void _OnRootPreviewKey(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::KeyRoutedEventArgs& args);
@@ -589,6 +630,28 @@ namespace winrt::TerminalApp::implementation
         // and the node editor's swatch/preview palette choice. themeOverride as in
         // _RefreshNodeLabelBrushes (#422: sidesteps ActualTheme's layout-pass lag).
         bool _SidebarIsDarkTheme(Windows::UI::Xaml::ElementTheme themeOverride = Windows::UI::Xaml::ElementTheme::Default);
+        // axan #30: per-node session state (AxanSessionState.h). _RecomputeNodeState gathers
+        // the tab's panes' OSC 7501 records / OSC 133 command state / bell and pushes the
+        // derived state onto the node's VM. _AcknowledgeNodeState marks the node's current
+        // done/error records as seen (node selected, its pane focused, or the window
+        // re-activated on it). _SessionStateClockTick is the ONE sidebar-wide 1s timer.
+        void _RecomputeNodeState(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        void _AcknowledgeNodeState(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const char* reason);
+        void _AcknowledgeFocusedNode(const char* reason);
+        void _EnsureSessionStateClock();
+        void _SessionStateClockTick();
+        // axan: sidebar.idleEffects resolved to a mask (unset = dim + smaller; unknown names
+        // logged once) and the "collapse" effect's per-tick pass over the tree.
+        uint8_t _ResolveIdleEffects() const;
+        // Cached _ResolveIdleEffects result; reset by _RecomputeAllNodeStates (settings
+        // reload / sidebar menu) so the 1s clock never re-resolves the settings list.
+        uint8_t _IdleEffectsMask();
+        std::optional<uint8_t> _idleEffectsMask;
+        // True while the last clock tick ran the collapse pass with the effect on; lets the
+        // tick skip the tree walk while the effect is off once it has been undone.
+        bool _idleCollapseApplied{ false };
+        void _ApplyIdleCollapse(bool enabled);
+        Windows::UI::Xaml::DispatcherTimer _sessionStateClock{ nullptr };
 
         // axan M13: right-click a session node for its actions (rename label, set/clear icon,
         // recolor, duplicate, add child, close, open the profile in WT Settings). The menu is
@@ -602,6 +665,9 @@ namespace winrt::TerminalApp::implementation
         // axan M13/#429: the menu itself, shared by both routes. `position` is item-relative
         // when the gesture reported one (pointer), else the flyout anchors to the row (keyboard).
         void _ShowSessionNodeContextMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const Microsoft::UI::Xaml::Controls::TreeViewItem& item, const std::optional<Windows::Foundation::Point>& position);
+        // axan: the node menu's "Preview state" submenu. id = a kStatePreviews id, "" = clear.
+        void _AppendStatePreviewSubMenu(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout, const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        void _PreviewNodeState(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, std::wstring_view id);
         // axan #429: the currently-open per-node menu — only consulted so a gesture that
         // raises both RightTapped and ContextRequested can't open the menu twice.
         Windows::UI::Xaml::Controls::MenuFlyout _sessionNodeMenu{ nullptr };
@@ -617,19 +683,16 @@ namespace winrt::TerminalApp::implementation
         // The label field is focused on its 2nd LayoutUpdated. State lives in the members below.
         void _ShowNodeEditPanel(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         // axan #436: per-section builders for the node editor card, split out of the original
-        // monolithic _ShowNodeEditPanel. Each builds one row/section of the card; the
-        // selection brushes are passed in so all sections highlight consistently.
-        Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditNameSection(const winrt::hstring& currentTemplate, const Windows::UI::Xaml::Media::SolidColorBrush& neutralBrush);
-        Windows::UI::Xaml::Controls::Grid _BuildNodeEditIconRow(const Windows::UI::Xaml::Media::SolidColorBrush& accentBrush, const Windows::UI::Xaml::Media::SolidColorBrush& neutralBrush);
-        Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditSwatchRow(const Windows::UI::Xaml::Media::SolidColorBrush& accentBrush, const Windows::UI::Xaml::Media::SolidColorBrush& neutralBrush);
-        Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditApplyColorSection();
+        // monolithic _ShowNodeEditPanel. #38: the identity sections (name, icon, colour, colour
+        // target) moved to the shared AxanEntryIdentityEditor.h; what stays card-only is here.
         Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditFooter();
-        void _UpdateNodeEditPreview();
+        Windows::UI::Xaml::Controls::StackPanel _BuildNodeEditHoistSection(); // axan #34
         void _HideNodeEditPanel();
         void _AddChildSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         void _DuplicateNodeSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         void _CloseNodeSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
-        void _OpenNodeProfileSettings(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        // axan: the Settings item shared by the sidebar's empty-area and session node menus.
+        winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _MakeSettingsMenuItem();
 
         // axan: the titlebar app menu (the "axan" dropdown in the upper-left).
         // Mirrors the per-node context menu, targeting the ACTIVE session — each item
@@ -764,7 +827,16 @@ namespace winrt::TerminalApp::implementation
         static bool _IsMessageDismissed(const winrt::Microsoft::Terminal::Settings::Model::InfoBarMessage& message);
         static void _DismissMessage(const winrt::Microsoft::Terminal::Settings::Model::InfoBarMessage& message);
 
-        void _updateThemeColors();
+        // axan #26: `reason` names the caller in the debug log line so refresh storms are traceable.
+        void _updateThemeColors(const char* reason = "unspecified");
+        // axan #26: a TermControl's BackgroundBrush changed. Only the focused tab's active
+        // control feeds the page backdrop, and every refresh is coalesced into one
+        // low-priority dispatcher pass (each control raises the brush ~4x per settings reload).
+        void _OnControlBackgroundBrushChanged(const winrt::Windows::Foundation::IInspectable& sender);
+        bool _themeRefreshPending{ false };
+        // axan #26: true while UpdateSettings pushes new settings into every tab; it runs one
+        // _updateThemeColors of its own afterwards, so per-control brush raises are dropped.
+        bool _suppressControlThemeRefresh{ false };
         void _updateAllTabCloseButtons();
         void _updatePaneResources(const winrt::Windows::UI::Xaml::ElementTheme& requestedTheme);
 

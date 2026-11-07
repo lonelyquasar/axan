@@ -60,6 +60,8 @@ namespace Axan
         winrt::hstring style; // "line" | "space" (normalized; empty -> "line")
         double height{ 1.0 }; // in session-row units, already NormalizeSeparatorHeight'd
         winrt::hstring placement; // "inline" | "bottom" (normalized; empty -> "inline")
+        winrt::hstring label; // axan #33: section header label ("" = plain divider)
+        bool collapsed{ false }; // axan #33: labelled section starts collapsed
         int32_t parentSpawnIndex{ -1 };
         int32_t afterSpawnIndex{ -1 };
     };

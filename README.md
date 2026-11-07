@@ -120,17 +120,36 @@ The curated startup tree — which shells to spawn, in what hierarchy — is a l
 | `style` | separators only: `line` (default, omitted) draws a rule; `space` leaves an open gap |
 | `height` | separators only: height in session-row units, tenths, `0.1`–`10`; sparse (omitted when `1.0`) |
 | `placement` | separators only: `inline` (default, omitted) keeps its list position; `bottom` pins it below its siblings so sessions added later land above it |
+| `name` (on a separator) | separators only: an optional section-header label; `""` (omitted) = a plain divider |
+| `collapsed` | labelled separators only: `true` starts the section collapsed; sparse (omitted when `false`) |
+| `hoist` | sessions only: whether the session joins the sidebar's hoisted group. Omitted = follow `sidebar.hoistStates`; `"never"`; or its own list of state names (`["running"]`). Windows only |
 
 `command` is stored raw. The per-shell survival wrap that keeps a node alive after its command exits (Linux `$SHELL -c "…; exec $SHELL"`, pwsh `-NoExit -Command`, cmd `/k`, WSL `bash -ic "…; exec bash -i"`) is applied at spawn time, never stored, so the command ports across platforms. Malformed trees self-heal on load: orphans and dangling parents promote to root, missing UUIDs are backfilled. The tree is honored only when the CLI asks for no shells of its own — `--tab`, `--working-directory`, and positional commands take precedence.
 
 **Separators in the sidebar (Windows):** add one with **Add separator** on the Startup sessions settings page, where its style, height and placement are edited; it appears in the sidebar at its place in the tree on the next launch, and deleting it there removes it from the sidebar when the settings save. Separator rows are **locked by default** — they take no click, focus or drag, so ordinary sidebar use can't disturb them. Hold **Ctrl+Alt** (both keys) to unlock every separator for the native drag-and-drop: drag one to reorder it or drop it onto a session to nest it under that session; releasing either key locks them again. AltGr on international layouts does not count as Ctrl+Alt. Right-clicking a separator shows the same menu as empty sidebar space. **Save current as startup** captures separators along with the sessions, in their current order.
+
+**Section headers (Windows):** give a separator a **label** on the Startup sessions page and it becomes a section header: a muted label with a chevron. Clicking the header (or **Collapse section** in its right-click menu) hides the rows after it up to the next separator at the same depth, without moving anything in the tree. A collapsed header shows how many sessions it hides and the most urgent state among them (`Work · 5 · 1 needs you`); clicking that badge expands the section and selects the row. The session you're on stays visible even inside a collapsed section, and a row dropped into a collapsed section expands it. **Collapsed** on the settings page sets how a section starts; **Save current as startup** records each header's current state. Headers aren't keyboard-focusable (they stay out of the tab order like other separators), so there's no Left/Right toggle; use the click or the menu.
 
 **Where the tree lives natively:**
 
 - **Windows** — a single global `startupSessions` array on the root of WT's `settings.json` (camelCase keys: `id`, `parent`, `profile`, `name`, `directory`, `command`, `icon`, `color`, `colorTarget`). Each entry additionally carries `profile` — the GUID of the WT profile it spawns under (which shell: cmd/pwsh/WSL distro), empty = the default profile. One workstation tree, mixed shells, edited on the global **Startup sessions** settings page. WT's profiles keep owning appearance and the shell commandline; axan entries reference them.
 - **Linux** — a per-profile `default-launch-entries` GSettings key (an `a(ssssssss)` tuple array). GNOME Terminal has one shell per profile, so there is no per-entry profile reference; entries run under the owning profile. The Preferences → Startup tab is the GUI editor; **⌖ Capture current window** snapshots the live sidebar tree (cwd + name + hierarchy, not commands) into the edited profile's entries, and **⌖ Capture as new profile…** does the same into a fresh profile cloned from the current one.
 
+**The Startup sessions page (Windows)** is in the Settings **Sessions** group, next to the Sidebar page. The left side lists the rows in tree order (nesting, icon, colour and name; a separator shows as a header row), with **Add session**, **Add separator**, **Import from TOML…** and **Save current as startup** above it. The toolbar under the list acts on the selected row: Move up / Move down (among its siblings, with its children), Outdent, Indent, Duplicate and Delete. With the list focused, the same actions are Alt+Up / Alt+Down, Alt+Left / Alt+Right, Ctrl+D and Delete. You can also drag a row to a new place; its children move with it, and it never lands nested under a separator. The right side edits the selected row. A session has **Identity** (the same name, icon and colour editor as the sidebar's Edit node card, plus an **Icon as text** box for an emoji, a `builtin:NAME` token or an image path), **Launch** (profile, directory with Browse, command) and **Hoisted group** (see [what the row shows](docs/program-status-osc-7501.md#5-what-the-row-shows)). A separator has its label, **Start collapsed**, style, height and placement. On a narrow window the editor moves under the list.
+
+### Session state in the sidebar
+
+Windows only for now. Each sidebar row shows what its session is doing, so you can leave a long build or a coding agent alone and glance at the sidebar to see who needs you: a dot on the icon for a session waiting on you, finished or failed, a second line with the message and its age, and a glyph and short word at the right edge (`working`, `running`, `needs answer`, `idle`).
+
+The state comes from three places. Programs report it themselves with **OSC 7501, the Program Status Protocol**, which Claude Code already speaks. A plain shell shows *running* while a command executes, from the OSC 133 marks axan's shell integration emits for PowerShell and WSL. And a bell in an idle tab marks it as done until you look at it.
+
+The `sidebar.*` settings on the **Sidebar** page in the Settings **Sessions** group control idle dimming, the hoisted "Needs you" group, the glyphs and words, the sizes, and the per-font icon scale (`sidebar.iconFontScale`, see [Icons](#icons)). To test without an agent, run `tools/axan-status.sh` or `tools/axan-status.ps1` in a pane (`tools/axan-status.sh --demo`), or right-click a row and use **Preview state**.
+
+**The full reference is [docs/program-status-osc-7501.md](docs/program-status-osc-7501.md)**: the escape sequence and what axan rejects, how each state looks in a row, when a report counts as seen, every setting, emitter examples for bash, PowerShell and cmd, and what to look for in the log.
+
 ### The portable TOML
+
+To write a startup tree by hand, or have an agent write one, follow [docs/startup-sessions-toml.md](docs/startup-sessions-toml.md): every key, what Import does, and a validated example.
 
 Every file starts with a version block:
 
@@ -142,7 +161,7 @@ exported-by       = "windows"   # provenance, advisory only
 
 A file is version `1` unless it contains a separator row, in which case it is version `2` — a tree without separators still round-trips through a reader that only knows version 1 (an older Windows build; the Linux build does not read this file yet, see the known gap below).
 
-Keys axan designs are **kebab-case, always** (`parent-id`, `color-target`, `axan-toml-version`). Unknown keys are skipped with a logged warning, never an abort.
+Keys axan designs are **kebab-case, always** (`parent-id`, `color-target`, `axan-toml-version`). Unknown keys and wrongly typed values are skipped with a logged warning, never an abort.
 
 **The startup tree** exports as `startup-sessions.toml` (Windows writes it to the package `LocalState`; auto-exported on settings change, imported via the Startup sessions page):
 
@@ -151,13 +170,14 @@ Keys axan designs are **kebab-case, always** (`parent-id`, `color-target`, `axan
 id           = "b1dcc9dd-5262-4d8d-a863-c897e6d979b9"
 parent-id    = ""                 # "" = root
 profile      = "61c54bbd-…"       # referenced profile GUID; omitted = default profile
-profile-name = "PowerShell"       # cross-machine fallback: import matches GUID first, then name
+profile-name = "PowerShell"       # cross-machine fallback: GUID first, then name; works alone
 name         = "$dir $branch"
 directory    = "~"
 command      = "claude"
 icon         = "builtin:terminal"
 color        = "blue"             # sparse
 color-target = "icon"             # sparse
+hoist        = ["blocked", "running"]  # sparse; or "never"; omitted = follow sidebar.hoistStates
 
 [[startup-sessions]]              # a separator (Windows only for now); makes the file version 2
 id           = "5f0c2a7e-…"
@@ -166,6 +186,8 @@ kind         = "separator"
 style        = "space"            # sparse; default "line"
 height       = 0.5                # session-row units; sparse when 1.0
 placement    = "bottom"           # sparse; default "inline"
+name         = "Work"             # sparse; a labelled separator is a section header
+collapsed    = true               # sparse; labelled separators only
 ```
 
 **Whole profiles** export as per-profile `<uuid>.toml` mirrors with two layers: a portable core (`[profile]` — `uuid`, `name`, and the entry tree) that round-trips across platforms, and an opaque native passthrough (`[profile.native.linux]` / `[profile.native.windows]`) carrying each platform's remaining settings verbatim in their native casing (gschema kebab / WT camelCase). The importing platform applies the block matching its own OS and ignores the other — a Linux→Windows import drops Linux appearance scalars by design rather than mistranslating them.
@@ -177,6 +199,8 @@ Known gap: the Linux profile export is still a flat `[profile]` table of gschema
 An entry's `name` is a template, expanded at render time (same vocabulary on both platforms): `$pwd $cwd $dir $~ $user $host $hostname $shell $cmd $title $branch $repo` and `${file:path}` (first line of a file). `$branch`/`$repo` are computed by walking up from the shell's live cwd to `.git` — including WSL cwds via `\\wsl.localhost\…` paths. Unknown variables render literally. Live cwd tracking comes from shell integration axan injects at spawn (OSC 9;9 / OSC 7 emit for pwsh, cmd, and WSL bash). Variable names are case-insensitive and `-`/`_` are interchangeable; `$branch` and `${file:…}` refresh on the shell's next OSC event (the prompt redraw after a `cd` or `git checkout`), not in real time.
 
 ### Icons
+
+For picking glyphs that Windows 11 can draw, with names, code points and TOML escapes, see [docs/startup-sessions-toml.md](docs/startup-sessions-toml.md#5-icons).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/builtin-icons-dark.png">
@@ -201,11 +225,11 @@ An entry with no icon of its own inherits one: node override → the profile's i
 
 **Linux** — drop `.svg` files into `~/.config/axan/icons/`, then run `axan --import-icons` (or the import button in Preferences). Each file is validated before it reaches the picker: the filename must match `name.svg` (lowercase ASCII, starts alphanumeric, dashes/underscores allowed), the file must be under 100 KiB, and it must actually render at sidebar size. Passing names are registered in `~/.config/axan/icons.toml`; the picker reads that registry, not the folder, so a failing file is reported with a reason and stays out of the dropdown. Reference a registered icon by its bare filename, or any image on disk by absolute path. The importer is SVG-only because vectors scale cleanly — but the resolver renders whatever gdk-pixbuf can load, so if you'd rather use a PNG, a WebP, or for some reason an animated GIF, drop it in the folder, set the entry's `icon` to the bare filename by hand, and it will render; it just won't appear in the picker, which is reserved for validated SVGs.
 
-**Windows** — right-click a session node (or use the titlebar app menu) → **Edit node (label + icon)…**. Pick one of the built-in glyphs, or **Browse to icon file…** to use an image (PNG/ICO/SVG) or extract an icon from an exe/dll. The recolor swatches tint the glyph and/or the label text (the `color`/`color-target` fields). When hand-editing `settings.json` or the TOML instead, the `icon` string also accepts a Segoe Fluent/MDL2 glyph character or an emoji directly. Overrides persist per node and survive relaunch.
+**Windows** — right-click a session node (or use the titlebar app menu) → **Edit node (label + icon)…**. The same editor is on the Startup sessions settings page for a startup entry. Search the whole Segoe Fluent Icons font (about 1,400 glyphs, by name) and pick one, switch the picker's character-set selector to **Letters and digits** for a-z, A-Z or 0-9, type a code point (`U+131A3`, `0x131A3` or `131A3`) into the search to pick any character the system's fonts can draw, or **Browse to icon file…** to use an image (PNG/ICO/SVG) or extract an icon from an exe/dll. A picked glyph is stored by its name, e.g. `"icon": "robot"`, and a letter, digit or code-point pick as the character itself, e.g. `"icon": "a"`; the eleven portable names (`terminal`, `git`, `server`…) work too and export to the TOML as `builtin:NAME`. The recolor swatches tint the glyph and/or the label text (the `color`/`color-target` fields). When hand-editing `settings.json` or the TOML instead, the `icon` string also accepts a glyph name, a Segoe Fluent/MDL2 glyph character, an emoji, or any other single character (a letter, a digit, a hieroglyph) directly, or a code point as text (`"U+131A3"`, `"0x131A3"` or `"131A3"`; the bare form needs at least one digit 0-9, so an all-letter one such as `"U+FACE"` keeps its prefix, and a glyph name of the same spelling wins). An unknown glyph name or an invalid code point renders as a placeholder and is logged once. A one-character icon is sized per font family, because some fonts draw their glyphs small: the historic scripts in Segoe UI Historic (hieroglyphs, runes, cuneiform and the rest) are drawn 1.35× larger by default to match emoji and Segoe Fluent glyphs. **Settings → Sidebar → Icon fonts** lists every family the sidebar's icons come from, each with a 0.5–3 spin box and a Reset button; it writes `sidebar.iconFontScale`, e.g. `"sidebar.iconFontScale": { "Segoe UI Historic": 1.5, "Segoe UI Emoji": 0.9 }`. A family left out keeps its default: Segoe Fluent Icons, Segoe UI Emoji and Segoe UI 1.0, Segoe UI Historic 1.35 (the table is in `windows/src/inc/AxanGlyphScale.h`). Overrides persist per node and survive relaunch.
 
 ### Sidebar and backdrop transparency (Windows)
 
-By default the sidebar and the surface behind the terminal panes are opaque, so a profile with reduced opacity or acrylic composites over a solid app-colored backdrop rather than the live desktop. The easy path is the **Sidebar matches profile transparency** toggle under Settings > Appearance (the `sidebarMatchesProfileTransparency` global in `settings.json`): it paints the sidebar with the focused profile's background and opacity and leaves the backdrop behind the terminal clear, so the whole window shares one transparency. Set the opacity per profile under the profile's Appearance > Transparency (`"opacity"` below 100, 80 pairs well, or `"useAcrylic"`). While the toggle is on it overrides the theme keys below.
+By default the sidebar and the surface behind the terminal panes are opaque, so a profile with reduced opacity or acrylic composites over a solid app-colored backdrop rather than the live desktop. The easy path is the **Sidebar matches profile transparency** toggle on the Settings > Sidebar page (the `sidebarMatchesProfileTransparency` global in `settings.json`): it paints the sidebar with the focused profile's background and opacity and leaves the backdrop behind the terminal clear, so the whole window shares one transparency. Set the opacity per profile under the profile's Appearance > Transparency (`"opacity"` below 100, 80 pairs well, or `"useAcrylic"`). While the toggle is on it overrides the theme keys below.
 
 The manual path is a theme in `settings.json` with two axan-only keys, `sidebar.background` and `content.background`, which take the same values as Windows Terminal's `tabRow.background`: `"#RRGGBB"`, `"#RRGGBBAA"`, `"accent"`, or `"terminalBackground"`. `"terminalBackground"` follows the focused profile's background, opacity included, and is the recommended sidebar value; `"#000000CC"` (80% black) is the fixed-tint alternative, which keeps sidebar labels readable over a busy desktop regardless of the profile; `"#00000080"` is a half-transparent scrim; `"#00000000"` is fully see-through. Leave a key unset and that surface keeps today's opaque look. The content backdrop sits *behind* the terminal panes, so it only shows once a profile has reduced opacity or acrylic, and its alpha then stacks with the profile's: a 90% pane over a 90% black backdrop is nearly opaque. Let the profile opacity do the work and keep `content.background` fully clear. For example:
 

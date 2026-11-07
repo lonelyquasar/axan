@@ -61,5 +61,90 @@ namespace TerminalApp
         Windows.UI.Xaml.Visibility SeparatorVisibility { get; };
         Windows.UI.Xaml.Visibility SeparatorLineVisibility { get; };
         Double SeparatorPixelHeight { get; };
+
+        // axan #30: the session's state (see AxanSessionState.h), observable so the row
+        // rendering (#32, #31) is pure binding. State is one of "idle", "running",
+        // "working", "needs-you", "done-unseen", "error". StateSince is when the node
+        // entered State (UI-thread clock); StateMessage is the OSC 7501 msg (or title) of
+        // the record that decided the state, "bell" for a plain-shell bell, else "";
+        // StateKind is "permission" / "question" / "auth" for needs-you, else "".
+        // LastActivity is the latest user-input or output time across the tab's panes,
+        // refreshed by the sidebar's 1s clock (default DateTime = no activity yet).
+        String State { get; };
+        Windows.Foundation.DateTime StateSince { get; };
+        String StateMessage { get; };
+        String StateKind { get; };
+        Windows.Foundation.DateTime LastActivity { get; };
+
+        // axan #32: the row's rendering of State, all derived here so the ItemTemplate is
+        // pure binding. The state dot overlays the icon's bottom-right corner: needs-you is
+        // an inverted badge (fill = the theme text colour, ring = its opposite) so it reads
+        // against any user node colour; done-unseen is the same dot at low alpha (softer);
+        // error is red with the same ring. StateGlyph is a static (never animated) glyph at
+        // the row's right edge for working / running. SubLabel is the optional second line:
+        // the 7501 msg (or the blocked kind / state word) plus an age for the states where
+        // waiting time matters ("permission · 4m", "done · 25m"); "" collapses the line.
+        // SubLabel is the message alone and SubLabelAge the " · 4m" suffix ("" when the
+        // state shows no age): the row lays them out in two columns so the age is never
+        // trimmed and the message ellipsizes into the remaining width.
+        // StateToolTip (under the label in the row tooltip) is the state, its kind, the
+        // absolute local time it began and the full message; "" and Collapsed when idle.
+        Windows.UI.Xaml.Visibility StateDotVisibility { get; };
+        Windows.UI.Xaml.Media.Brush StateDotFill { get; };
+        Windows.UI.Xaml.Media.Brush StateDotStroke { get; };
+        String StateGlyph { get; };
+        Windows.UI.Xaml.Visibility StateGlyphVisibility { get; };
+        // axan: StateGlyph as an icon element (sidebar.stateGlyphs accepts the node icon
+        // vocabulary: glyph, emoji or image). A fresh element per get, like Icon.
+        Windows.UI.Xaml.Controls.IconElement StateGlyphIcon { get; };
+        // axan: the slot's small state word (sidebar.stateLabels; "" when off or no slot
+        // state), the slot as a whole (glyph and/or word), and its explanation tooltip.
+        String StateWord { get; };
+        Windows.UI.Xaml.Visibility StateWordVisibility { get; };
+        Windows.UI.Xaml.Visibility SlotVisibility { get; };
+        String SlotToolTip { get; };
+        String SubLabel { get; };
+        String SubLabelAge { get; };
+        Windows.UI.Xaml.Visibility SubLabelVisibility { get; };
+        // axan: 0.7 for a live state's second line, 0.45 for a kept (already seen) report
+        // under sidebar.statusAfterSeen = keep. StateGlyph is the sidebar.stateGlyphs glyph for
+        // the node's slot state (idle = an agent at rest; "" = nothing).
+        Double SubLabelOpacity { get; };
+        String StateToolTip { get; };
+        Windows.UI.Xaml.Visibility StateToolTipVisibility { get; };
+
+        // axan #31: idle de-emphasis. An idle node with no input/output for the configured
+        // sidebar.idleAfterMinutes is de-emphasised. sidebar.idleEffects picks how: "dim"
+        // (RowOpacity), "smaller" (LabelFontSize 12 vs 14 and a shorter RowMinHeight), "gray"
+        // (a coloured node's Icon / LabelBrush go neutral gray), "collapse" (the page closes
+        // the expander of an all-idle subtree; see AxanIdleEffects.h). needs-you /
+        // done-unseen / error are never de-emphasised; any activity or a working/running
+        // state promotes the row back on the next update. No animation.
+        Boolean IsDeEmphasised { get; };
+        Double LabelFontSize { get; };
+        // axan: sidebar.stateLineFontSize (the second line and the slot's state word) and
+        // sidebar.iconSize (the node icon's box). LabelFontSize follows sidebar.labelFontSize.
+        Double StateLineFontSize { get; };
+        Double IconSize { get; };
+        Double RowOpacity { get; };
+        Double RowMinHeight { get; };
+
+        // axan #33: section headers. A separator with a label (SeparatorLabel) is a section
+        // header: a muted label, a chevron (CollapseGlyph) and, while collapsed, a summary of
+        // what it hides (SectionSummary " · 5") plus the strongest #30 state among the hidden
+        // rows (SectionBadge "1 needs you"); ActivateSectionBadge expands the section and
+        // selects that row. Collapsing never reparents: every row it hides (any node, header
+        // or not) just has IsSectionHidden set, which the page maps onto the row container's
+        // Visibility. An unlabelled separator is exactly the #3 divider.
+        String SeparatorLabel { get; };
+        Windows.UI.Xaml.Visibility SeparatorHeaderVisibility { get; };
+        Windows.UI.Xaml.Visibility SeparatorHeaderLineVisibility { get; };
+        Boolean IsCollapsed { get; };
+        String CollapseGlyph { get; };
+        String SectionSummary { get; };
+        String SectionBadge { get; };
+        Windows.UI.Xaml.Visibility SectionBadgeVisibility { get; };
+        void ActivateSectionBadge();
+        Boolean IsSectionHidden { get; };
     }
 }

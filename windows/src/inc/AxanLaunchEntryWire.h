@@ -46,6 +46,10 @@
 //                                    #   (non-portable) icons carry verbatim
 //   color        = "blue"            # recolor token; SPARSE — omitted when empty
 //   color-target = "icon"            # "icon"|"text"|"both"; SPARSE — omitted when ""/both
+//   hoist        = "never"           # axan #34: "never" or a list of state names
+//                                    #   (["running", "blocked"]; AxanHoistRule.h); SPARSE —
+//                                    #   omitted = follow sidebar.hoistStates. Within the
+//                                    #   current version: readers skip unknown keys.
 //
 //   # axan #3 — a separator row (schema version 2). Spawns nothing; nests + orders like
 //   # a session. profile/name/directory/command/icon/color are absent.
@@ -56,6 +60,11 @@
 //   style        = "space"           # "line" (default; SPARSE) | "space"
 //   height       = 0.5               # in session-row units, tenths; SPARSE when 1.0
 //   placement    = "bottom"          # "inline" (default; SPARSE) | "bottom"
+//   name         = "Work"            # axan #33: section header label; SPARSE when ""
+//   collapsed    = true              # axan #33: labelled section starts collapsed; SPARSE
+//                                    #   when false. Both keys stay within version 2:
+//                                    #   readers skip unknown keys, so an older version-2
+//                                    #   reader just shows an unlabelled separator.
 //
 // Version rule: a file is written as version 1 unless it contains a separator, in which
 // case it is version 2 — so a tree without separators still round-trips with a
@@ -69,11 +78,17 @@
 
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cwctype>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include <AxanGlyphNames.h>
 #include <AxanIconRegistry.h>
 
 namespace Axan::LaunchEntryWire
@@ -137,6 +152,10 @@ namespace Axan::LaunchEntryWire
         inline constexpr std::string_view Style{ "style" };
         inline constexpr std::string_view Height{ "height" };
         inline constexpr std::string_view Placement{ "placement" };
+        // axan #33: a separator's header label rides in "name"; "collapsed" is new.
+        inline constexpr std::string_view Collapsed{ "collapsed" };
+        // axan #34: per-entry hoist override ("never" or an array of names; sparse).
+        inline constexpr std::string_view Hoist{ "hoist" };
         // The global tree's key on the settings.json root object (GlobalAppSettings).
         inline constexpr std::string_view StartupSessions{ "startupSessions" };
     }
@@ -160,6 +179,10 @@ namespace Axan::LaunchEntryWire
         inline constexpr std::string_view Style{ "style" };
         inline constexpr std::string_view Height{ "height" };
         inline constexpr std::string_view Placement{ "placement" };
+        // axan #33: a separator's header label rides in "name"; "collapsed" is new.
+        inline constexpr std::string_view Collapsed{ "collapsed" };
+        // axan #34: per-entry hoist override ("never" or an array of names; sparse).
+        inline constexpr std::string_view Hoist{ "hoist" };
     }
 
     // One startup-session entry in portable (TOML-side) form: UTF-8 strings, bare profile
@@ -181,6 +204,12 @@ namespace Axan::LaunchEntryWire
         std::string style; // "line" (default) | "space"; sparse
         double height{ 0.0 }; // session-row units; 0 = unset -> 1.0; sparse when 1.0
         std::string placement; // "inline" (default) | "bottom"; sparse
+        // axan #33: on a separator, `name` is the section header label ("" = plain divider)
+        // and `collapsed` whether the labelled section starts collapsed. Both sparse.
+        bool collapsed{ false };
+        // axan #34 (sessions only): the hoist override in AxanHoistRule.h canonical form,
+        // UTF-8: "" = follow the global list, "never", or comma-joined names. Sparse.
+        std::string hoist;
 
         bool IsSeparator() const noexcept { return kind == KindSeparator; }
     };
@@ -288,6 +317,17 @@ namespace Axan::LaunchEntryWire
             {
                 out += line(TomlKey::Placement, e.placement);
             }
+            if (!e.name.empty())
+            {
+                out += line(TomlKey::Name, e.name);
+            }
+            if (e.collapsed)
+            {
+                std::string kv{ TomlKey::Collapsed };
+                kv.append(12 - TomlKey::Collapsed.size(), ' ');
+                kv += " = true\n";
+                out += kv;
+            }
             out += '\n';
             return out;
         }
@@ -310,6 +350,45 @@ namespace Axan::LaunchEntryWire
         if (!e.colorTarget.empty() && e.colorTarget != "both")
         {
             out += line(TomlKey::ColorTarget, e.colorTarget);
+        }
+        // axan #34: "never" as a string, a custom list as an array of names.
+        if (!e.hoist.empty())
+        {
+            std::string kv{ TomlKey::Hoist };
+            kv.append(12 - TomlKey::Hoist.size(), ' ');
+            kv += " = ";
+            if (e.hoist == "never")
+            {
+                kv += TomlQuote(e.hoist);
+            }
+            else
+            {
+                kv += '[';
+                size_t start = 0;
+                bool first = true;
+                while (start <= e.hoist.size())
+                {
+                    const auto comma = e.hoist.find(',', start);
+                    const auto end = comma == std::string::npos ? e.hoist.size() : comma;
+                    if (end > start)
+                    {
+                        if (!first)
+                        {
+                            kv += ", ";
+                        }
+                        kv += TomlQuote(std::string_view{ e.hoist }.substr(start, end - start));
+                        first = false;
+                    }
+                    if (comma == std::string::npos)
+                    {
+                        break;
+                    }
+                    start = comma + 1;
+                }
+                kv += ']';
+            }
+            kv += '\n';
+            out += kv;
         }
         out += '\n';
         return out;
@@ -348,11 +427,136 @@ namespace Axan::LaunchEntryWire
         {
             e.height = static_cast<double>(*hi);
         }
+        e.collapsed = t[TomlKey::Collapsed].template value<bool>().value_or(false);
+        // axan #34: hoist = "never" | ["name", ...], joined raw here; the caller normalizes
+        // (AxanHoistRule.h Normalize drops unknown names). An empty array is "never".
+        if (const auto hs = t[TomlKey::Hoist].template value<std::string>())
+        {
+            e.hoist = *hs;
+        }
+        else if (const auto arr = t[TomlKey::Hoist].as_array())
+        {
+            bool any = false;
+            for (const auto& el : *arr)
+            {
+                if (const auto name = el.template value<std::string>())
+                {
+                    if (any)
+                    {
+                        e.hoist += ',';
+                    }
+                    e.hoist += *name;
+                    any = true;
+                }
+            }
+            if (!any)
+            {
+                e.hoist = "never";
+            }
+        }
         if (e.IsSeparator())
         {
             e.height = NormalizeSeparatorHeight(e.height);
         }
         return e;
+    }
+
+    // One problem with a [[startup-sessions]] row's keys (#44): a key this build doesn't
+    // know (a typo such as "colour"), or a known key holding the wrong TOML type (FromTomlTable
+    // reads it as absent). Never fatal: the sparse contract keeps the row; the importer logs
+    // one warning per issue.
+    struct TomlKeyIssue
+    {
+        std::string key;
+        std::string problem; // "unknown key", or "expected <type>"
+    };
+
+    // Check a row's keys and value types against the schema above. Templated for the same
+    // reason as FromTomlTable. Expected types: height a number, collapsed a boolean, hoist
+    // a string or an array of strings, everything else a string.
+    template<typename TomlTable>
+    std::vector<TomlKeyIssue> CheckTomlTable(const TomlTable& t)
+    {
+        static constexpr std::array<std::string_view, 16> kKnownKeys{
+            TomlKey::Id, TomlKey::ParentId, TomlKey::Profile, TomlKey::ProfileName,
+            TomlKey::Name, TomlKey::Directory, TomlKey::Command, TomlKey::Icon,
+            TomlKey::Color, TomlKey::ColorTarget, TomlKey::Kind, TomlKey::Style,
+            TomlKey::Placement, TomlKey::Height, TomlKey::Collapsed, TomlKey::Hoist
+        };
+        std::vector<TomlKeyIssue> issues;
+        for (auto&& [k, v] : t)
+        {
+            const std::string_view key{ k.str() };
+            const auto known = std::find(kKnownKeys.begin(), kKnownKeys.end(), key) != kKnownKeys.end();
+            if (!known)
+            {
+                issues.push_back({ std::string{ key }, "unknown key" });
+            }
+            else if (key == TomlKey::Height)
+            {
+                if (!v.is_number())
+                {
+                    issues.push_back({ std::string{ key }, "expected a number" });
+                }
+            }
+            else if (key == TomlKey::Collapsed)
+            {
+                if (!v.is_boolean())
+                {
+                    issues.push_back({ std::string{ key }, "expected a boolean" });
+                }
+            }
+            else if (key == TomlKey::Hoist)
+            {
+                bool ok = v.is_string();
+                if (const auto arr = v.as_array())
+                {
+                    ok = true;
+                    for (const auto& el : *arr)
+                    {
+                        ok = ok && el.is_string();
+                    }
+                }
+                if (!ok)
+                {
+                    issues.push_back({ std::string{ key }, "expected a string or an array of strings" });
+                }
+            }
+            else if (!v.is_string())
+            {
+                issues.push_back({ std::string{ key }, "expected a string" });
+            }
+        }
+        return issues;
+    }
+
+    // #44: match a profile-name against the machine's profile names: an exact match first,
+    // then a case-insensitive one (first in list order). nullopt when nothing matches or
+    // the name is empty; the caller falls back to the default profile with a warning.
+    inline std::optional<size_t> MatchProfileName(std::wstring_view name, const std::vector<std::wstring>& profileNames)
+    {
+        if (name.empty())
+        {
+            return std::nullopt;
+        }
+        for (size_t i = 0; i < profileNames.size(); ++i)
+        {
+            if (profileNames[i] == name)
+            {
+                return i;
+            }
+        }
+        const auto fold = [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); };
+        for (size_t i = 0; i < profileNames.size(); ++i)
+        {
+            const auto& candidate = profileNames[i];
+            if (candidate.size() == name.size() &&
+                std::equal(candidate.begin(), candidate.end(), name.begin(), [&](wchar_t a, wchar_t b) { return fold(a) == fold(b); }))
+            {
+                return i;
+            }
+        }
+        return std::nullopt;
     }
 
     // Import-direction icon mapping (portable -> native M13), honoring the registry's
@@ -377,10 +581,22 @@ namespace Axan::LaunchEntryWire
 
     // Export-direction icon mapping (native M13 -> portable): a known Segoe glyph becomes
     // builtin:NAME; anything else (emoji, path, unmapped glyph) carries verbatim, which is
-    // the D18 v1 contract for non-portable icons.
+    // the D18 v1 contract for non-portable icons. #39: a glyph NAME counts too, so a picked
+    // "command-prompt" (or a bare "terminal") exports as builtin:terminal; any other name
+    // carries verbatim, readable but Windows-only.
     inline std::wstring ExportIcon(std::wstring_view nativeIcon)
     {
         bool mapped = false;
+        if (nativeIcon.size() > 1)
+        {
+            if (const auto cp = Axan::GlyphNames::ResolveCodepoint(nativeIcon))
+            {
+                if (const auto alias = Axan::GlyphNames::AliasFor(*cp); !alias.empty())
+                {
+                    return std::wstring{ Axan::IconRegistry::kBuiltinPrefix } + std::wstring{ alias };
+                }
+            }
+        }
         return Axan::IconRegistry::NativeToPortable(nativeIcon, mapped);
     }
 }

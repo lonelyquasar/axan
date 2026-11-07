@@ -147,6 +147,8 @@ public:
 
     void DoWTAction(const std::wstring_view /*string*/) override {}
 
+    void DoProgramStatusAction(const std::wstring_view /*string*/) override {} // axan #29: OSC 7501
+
     StringHandler DefineSixelImage(const VTInt /*macroParameter*/,
                                    const DispatchTypes::SixelBackground /*backgroundSelect*/,
                                    const VTParameter /*backgroundColor*/) override { return nullptr; }; // SIXEL

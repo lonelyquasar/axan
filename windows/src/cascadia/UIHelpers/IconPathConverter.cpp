@@ -6,6 +6,16 @@
 
 #include "../types/inc/utils.hpp"
 
+#include <AxanGlyphNames.h> // axan #39: glyph names -> Segoe Fluent codepoints
+#include <AxanGlyphScale.h> // axan: per-font size multiplier (hieroglyphs, runes)
+#include <AxanLog.h> // axan #44: warn once per unknown glyph name
+
+#include <map>
+#include <mutex>
+#include <optional>
+#include <set>
+#include <vector>
+
 #include <Shlobj.h>
 #include <Shlobj_core.h>
 #include <wincodec.h>
@@ -122,10 +132,107 @@ namespace winrt::Microsoft::Terminal::UI::implementation
     // - path: the unprocessed path to the icon.
     // Return Value:
     // - An IconElement with its IconSource set, if possible.
+    // axan #44: an icon string that reads as a glyph name but isn't one, or code-point text
+    // naming no usable character, renders as the placeholder. Log it once per distinct
+    // string per process (renders repeat constantly, and this runs on every window's UI
+    // thread, hence the lock); the set is capped so a stream of distinct typos can't grow
+    // it without bound.
+    static bool _firstSighting(std::wstring_view key)
+    {
+        static std::mutex lock;
+        static std::set<std::wstring, std::less<>> seen;
+        const std::lock_guard guard{ lock };
+        return seen.size() < 256 && seen.emplace(key).second;
+    }
+
+    static void _warnUnresolvedIconOnce(const winrt::hstring& icon, Axan::GlyphNames::IconResolution kind)
+    {
+        using Axan::GlyphNames::IconResolution;
+        if ((kind != IconResolution::UnknownName && kind != IconResolution::InvalidCodepoint) || !_firstSighting(icon))
+        {
+            return;
+        }
+        if (kind == IconResolution::InvalidCodepoint)
+        {
+            Axan::Log::Warn("IconPathConverter", "invalid code point; rendering the placeholder (4-6 hex digits naming a character: no surrogates, non-characters or controls, at most U+10FFFF)", { { "icon", winrt::to_string(icon) } });
+        }
+        else
+        {
+            Axan::Log::Warn("IconPathConverter", "unknown glyph name; rendering the placeholder (see AxanSegoeFluentGlyphs.h for valid names)", { { "icon", winrt::to_string(icon) } });
+        }
+    }
+
+    // axan: sidebar.iconFontScale, the user's per-font-family multipliers (AxanGlyphScale.h
+    // keeps the built-in ones). The app sets it on every settings load; every window's UI
+    // thread reads it on each glyph render, hence the lock. A family absent here keeps its
+    // built-in scale. Keys compare case-insensitively; a built-in family is stored under its
+    // AxanGlyphScale spelling. s_fontScaleGeneration counts changes to the effective map.
+    using FontScaleMap = std::map<std::wstring, double, Axan::GlyphScale::FamilyLess>;
+    static std::mutex s_fontScaleLock;
+    static FontScaleMap s_fontScales;
+    static uint64_t s_fontScaleGeneration = 0;
+
+    uint64_t IconPathConverter::SetIconFontScales(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>& scales)
+    {
+        FontScaleMap next;
+        std::vector<std::wstring> unknown;
+        if (scales)
+        {
+            for (const auto& kv : scales)
+            {
+                const std::wstring_view family{ kv.Key() };
+                const auto canonical = Axan::GlyphScale::CanonicalFamily(family);
+                // Clamped here (ScaleFor would clamp on every lookup anyway) so a NaN never
+                // makes two equal maps compare unequal.
+                if (next.emplace(canonical, Axan::GlyphScale::ClampScale(kv.Value())).second && Axan::GlyphScale::KnownFamily(family).empty())
+                {
+                    unknown.emplace_back(family);
+                }
+            }
+        }
+        // An unknown family may be a real font, so it is kept, but no icon is drawn from it
+        // (AxanGlyphScale::FontForGlyph names only built-in families): say so once.
+        for (const auto& family : unknown)
+        {
+            if (_firstSighting(L"iconFontScale:" + family))
+            {
+                Axan::Log::Warn("IconPathConverter", "sidebar.iconFontScale names a font family no icon is drawn from; it has no effect", { { "family", winrt::to_string(family) } });
+            }
+        }
+        const std::lock_guard guard{ s_fontScaleLock };
+        if (next != s_fontScales)
+        {
+            s_fontScales.swap(next);
+            ++s_fontScaleGeneration;
+        }
+        return s_fontScaleGeneration;
+    }
+
+    // The FontIcon size multiplier for a glyph: the user's value for the font it is drawn
+    // from (clamped), else the built-in one.
+    static double _glyphScale(std::wstring_view glyph)
+    {
+        const std::lock_guard guard{ s_fontScaleLock };
+        return Axan::GlyphScale::ScaleFor(glyph, [](std::wstring_view font) -> std::optional<double> {
+            if (const auto it = s_fontScales.find(font); it != s_fontScales.end())
+            {
+                return it->second;
+            }
+            return std::nullopt;
+        });
+    }
+
     template<typename TIconSource>
-    TIconSource _getIconSource(const winrt::hstring& iconPath, bool monochrome)
+    TIconSource _getIconSource(const winrt::hstring& rawIconPath, bool monochrome)
     {
         TIconSource iconSource{ nullptr };
+
+        // axan #39: a Segoe Fluent glyph NAME ("robot", or a builtin alias like "git") renders
+        // as its glyph; #44: so does code-point text ("U+131A3"). Everything else (paths,
+        // emoji, literal glyphs) passes through unchanged.
+        const auto resolved = Axan::GlyphNames::Resolve(rawIconPath);
+        _warnUnresolvedIconOnce(rawIconPath, resolved.kind);
+        const winrt::hstring iconPath{ resolved.text };
 
         if (iconPath.size() != 0)
         {
@@ -154,7 +261,11 @@ namespace winrt::Microsoft::Terminal::UI::implementation
                         // Note: you _do_ need to manually set the font here.
                         icon.FontFamily(winrt::Windows::UI::Xaml::Media::FontFamily{ L"Segoe UI" });
                     }
-                    icon.FontSize(12);
+                    // axan: a glyph whose fallback font draws it small (Segoe UI
+                    // Historic's hieroglyphs and runes) is scaled up to match the rest,
+                    // per font family; sidebar.iconFontScale overrides the built-in
+                    // factors. See src/inc/AxanGlyphScale.h.
+                    icon.FontSize(12 * _glyphScale(iconPath));
                     icon.Glyph(iconPath);
                     iconSource = icon;
                 }

@@ -160,6 +160,8 @@ public:
 
     virtual void DoWTAction(const std::wstring_view string) = 0;
 
+    virtual void DoProgramStatusAction(const std::wstring_view string) = 0; // axan #29: OSC 7501
+
     virtual StringHandler DefineSixelImage(const VTInt macroParameter,
                                            const DispatchTypes::SixelBackground backgroundSelect,
                                            const VTParameter backgroundColor) = 0; // SIXEL

@@ -441,7 +441,12 @@ namespace winrt::TerminalApp::implementation
     {
         ASSERT_UI_THREAD();
 
+        const auto changed = _tabStatus.BellIndicator() != show;
         _tabStatus.BellIndicator(show);
+        if (changed)
+        {
+            AxanSessionStateChanged.raise(); // axan #30: the bell is a plain-shell attention signal
+        }
     }
 
     // Method Description:
@@ -1018,6 +1023,7 @@ namespace winrt::TerminalApp::implementation
             // revoke the event handlers by resetting the event struct
             // and remove it from the map
             _contentEvents.erase(paneId);
+            AxanSessionStateChanged.raise(); // axan #30: a pane left; the node state may change
         }
     }
 
@@ -1100,6 +1106,7 @@ namespace winrt::TerminalApp::implementation
                 if (auto tab{ weakThisCopy.get() })
                 {
                     tab->_UpdateConnectionClosedState();
+                    tab->AxanSessionStateChanged.raise(); // axan #30
                 }
             });
 
@@ -1158,6 +1165,23 @@ namespace winrt::TerminalApp::implementation
         if (const auto& terminal{ content.try_as<TerminalApp::TerminalPaneContent>() })
         {
             events.RestartTerminalRequested = terminal.RestartTerminalRequested(winrt::auto_revoke, { get_weak(), &Tab::_bubbleRestartTerminalRequested });
+
+            // axan #30: OSC 7501 / OSC 133 changes arrive on the output thread; hop to the UI
+            // thread (weak) and raise the tab-level aggregate the sidebar listens to. No
+            // throttle: both events fire only on real transitions, not per output chunk.
+            if (const auto control = terminal.GetTermControl())
+            {
+                const auto raiseOnUi = [dispatcher, weakThis](auto&&, auto&&) -> safe_void_coroutine {
+                    const auto weakThisCopy = weakThis;
+                    co_await wil::resume_foreground(dispatcher);
+                    if (const auto tab{ weakThisCopy.get() })
+                    {
+                        tab->AxanSessionStateChanged.raise();
+                    }
+                };
+                events.ProgramStatusChanged = control.ProgramStatusChanged(winrt::auto_revoke, raiseOnUi);
+                events.ShellCommandChanged = control.ShellCommandChanged(winrt::auto_revoke, raiseOnUi);
+            }
         }
 
         if (_tabStatus.IsInputBroadcastActive())
@@ -1169,6 +1193,28 @@ namespace winrt::TerminalApp::implementation
         }
 
         _contentEvents[paneId] = std::move(events);
+        AxanSessionStateChanged.raise(); // axan #30: a pane joined; the node state may change
+    }
+
+    // axan #30: every TermControl in the tab, in pane-tree order.
+    std::vector<winrt::Microsoft::Terminal::Control::TermControl> Tab::AxanTerminalControls() const
+    {
+        std::vector<winrt::Microsoft::Terminal::Control::TermControl> controls;
+        if (_rootPane)
+        {
+            _rootPane->WalkTree([&](const auto& pane) {
+                if (const auto control = pane->GetTerminalControl())
+                {
+                    controls.push_back(control);
+                }
+            });
+        }
+        return controls;
+    }
+
+    bool Tab::AxanBellIndicator() const
+    {
+        return _tabStatus.BellIndicator();
     }
 
     // Method Description:

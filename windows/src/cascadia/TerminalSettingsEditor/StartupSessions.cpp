@@ -8,8 +8,12 @@
 #include <LibraryResources.h>
 #include "..\WinRTUtils\inc\Utils.h"
 #include "../../types/inc/utils.hpp" // GuidToString
-#include <AxanIconRegistry.h> // builtin glyph vocabulary for the icon picker flyout (#438)
-#include <AxanSessionPalette.h> // shared session color palette for the color picker flyout (#13)
+#include <AxanCheckBoxWrap.h> // full-label columns for the hoist-state checkboxes
+#include <AxanEntryIdentityEditor.h> // axan #38: the identity section shared with the sidebar's node card
+#include <AxanHoistRule.h> // axan #34: the per-entry hoist override
+#include <AxanIconRegistry.h> // builtin:NAME <-> glyph for the icon text box
+#include <AxanLog.h>
+#include <AxanSessionPalette.h> // resolve the preview's colour token
 
 using namespace winrt::Windows::UI::Xaml;
 using namespace winrt::Windows::UI::Xaml::Controls;
@@ -17,31 +21,244 @@ using namespace winrt::Windows::UI::Xaml::Navigation;
 
 namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 {
+    namespace IdentityEditor = Axan::Ui::IdentityEditor;
+
     StartupSessions::StartupSessions()
     {
         InitializeComponent();
+
+        // axan #38: accelerators are global by default; scope them to the list so Delete,
+        // Ctrl+D and Alt+arrows typed in the detail panel's fields never act on the rows.
+        const auto list = EntriesList();
+        for (const auto& accelerator : list.KeyboardAccelerators())
+        {
+            accelerator.ScopeOwner(list);
+        }
+
+        _buildHoistStateBoxes(); // axan #34
+
+        // The wide layout fills the settings content area's height (see _fitToViewport).
+        Loaded([weak = get_weak()](const IInspectable&, const RoutedEventArgs&) {
+            if (const auto self = weak.get())
+            {
+                self->_attachToHostScroller();
+            }
+        });
+        Unloaded([weak = get_weak()](const IInspectable&, const RoutedEventArgs&) {
+            if (const auto self = weak.get())
+            {
+                self->_hostSizeRevoker.revoke();
+            }
+        });
+        LayoutStates().CurrentStateChanged([weak = get_weak()](const IInspectable&, const VisualStateChangedEventArgs&) {
+            if (const auto self = weak.get())
+            {
+                self->_fitToViewport();
+            }
+        });
+    }
+
+    // ---- fill the window's height ----
+    //
+    // The page is hosted in MainPage's ScrollViewer (SettingsMainPage_ScrollViewer, around
+    // contentFrame), which gives it unbounded height, so a * row alone can't fill the
+    // window. In the wide layout PageRoot gets the viewport's height (less the frame's
+    // padding): its * row hands the list and the detail panel what the header and footer
+    // rows leave, and both scroll on their own while the page itself fits and doesn't.
+    // Below kMinFitHeight the page keeps that height and the outer ScrollViewer takes
+    // over. The narrow layout clears the height: one column that scrolls as a whole.
+
+    void StartupSessions::_attachToHostScroller()
+    {
+        _hostSizeRevoker.revoke();
+        _hostScroller = nullptr;
+        _hostPadding = 0;
+        for (auto node = Media::VisualTreeHelper::GetParent(*this); node; node = Media::VisualTreeHelper::GetParent(node))
+        {
+            if (const auto frame = node.try_as<winrt::Windows::UI::Xaml::Controls::Frame>())
+            {
+                const auto pad = frame.Padding();
+                _hostPadding += pad.Top + pad.Bottom;
+            }
+            if (const auto scroller = node.try_as<ScrollViewer>())
+            {
+                _hostScroller = winrt::make_weak(scroller);
+                _hostSizeRevoker = scroller.SizeChanged(winrt::auto_revoke, [weak = get_weak()](const IInspectable&, const SizeChangedEventArgs&) {
+                    if (const auto self = weak.get())
+                    {
+                        self->_fitToViewport();
+                    }
+                });
+                break;
+            }
+        }
+        _fitToViewport();
+    }
+
+    void StartupSessions::_fitToViewport()
+    {
+        static constexpr double kMinFitHeight = 520;
+        const auto root = PageRoot();
+        const auto state = LayoutStates().CurrentState();
+        const auto narrow = state && state.Name() == L"NarrowLayout";
+        const auto scroller = _hostScroller.get();
+        if (narrow || !scroller)
+        {
+            root.ClearValue(FrameworkElement::HeightProperty());
+            return;
+        }
+        auto viewport = scroller.ViewportHeight();
+        if (viewport <= 0)
+        {
+            viewport = scroller.ActualHeight();
+        }
+        // Floor, so rounding never leaves the outer ScrollViewer a sub-pixel to scroll.
+        const auto height = std::max(kMinFitHeight, std::floor(viewport - _hostPadding));
+        if (root.Height() != height)
+        {
+            root.Height(height);
+        }
     }
 
     void StartupSessions::OnNavigatedTo(const NavigationEventArgs& e)
     {
         _ViewModel = e.Parameter().as<Editor::StartupSessionsViewModel>();
+        _vmChangedRevoker = _ViewModel.PropertyChanged(winrt::auto_revoke, { get_weak(), &StartupSessions::_onViewModelPropertyChanged });
+        // The list and the detail panel sync on EntriesList_Loaded: x:Bind hasn't set the
+        // ListView's ItemsSource yet.
     }
 
-    // Each per-row button carries its LaunchEntryViewModel in Tag, so the handler targets that row.
-    Editor::LaunchEntryViewModel StartupSessions::_entryFromSender(const IInspectable& sender)
+    Editor::LaunchEntryViewModel StartupSessions::_selected() const
     {
-        if (const auto element = sender.try_as<FrameworkElement>())
-        {
-            return element.Tag().try_as<Editor::LaunchEntryViewModel>();
-        }
-        return nullptr;
+        return _ViewModel ? _ViewModel.SelectedEntry() : nullptr;
     }
+
+    void StartupSessions::_onViewModelPropertyChanged(const IInspectable& /*sender*/, const Data::PropertyChangedEventArgs& args)
+    {
+        // Raised on every pick and after every structural op (even for the same row).
+        if (args.PropertyName() == L"SelectedEntry")
+        {
+            _syncListSelection();
+            _rebuildDetail();
+        }
+    }
+
+    template<typename F>
+    auto StartupSessions::_runOp(F&& op)
+    {
+        _ignoreListSelection = true;
+        const auto restore = wil::scope_exit([&]() noexcept { _ignoreListSelection = false; });
+        return op();
+    }
+
+    // ---- list <-> selection ----
+
+    void StartupSessions::EntriesList_Loaded(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        _syncListSelection();
+        _rebuildDetail();
+    }
+
+    void StartupSessions::EntriesList_SelectionChanged(const IInspectable& /*sender*/, const SelectionChangedEventArgs& args)
+    {
+        if (_ignoreListSelection || !_ViewModel)
+        {
+            return;
+        }
+        if (const auto item = EntriesList().SelectedItem().try_as<Editor::LaunchEntryViewModel>())
+        {
+            if (item != _ViewModel.SelectedEntry())
+            {
+                _ViewModel.SelectedEntry(item);
+            }
+            return;
+        }
+        // Nothing selected in the list. Only an explicit deselection of the view-model's row
+        // (Ctrl+click) clears it; anything else (a container recycle) leaves it alone.
+        const auto current = _ViewModel.SelectedEntry();
+        if (!current)
+        {
+            return;
+        }
+        for (const auto& removed : args.RemovedItems())
+        {
+            if (removed.try_as<Editor::LaunchEntryViewModel>() == current)
+            {
+                _ViewModel.SelectedEntry(nullptr);
+                return;
+            }
+        }
+    }
+
+    // ---- drag reorder ----
+    // The ListView's built-in reorder moves only the dragged row; the view-model's
+    // NormalizeAfterDrag brings its children along and re-derives its parent. List
+    // selection echo is suppressed from the start of the drag until the fix-up has
+    // re-selected the row, so the reorder's selection clear never reaches the view-model.
+
+    void StartupSessions::EntriesList_DragItemsStarting(const IInspectable& /*sender*/, const DragItemsStartingEventArgs& args)
+    {
+        const auto items = args.Items();
+        const auto head = items.Size() == 1 ? items.GetAt(0).try_as<Editor::LaunchEntryViewModel>() : nullptr;
+        if (!_ViewModel || !head)
+        {
+            args.Cancel(true);
+            return;
+        }
+        _dragHead = head;
+        _ignoreListSelection = true;
+        _ViewModel.BeginDrag(head);
+    }
+
+    void StartupSessions::EntriesList_DragItemsCompleted(const ListViewBase& /*sender*/, const DragItemsCompletedEventArgs& /*args*/)
+    {
+        // DropResult isn't consulted: the view-model compares the row's index with where
+        // the drag started, which also covers a drop outside the list (no move).
+        const auto head = std::exchange(_dragHead, nullptr);
+        if (!head || !_ViewModel)
+        {
+            _ignoreListSelection = false;
+            return;
+        }
+        _runOp([&] { _ViewModel.NormalizeAfterDrag(head); }); // clears _ignoreListSelection
+    }
+
+    void StartupSessions::_syncListSelection()
+    {
+        const auto list = EntriesList();
+        const auto selected = _selected();
+        const auto previous = std::exchange(_ignoreListSelection, true);
+        list.SelectedItem(selected);
+        _ignoreListSelection = previous;
+        if (selected)
+        {
+            list.ScrollIntoView(selected);
+        }
+    }
+
+    void StartupSessions::_focusSelectedRow()
+    {
+        const auto list = EntriesList();
+        const auto selected = _selected();
+        if (!selected)
+        {
+            list.Focus(FocusState::Keyboard);
+            return;
+        }
+        list.UpdateLayout(); // realize the re-inserted row's container
+        if (const auto container = list.ContainerFromItem(selected).try_as<Windows::UI::Xaml::Controls::Control>())
+        {
+            container.Focus(FocusState::Keyboard);
+        }
+    }
+
+    // ---- page commands ----
 
     void StartupSessions::AddEntry_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
     {
         if (_ViewModel)
         {
-            _ViewModel.AddEntry();
+            _runOp([&] { _ViewModel.AddEntry(); });
         }
     }
 
@@ -49,55 +266,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     {
         if (_ViewModel)
         {
-            _ViewModel.AddSeparator();
-        }
-    }
-
-    void StartupSessions::DeleteEntry_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
-    {
-        if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
-        {
-            _ViewModel.DeleteEntry(vm);
-        }
-    }
-
-    void StartupSessions::DuplicateEntry_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
-    {
-        if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
-        {
-            _ViewModel.DuplicateEntry(vm);
-        }
-    }
-
-    void StartupSessions::IndentEntry_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
-    {
-        if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
-        {
-            _ViewModel.IndentEntry(vm);
-        }
-    }
-
-    void StartupSessions::OutdentEntry_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
-    {
-        if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
-        {
-            _ViewModel.OutdentEntry(vm);
-        }
-    }
-
-    void StartupSessions::MoveEntryUp_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
-    {
-        if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
-        {
-            _ViewModel.MoveEntryUp(vm);
-        }
-    }
-
-    void StartupSessions::MoveEntryDown_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
-    {
-        if (const auto vm = _entryFromSender(sender); vm && _ViewModel)
-        {
-            _ViewModel.MoveEntryDown(vm);
+            _runOp([&] { _ViewModel.AddSeparator(); });
         }
     }
 
@@ -122,321 +291,573 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
         if (!path.empty() && _ViewModel)
         {
-            // Surface a failed import inline (#435 item 2): the VM logs the detailed
-            // reason to axan.log; the bar tells the user it happened and that the list
-            // was left untouched. A successful import dismisses a stale bar.
-            const auto ok = _ViewModel.ImportFromToml(path);
+            // Surface a failed import inline (#435 item 2): the VM logs the detailed reason
+            // to axan.log; the bar says it happened and that the list was left untouched.
+            const auto ok = _runOp([&] { return _ViewModel.ImportFromToml(path); });
             ImportFailureBar().IsOpen(!ok);
         }
     }
 
-    // axan #14: the confirm inside the "Save current as startup" flyout — replace the
-    // list with the live window snapshot the app-side provider captures. 0 sessions
-    // captured (nothing live to save) leaves the list untouched and surfaces the
-    // info bar, mirroring the Import failure path; a success dismisses a stale bar.
+    // axan #14: the confirm inside the "Save current as startup" flyout — replace the list
+    // with the live window snapshot. 0 sessions captured leaves the list untouched and
+    // surfaces the info bar; a success dismisses a stale bar.
     void StartupSessions::CaptureConfirm_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
     {
         CaptureConfirmFlyout().Hide();
         if (_ViewModel)
         {
-            const auto count = _ViewModel.CaptureLiveStartup();
+            const auto count = _runOp([&] { return _ViewModel.CaptureLiveStartup(); });
             CaptureFailureBar().IsOpen(count == 0);
         }
     }
 
-    // axan #438: the icon is picked, not typed. Build the flyout's content fresh on each open
-    // (in code — the XAML-side classic-Binding limitation noted on the profile combo applies
-    // here too): the builtin-glyph vocabulary from AxanIconRegistry (everything it offers
-    // round-trips to a portable builtin:NAME token), a none/clear cell, an image-file browse,
-    // and a free-text row for emoji or any literal icon string.
-    void StartupSessions::IconFlyout_Opening(const IInspectable& sender, const IInspectable& /*args*/)
+    // ---- selection toolbar ----
+
+    void StartupSessions::DeleteEntry_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
     {
-        const auto flyout = sender.try_as<Controls::Flyout>();
-        if (!flyout)
+        if (const auto row = _selected())
         {
-            return;
+            _runOp([&] { _ViewModel.DeleteEntry(row); });
         }
-        const auto anchor = flyout.Target() ? flyout.Target().try_as<FrameworkElement>() : nullptr;
-        const auto vm = anchor ? anchor.Tag().try_as<Editor::LaunchEntryViewModel>() : nullptr;
-        if (!vm)
-        {
-            return;
-        }
-        auto weakFlyout = winrt::make_weak(flyout);
-        const auto hide = [weakFlyout]() {
-            if (const auto f = weakFlyout.get())
-            {
-                f.Hide();
-            }
-        };
-
-        Controls::StackPanel root;
-        root.Spacing(8);
-        root.MaxWidth(260);
-
-        // Row 1: the glyph grid — a "none" cell, then the 11 builtins.
-        Controls::VariableSizedWrapGrid grid;
-        grid.Orientation(Controls::Orientation::Horizontal);
-        grid.MaximumRowsOrColumns(6);
-        grid.ItemWidth(40);
-        grid.ItemHeight(40);
-
-        const auto addCell = [&](const winrt::hstring& glyph, const winrt::hstring& name, const winrt::hstring& storedValue) {
-            Controls::Button cell;
-            Controls::FontIcon icon;
-            icon.FontSize(16);
-            icon.Glyph(glyph);
-            cell.Content(icon);
-            cell.HorizontalAlignment(HorizontalAlignment::Stretch);
-            cell.VerticalAlignment(VerticalAlignment::Stretch);
-            Automation::AutomationProperties::SetName(cell, name);
-            Controls::ToolTipService::SetToolTip(cell, winrt::box_value(name));
-            cell.Click([vm, storedValue, hide](auto&&, auto&&) {
-                vm.Icon(storedValue);
-                hide();
-            });
-            grid.Children().Append(cell);
-        };
-
-        addCell(L"\uE711", L"No icon", L"" /* clear -> the neutral placeholder */);
-        for (const auto& builtin : Axan::IconRegistry::Builtins())
-        {
-            const winrt::hstring glyph{ std::wstring_view{ &builtin.glyph, 1 } };
-            addCell(glyph, winrt::hstring{ builtin.name }, glyph);
-        }
-        root.Children().Append(grid);
-
-        // Row 2: browse for an image file.
-        Controls::Button browse;
-        browse.Content(winrt::box_value(L"Browse for an image…"));
-        browse.HorizontalAlignment(HorizontalAlignment::Stretch);
-        browse.Click([weak = get_weak(), vm, weakFlyout](auto&&, auto&&) {
-            if (const auto self = weak.get())
-            {
-                self->_PickIconImage(vm, weakFlyout);
-            }
-        });
-        root.Children().Append(browse);
-
-        // Row 3: free text (emoji, a builtin:NAME token, or any literal path). Enter applies.
-        Controls::TextBox freeText;
-        freeText.PlaceholderText(L"emoji or builtin:NAME — Enter applies");
-        freeText.Text(vm.IconPortable());
-        Automation::AutomationProperties::SetName(freeText, L"Icon text");
-        freeText.KeyDown([vm, hide](const IInspectable& s, const Input::KeyRoutedEventArgs& e) {
-            if (e.Key() == Windows::System::VirtualKey::Enter)
-            {
-                if (const auto box = s.try_as<Controls::TextBox>())
-                {
-                    vm.IconPortable(box.Text());
-                }
-                e.Handled(true);
-                hide();
-            }
-        });
-        root.Children().Append(freeText);
-
-        flyout.Content(root);
     }
 
-    safe_void_coroutine StartupSessions::_PickIconImage(Editor::LaunchEntryViewModel vm, winrt::weak_ref<Controls::Flyout> weakFlyout)
+    void StartupSessions::DuplicateEntry_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        if (const auto row = _selected())
+        {
+            _runOp([&] { _ViewModel.DuplicateEntry(row); });
+        }
+    }
+
+    void StartupSessions::IndentEntry_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        if (const auto row = _selected())
+        {
+            _runOp([&] { _ViewModel.IndentEntry(row); });
+        }
+    }
+
+    void StartupSessions::OutdentEntry_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        if (const auto row = _selected())
+        {
+            _runOp([&] { _ViewModel.OutdentEntry(row); });
+        }
+    }
+
+    void StartupSessions::MoveEntryUp_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        if (const auto row = _selected())
+        {
+            _runOp([&] { _ViewModel.MoveEntryUp(row); });
+        }
+    }
+
+    void StartupSessions::MoveEntryDown_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        if (const auto row = _selected())
+        {
+            _runOp([&] { _ViewModel.MoveEntryDown(row); });
+        }
+    }
+
+    // ---- keyboard (scoped to the list) ----
+    // Each marks the key handled even when the op can't apply, so Alt+Left doesn't fall
+    // through to back-navigation and Alt+Up/Down doesn't move the list's selection.
+
+    void StartupSessions::MoveUpAccelerator_Invoked(const Input::KeyboardAccelerator& /*sender*/, const Input::KeyboardAcceleratorInvokedEventArgs& args)
+    {
+        args.Handled(true);
+        if (_ViewModel && _ViewModel.CanMoveUp())
+        {
+            MoveEntryUp_Click(nullptr, nullptr);
+            _focusSelectedRow();
+        }
+    }
+
+    void StartupSessions::MoveDownAccelerator_Invoked(const Input::KeyboardAccelerator& /*sender*/, const Input::KeyboardAcceleratorInvokedEventArgs& args)
+    {
+        args.Handled(true);
+        if (_ViewModel && _ViewModel.CanMoveDown())
+        {
+            MoveEntryDown_Click(nullptr, nullptr);
+            _focusSelectedRow();
+        }
+    }
+
+    void StartupSessions::OutdentAccelerator_Invoked(const Input::KeyboardAccelerator& /*sender*/, const Input::KeyboardAcceleratorInvokedEventArgs& args)
+    {
+        args.Handled(true);
+        if (_ViewModel && _ViewModel.CanOutdent())
+        {
+            OutdentEntry_Click(nullptr, nullptr);
+            _focusSelectedRow();
+        }
+    }
+
+    void StartupSessions::IndentAccelerator_Invoked(const Input::KeyboardAccelerator& /*sender*/, const Input::KeyboardAcceleratorInvokedEventArgs& args)
+    {
+        args.Handled(true);
+        if (_ViewModel && _ViewModel.CanIndent())
+        {
+            IndentEntry_Click(nullptr, nullptr);
+            _focusSelectedRow();
+        }
+    }
+
+    void StartupSessions::DuplicateAccelerator_Invoked(const Input::KeyboardAccelerator& /*sender*/, const Input::KeyboardAcceleratorInvokedEventArgs& args)
+    {
+        args.Handled(true);
+        if (_ViewModel && _ViewModel.HasSelection())
+        {
+            DuplicateEntry_Click(nullptr, nullptr);
+            _focusSelectedRow();
+        }
+    }
+
+    void StartupSessions::DeleteAccelerator_Invoked(const Input::KeyboardAccelerator& /*sender*/, const Input::KeyboardAcceleratorInvokedEventArgs& args)
+    {
+        args.Handled(true);
+        if (_ViewModel && _ViewModel.HasSelection())
+        {
+            DeleteEntry_Click(nullptr, nullptr);
+            _focusSelectedRow();
+        }
+    }
+
+    // ---- detail panel ----
+
+    void StartupSessions::_rebuildDetail()
+    {
+        const auto row = _selected();
+        if (row != _detailFor)
+        {
+            _detailFor = row;
+            // Drop the old editor first: its controls go inert (they hold only a weak_ptr).
+            _identity.reset();
+            IdentityHost().Content(nullptr);
+
+            if (row && row.IsSession())
+            {
+                const bool isDark = ActualTheme() == ElementTheme::Dark;
+
+                IdentityEditor::Options options;
+                options.initial.name = row.Name();
+                options.initial.icon = row.Icon(); // native form, as the editor stores it
+                options.initial.color = row.Color();
+                options.initial.colorTarget = row.ColorTarget(); // "" -> "both" in the editor
+                options.isDark = isDark;
+                // The preview matches the list row: the icon (the neutral terminal glyph
+                // when none is set), tinted when the colour target paints the icon.
+                options.renderPreview = [isDark](const IdentityEditor::Fields& f) -> UIElement {
+                    const auto icon = Microsoft::Terminal::UI::IconPathConverter::IconWUX(f.icon.empty() ? winrt::hstring{ L"" } : f.icon);
+                    if (icon && f.colorTarget != L"text")
+                    {
+                        if (const auto c = Axan::SessionPalette::ParseHexColor(Axan::SessionPalette::ResolveToken(f.color, isDark)))
+                        {
+                            icon.Foreground(Media::SolidColorBrush{ Windows::UI::Color{ c->a, c->r, c->g, c->b } });
+                        }
+                    }
+                    return icon;
+                };
+                // Every user edit lands on the row immediately (the row commits to the
+                // settings clone). Only the changed field is written.
+                options.onChanged = [weakThis = get_weak(), weakRow = winrt::make_weak(row)](const IdentityEditor::Fields& f) {
+                    const auto r = weakRow.get();
+                    if (!r)
+                    {
+                        return;
+                    }
+                    if (r.Name() != f.name)
+                    {
+                        r.Name(f.name);
+                    }
+                    if (r.Icon() != f.icon)
+                    {
+                        r.Icon(f.icon);
+                    }
+                    if (r.Color() != f.color)
+                    {
+                        r.Color(f.color);
+                    }
+                    const auto target = r.ColorTarget().empty() ? winrt::hstring{ L"both" } : r.ColorTarget();
+                    if (target != f.colorTarget)
+                    {
+                        r.ColorTarget(f.colorTarget);
+                    }
+                    if (const auto self = weakThis.get())
+                    {
+                        self->_syncIconText();
+                    }
+                };
+                options.onBrowseIcon = [weakThis = get_weak(), weakRow = winrt::make_weak(row)]() {
+                    if (const auto self = weakThis.get())
+                    {
+                        if (const auto r = weakRow.get())
+                        {
+                            self->_PickIconImage(r);
+                        }
+                    }
+                };
+                _identity = IdentityEditor::Build(std::move(options));
+                IdentityHost().Content(_identity->Root());
+                // Only on a row change, like the identity editor: an emptied Custom list is
+                // stored as "never" but the combo stays on Custom while the row is shown
+                // (the sidebar's node card behaves the same).
+                _syncHoist();
+                Axan::Log::Debug("StartupSessions", "detail panel rebuilt for the selected row", { { "id", winrt::to_string(row.Id()) } });
+            }
+        }
+        _syncIconText();
+        _syncProfileCombo();
+    }
+
+    // The icon text box shows the row's icon in the portable vocabulary (a builtin glyph
+    // reads as builtin:NAME). Skipped when the box already denotes the row's icon, so a
+    // round trip through the editor never rewrites what the user is typing.
+    void StartupSessions::_syncIconText()
+    {
+        const auto row = _selected();
+        if (!row || !row.IsSession())
+        {
+            return;
+        }
+        const auto box = IconTextBox();
+        bool mapped = false;
+        if (hstring{ Axan::IconRegistry::PortableToNative(box.Text(), mapped) } == row.Icon())
+        {
+            return;
+        }
+        _iconTextSyncing = true;
+        box.Text(row.IconPortable());
+        _iconTextSyncing = false;
+    }
+
+    void StartupSessions::IconTextBox_TextChanged(const IInspectable& /*sender*/, const TextChangedEventArgs& /*args*/)
+    {
+        if (_iconTextSyncing || !_identity)
+        {
+            return;
+        }
+        // Through the editor, so its preview and grid highlight follow; it no-ops when the
+        // text already denotes the current icon (e.g. the deferred TextChanged of a sync).
+        bool mapped = false;
+        _identity->SetIcon(hstring{ Axan::IconRegistry::PortableToNative(IconTextBox().Text(), mapped) });
+    }
+
+    safe_void_coroutine StartupSessions::_PickIconImage(Editor::LaunchEntryViewModel row)
     {
         auto lifetime = get_strong();
 
-        // Same owner-window choice as Import_Click above; OpenImagePicker is the shared
-        // image-file dialog the Profiles page's icon Browse uses.
+        // OpenImagePicker is the shared image-file dialog the Profiles page's icon Browse uses.
         const auto parentHwnd{ ::GetActiveWindow() };
         const auto file = co_await OpenImagePicker(parentHwnd);
-        if (!file.empty() && vm)
+        if (file.empty() || !row)
         {
-            vm.Icon(file);
+            co_return;
         }
-        if (const auto f = weakFlyout.get())
+        if (_identity && _detailFor == row)
         {
-            f.Hide();
+            _identity->SetIcon(file); // writes the row through onChanged
+        }
+        else
+        {
+            row.Icon(file); // the selection moved while the dialog was up
         }
     }
 
-    // axan #13: the session color picker — the same swatch vocabulary the sidebar's node
-    // editor offers (the shared src/inc/AxanSessionPalette.h names + a "no color" cell),
-    // plus the icon/text/both apply-to choice. Content is rebuilt on each Opening (the
-    // classic-Binding limitation noted on the profile combo applies here too). A swatch
-    // click applies and dismisses; the apply-to radios commit immediately and leave the
-    // flyout up so color and target can be set in one visit.
-    void StartupSessions::ColorFlyout_Opening(const IInspectable& sender, const IInspectable& /*args*/)
+    safe_void_coroutine StartupSessions::BrowseDirectory_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
     {
-        const auto flyout = sender.try_as<Controls::Flyout>();
-        if (!flyout)
+        auto lifetime = get_strong();
+        const auto row = _selected();
+        if (!row)
         {
-            return;
+            co_return;
         }
-        const auto anchor = flyout.Target() ? flyout.Target().try_as<FrameworkElement>() : nullptr;
-        const auto vm = anchor ? anchor.Tag().try_as<Editor::LaunchEntryViewModel>() : nullptr;
-        if (!vm)
+        const auto parentHwnd{ ::GetActiveWindow() };
+        const auto folder = co_await OpenFilePicker(parentHwnd, [](auto&& dialog) {
+            static constexpr winrt::guid clientGuidFolderPicker{ 0x3f1c9a52, 0x7d4e, 0x4b8a, { 0x9e, 0x21, 0x5c, 0x6a, 0x0d, 0x83, 0xb4, 0x17 } };
+            THROW_IF_FAILED(dialog->SetClientGuid(clientGuidFolderPicker));
+            DWORD flags{};
+            THROW_IF_FAILED(dialog->GetOptions(&flags));
+            THROW_IF_FAILED(dialog->SetOptions(flags | FOS_PICKFOLDERS)); // folders only
+        });
+        if (!folder.empty())
         {
-            return;
+            row.Directory(folder); // the row picked from, even if the selection moved
         }
-        auto weakFlyout = winrt::make_weak(flyout);
-        const auto hide = [weakFlyout]() {
-            if (const auto f = weakFlyout.get())
-            {
-                f.Hide();
-            }
-        };
-
-        const auto dark = ActualTheme() == ElementTheme::Dark;
-
-        Controls::StackPanel root;
-        root.Spacing(8);
-
-        // Row 1: the swatches — a "no color" cell, then the six palette names, each
-        // filled with the name resolved against the page's actual theme (WYSIWYG). The
-        // row's current color gets an accent border.
-        Controls::StackPanel swatchRow;
-        swatchRow.Orientation(Controls::Orientation::Horizontal);
-        swatchRow.Spacing(6);
-
-        const Media::SolidColorBrush accentBrush{ winrt::unbox_value<Windows::UI::Color>(
-            Application::Current().Resources().Lookup(winrt::box_value(L"SystemAccentColor"))) };
-
-        const auto addSwatch = [&](const winrt::hstring& token, const winrt::hstring& label) {
-            Controls::Button cell;
-            cell.Width(34);
-            cell.Height(34);
-            cell.Padding(Thickness{ 0, 0, 0, 0 });
-            Automation::AutomationProperties::SetName(cell, label);
-            Controls::ToolTipService::SetToolTip(cell, winrt::box_value(label));
-            if (token.empty())
-            {
-                Controls::FontIcon fi;
-                fi.FontSize(14);
-                fi.Glyph(L""); // Cancel — clear back to the theme foreground
-                cell.Content(fi);
-            }
-            else if (const auto c = Axan::SessionPalette::ParseHexColor(Axan::SessionPalette::ResolveToken(token, dark)))
-            {
-                Shapes::Ellipse el;
-                el.Width(18);
-                el.Height(18);
-                el.Fill(Media::SolidColorBrush{ Windows::UI::Color{ c->a, c->r, c->g, c->b } });
-                cell.Content(el);
-            }
-            if (vm.Color() == token)
-            {
-                cell.BorderBrush(accentBrush);
-                cell.BorderThickness(Thickness{ 2, 2, 2, 2 });
-            }
-            cell.Click([vm, token, hide](auto&&, auto&&) {
-                vm.Color(token);
-                hide();
-            });
-            swatchRow.Children().Append(cell);
-        };
-
-        addSwatch({}, L"No color");
-        for (const auto& sw : Axan::SessionPalette::kLight)
-        {
-            addSwatch(winrt::hstring{ sw.name }, winrt::hstring{ sw.name });
-        }
-        root.Children().Append(swatchRow);
-
-        // Row 2: what the color paints — the sidebar icon, the label text, or both
-        // ("" in the model means both; show that).
-        Controls::TextBlock applyLabel;
-        applyLabel.Text(L"Apply color to");
-        applyLabel.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
-        root.Children().Append(applyLabel);
-
-        Controls::StackPanel applyRow;
-        applyRow.Orientation(Controls::Orientation::Horizontal);
-        applyRow.Spacing(12);
-        const auto currentTarget = vm.ColorTarget().empty() ? winrt::hstring{ L"both" } : vm.ColorTarget();
-        const auto addRadio = [&](const wchar_t* text, const wchar_t* value) {
-            Controls::RadioButton rb;
-            rb.Content(winrt::box_value(winrt::hstring{ text }));
-            rb.GroupName(L"axanStartupApplyColorTo");
-            const winrt::hstring v{ value };
-            rb.IsChecked(currentTarget == v);
-            rb.Checked([vm, v](auto&&, auto&&) { vm.ColorTarget(v); });
-            applyRow.Children().Append(rb);
-        };
-        addRadio(L"Icon", L"icon");
-        addRadio(L"Text", L"text");
-        addRadio(L"Both", L"both");
-        root.Children().Append(applyRow);
-
-        flyout.Content(root);
     }
 
-    // The ComboBox shows Model::Profile objects; the row stores a GUID string. On load, select the
-    // item whose GUID matches the row's Profile so the current shell shows.
-    void StartupSessions::ProfileCombo_Loaded(const IInspectable& sender, const RoutedEventArgs& /*args*/)
+    // The ComboBox shows Model::Profile objects; the row stores a GUID string ("" = follow
+    // the default profile). Select the item matching the selected row.
+    void StartupSessions::_syncProfileCombo()
     {
-        const auto combo = sender.try_as<ComboBox>();
-        if (!combo || !_ViewModel)
+        const auto row = _selected();
+        const auto profiles = _ViewModel ? _ViewModel.AvailableProfiles() : nullptr;
+        if (!row || !row.IsSession() || !profiles)
         {
             return;
         }
-        const auto vm = combo.Tag().try_as<Editor::LaunchEntryViewModel>();
-        const auto profiles = _ViewModel.AvailableProfiles();
-        if (!vm || !profiles)
-        {
-            return;
-        }
-        // Populate here, not in markup: the XAML's old {Binding ElementName=RootPage}
-        // ItemsSource silently resolved to null (a C++/WinRT page has no
-        // ICustomPropertyProvider for classic Binding paths), leaving every combo empty.
+        const auto combo = ProfileCombo();
+        // Programmatic: SelectionChanged must not commit (#435 item 1 — without this,
+        // selecting a follow-the-default row would pin it to the current default's GUID).
         _profileComboLoading = true;
-        combo.ItemsSource(profiles);
-        _profileComboLoading = false;
-        // An empty Profile means "the default profile" — show that selection. Setting
-        // SelectedItem fires SelectionChanged synchronously; the loading flag keeps that
-        // programmatic selection from being committed as if the user picked it. Without
-        // it, merely visiting the page would rewrite every follow-the-default entry
-        // (empty Profile, a real D19 state) to a pinned copy of the CURRENT default's
-        // GUID — silently breaking its tracking of future default changes (#435 item 1).
-        const auto target = vm.Profile().empty() ? _ViewModel.DefaultProfileGuid() : vm.Profile();
+        const auto restore = wil::scope_exit([&]() noexcept { _profileComboLoading = false; });
+        if (!combo.ItemsSource())
+        {
+            // Populated here, not in markup: a classic {Binding ElementName=RootPage}
+            // resolves to null on a C++/WinRT page.
+            combo.ItemsSource(profiles);
+        }
+        const auto target = row.Profile().empty() ? _ViewModel.DefaultProfileGuid() : row.Profile();
         for (const auto& p : profiles)
         {
             if (winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(p.Guid()) } == target)
             {
-                _profileComboLoading = true;
                 combo.SelectedItem(p);
-                _profileComboLoading = false;
-                break;
+                return;
             }
         }
+        combo.SelectedItem(nullptr);
     }
 
-    void StartupSessions::ProfileCombo_SelectionChanged(const IInspectable& sender, const Controls::SelectionChangedEventArgs& /*args*/)
+    void StartupSessions::ProfileCombo_SelectionChanged(const IInspectable& sender, const SelectionChangedEventArgs& /*args*/)
     {
         if (_profileComboLoading)
         {
-            // The select-on-load sync in ProfileCombo_Loaded, not a user pick — never a
-            // commit. (A user can't "pin" the default by re-selecting it: the combo
-            // already shows it, so an identical selection fires no SelectionChanged.)
-            return;
+            return; // _syncProfileCombo's programmatic selection, not a user pick
         }
         const auto combo = sender.try_as<ComboBox>();
-        if (!combo)
-        {
-            return;
-        }
-        const auto vm = combo.Tag().try_as<Editor::LaunchEntryViewModel>();
-        if (!vm)
+        const auto row = _selected();
+        if (!combo || !row)
         {
             return;
         }
         if (const auto p = combo.SelectedItem().try_as<winrt::Microsoft::Terminal::Settings::Model::Profile>())
         {
             const auto g = winrt::hstring{ ::Microsoft::Console::Utils::GuidToString(p.Guid()) };
-            // Only write on a real change. NB: this guard alone does NOT cover the
-            // select-on-load case — a follow-the-default row stores "" while the combo
-            // selects the default's GUID — hence the loading flag above.
-            if (g != vm.Profile())
+            // Only on a real change (a follow-the-default row stores "" while the combo
+            // shows the default's GUID; re-picking the default fires no SelectionChanged).
+            if (g != row.Profile())
             {
-                vm.Profile(g);
+                row.Profile(g);
             }
         }
+    }
+
+    // ---- axan #34: the Hoisted group ----
+    //
+    // The row's Hoist is the AxanHoistRule.h canonical string: "" = Default (follow
+    // sidebar.hoistStates), "never", or the chosen names. The same vocabulary and the same
+    // transitions as the sidebar's node card (TerminalPage::_BuildNodeEditHoistSection):
+    // Default writes "", Never writes "never", Custom starts from the built-in default list
+    // unless the row already has its own; unchecking the last box writes "never". Every
+    // write goes to the row (which commits), and only on a real change.
+
+    void StartupSessions::_buildHoistStateBoxes()
+    {
+        // The Tag carries the name for _syncHoistStates. The toggle runs on Click, not
+        // Checked/Unchecked: it fires only for the user, never for _syncHoist.
+        Axan::Ui::CheckBoxWrap::BuildNameBoxes(
+            HoistStatesPanel(),
+            Axan::HoistRule::kDisplayOrder,
+            [](std::wstring_view name) { return Axan::HoistRule::DisplayName(name); },
+            [](const CheckBox& box, std::wstring_view name) { box.Tag(winrt::box_value(winrt::hstring{ name })); },
+            [weakThis{ get_weak() }](const winrt::hstring& key, bool on) {
+                if (const auto self{ weakThis.get() })
+                {
+                    self->_hoistStateToggled(key, on);
+                }
+            });
+    }
+
+    // The boxes show the row's own list (none checked unless it is Custom); the card shows
+    // while the combo is on Custom.
+    void StartupSessions::_syncHoistStates(const Editor::LaunchEntryViewModel& row, bool custom)
+    {
+        using namespace Axan::HoistRule;
+        const auto o = Parse(row.Hoist());
+        for (const auto& child : HoistStatesPanel().Children())
+        {
+            if (const auto box = child.try_as<CheckBox>())
+            {
+                const auto key = winrt::unbox_value_or<winrt::hstring>(box.Tag(), winrt::hstring{});
+                box.IsChecked(o.mode == Mode::Custom && Has(o.mask, key));
+            }
+        }
+        HoistStatesCard().Visibility(custom ? Visibility::Visible : Visibility::Collapsed);
+    }
+
+    void StartupSessions::_syncHoist()
+    {
+        using namespace Axan::HoistRule;
+        const auto row = _selected();
+        if (!row || !row.IsSession())
+        {
+            return;
+        }
+        const auto mode = Parse(row.Hoist()).mode;
+        {
+            _hoistSyncing = true;
+            const auto restore = wil::scope_exit([&]() noexcept { _hoistSyncing = false; });
+            HoistModeCombo().SelectedIndex(static_cast<int32_t>(mode));
+        }
+        _syncHoistStates(row, mode == Mode::Custom);
+    }
+
+    void StartupSessions::HoistModeCombo_SelectionChanged(const IInspectable& sender, const SelectionChangedEventArgs& /*args*/)
+    {
+        using namespace Axan::HoistRule;
+        if (_hoistSyncing)
+        {
+            return; // _syncHoist's programmatic selection, not a user pick
+        }
+        const auto combo = sender.try_as<ComboBox>();
+        const auto row = _selected();
+        if (!combo || !row || !row.IsSession() || combo.SelectedIndex() < 0)
+        {
+            return;
+        }
+        const auto idx = combo.SelectedIndex();
+        const auto current = Parse(row.Hoist());
+        Override next{};
+        if (idx == static_cast<int32_t>(Mode::Never))
+        {
+            next = { Mode::Never, 0 };
+        }
+        else if (idx == static_cast<int32_t>(Mode::Custom))
+        {
+            next = current.mode == Mode::Custom ? current : FromMask(kDefault); // start from the default list
+        }
+        if (!(next == current))
+        {
+            row.Hoist(winrt::hstring{ Format(next) });
+            Axan::Log::Debug("StartupSessions", "hoist override set", { { "id", winrt::to_string(row.Id()) }, { "hoist", winrt::to_string(row.Hoist()) } });
+        }
+        // Re-sync only the boxes and the card: the combo keeps the user's pick.
+        _syncHoistStates(row, idx == static_cast<int32_t>(Mode::Custom));
+    }
+
+    void StartupSessions::_hoistStateToggled(const winrt::hstring& key, bool on)
+    {
+        using namespace Axan::HoistRule;
+        const auto row = _selected();
+        if (!row || !row.IsSession())
+        {
+            return;
+        }
+        const auto current = Parse(row.Hoist());
+        const Mask cur = current.mode == Mode::Custom ? current.mask : 0;
+        // An emptied custom list is written as "never" (FromMask); the combo stays on Custom.
+        const auto next = FromMask(With(cur, key, on));
+        if (!(next == current))
+        {
+            row.Hoist(winrt::hstring{ Format(next) });
+            Axan::Log::Debug("StartupSessions", "hoist override set", { { "id", winrt::to_string(row.Id()) }, { "hoist", winrt::to_string(row.Hoist()) } });
+        }
+    }
+
+    // ---- row-template formatting ----
+
+    hstring StartupSessions::RowLabel(const hstring& name, bool isSeparator, const hstring& separatorStyle, double height)
+    {
+        if (!name.empty())
+        {
+            return name;
+        }
+        if (!isSeparator)
+        {
+            return L"(default name)";
+        }
+        const std::wstring_view kind = separatorStyle == L"space" ? L"Space" : L"Separator";
+        if (height == 1.0)
+        {
+            return hstring{ kind };
+        }
+        return hstring{ fmt::format(FMT_COMPILE(L"{} · {:g} rows"), kind, height) };
+    }
+
+    double StartupSessions::RowLabelOpacity(const hstring& name)
+    {
+        return name.empty() ? 0.6 : 1.0;
+    }
+
+    Windows::UI::Text::FontWeight StartupSessions::RowLabelWeight(const hstring& name, bool isSeparator)
+    {
+        return (isSeparator && !name.empty()) ? Windows::UI::Text::FontWeights::SemiBold() : Windows::UI::Text::FontWeights::Normal();
+    }
+
+    hstring StartupSessions::SeparatorChevron(const hstring& name, bool collapsed)
+    {
+        if (name.empty())
+        {
+            return {};
+        }
+        return collapsed ? hstring{ L"" } : hstring{ L"" }; // ChevronRight / ChevronDown
+    }
+
+    Visibility StartupSessions::SeparatorRuleVisibility(const hstring& separatorStyle)
+    {
+        return separatorStyle == L"space" ? Visibility::Collapsed : Visibility::Visible;
+    }
+
+    // The last segment of a directory as typed ("~/src/axan" -> "axan", "C:\\" -> "C:",
+    // "~" -> "~"), trailing separators, blanks and quotes trimmed. String-only: nothing is
+    // read from disk, so a missing folder still labels its row.
+    static std::wstring_view _leafFolder(std::wstring_view dir) noexcept
+    {
+        const auto last = dir.find_last_not_of(L" \t\"\\/");
+        if (last == std::wstring_view::npos)
+        {
+            return {};
+        }
+        dir = dir.substr(0, last + 1);
+        const auto first = dir.find_first_not_of(L" \t\"");
+        dir.remove_prefix(first == std::wstring_view::npos ? dir.size() : first);
+        const auto cut = dir.find_last_of(L"\\/");
+        return cut == std::wstring_view::npos ? dir : dir.substr(cut + 1);
+    }
+
+    // The folder a session row adds after its name, or "" when there is none or it would
+    // only repeat the name (compared case-insensitively, like Windows paths).
+    static std::wstring_view _rowFolder(const hstring& name, const hstring& directory) noexcept
+    {
+        const auto leaf = _leafFolder(directory);
+        if (leaf.empty())
+        {
+            return {};
+        }
+        if (!name.empty() &&
+            ::CompareStringOrdinal(name.c_str(), gsl::narrow_cast<int>(name.size()), leaf.data(), gsl::narrow_cast<int>(leaf.size()), TRUE) == CSTR_EQUAL)
+        {
+            return {};
+        }
+        return leaf;
+    }
+
+    hstring StartupSessions::RowFolderSuffix(const hstring& name, const hstring& directory)
+    {
+        const auto folder = _rowFolder(name, directory);
+        return folder.empty() ? hstring{} : hstring{ fmt::format(FMT_COMPILE(L" \u00B7 {}"), folder) };
+    }
+
+    hstring StartupSessions::RowAccessibleName(const hstring& name, bool isSeparator, int32_t depth, const hstring& directory)
+    {
+        if (isSeparator)
+        {
+            return name.empty() ? hstring{ L"Separator" } : hstring{ L"Separator: " + std::wstring{ name } };
+        }
+        const std::wstring_view shown = name.empty() ? std::wstring_view{ L"Session with the default name" } : std::wstring_view{ name };
+        const auto folder = _rowFolder(name, directory);
+        if (folder.empty())
+        {
+            return hstring{ fmt::format(FMT_COMPILE(L"{}, level {}"), shown, depth + 1) };
+        }
+        return hstring{ fmt::format(FMT_COMPILE(L"{}, {}, level {}"), shown, folder, depth + 1) };
+    }
+
+    Automation::Peers::AutomationHeadingLevel StartupSessions::RowHeadingLevel(bool isSeparator)
+    {
+        return isSeparator ? Automation::Peers::AutomationHeadingLevel::Level2 : Automation::Peers::AutomationHeadingLevel::None;
     }
 }

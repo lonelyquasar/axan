@@ -110,6 +110,14 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         void OwningHwnd(uint64_t owner);
 
         Windows::Foundation::Collections::IVector<Control::ScrollMark> ScrollMarks() const;
+        // axan #29: OSC 7501
+        Windows::Foundation::Collections::IVector<Control::ProgramStatusRecord> ProgramStatusRecords() const;
+        bool ProgramStatusEnabled() const;
+        void ProgramStatusEnabled(bool enabled);
+        // axan #30
+        bool ShellCommandRunning() const;
+        Windows::Foundation::DateTime LastInputTime() const;
+        Windows::Foundation::DateTime LastOutputTime() const;
         void AddMark(const Control::ScrollMark& mark);
         void ClearMark();
         void ClearAllMarks();
@@ -229,6 +237,8 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         BUBBLED_FORWARDED_TYPED_EVENT(TitleChanged,             IInspectable, Control::TitleChangedEventArgs);
         BUBBLED_FORWARDED_TYPED_EVENT(TabColorChanged,          IInspectable, IInspectable);
         BUBBLED_FORWARDED_TYPED_EVENT(SetTaskbarProgress,       IInspectable, IInspectable);
+        BUBBLED_FORWARDED_TYPED_EVENT(ProgramStatusChanged,     IInspectable, IInspectable); // axan #29
+        BUBBLED_FORWARDED_TYPED_EVENT(ShellCommandChanged,      IInspectable, IInspectable); // axan #30
         BUBBLED_FORWARDED_TYPED_EVENT(ConnectionStateChanged,   IInspectable, IInspectable);
         BUBBLED_FORWARDED_TYPED_EVENT(ShowWindowChanged,        IInspectable, Control::ShowWindowArgs);
         BUBBLED_FORWARDED_TYPED_EVENT(CloseTerminalRequested,   IInspectable, IInspectable);
@@ -474,6 +484,8 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             Control::ControlCore::WriteToClipboard_revoker WriteToClipboard;
             Control::ControlCore::TabColorChanged_revoker TabColorChanged;
             Control::ControlCore::TaskbarProgressChanged_revoker TaskbarProgressChanged;
+            Control::ControlCore::ProgramStatusChanged_revoker ProgramStatusChanged; // axan #29
+            Control::ControlCore::ShellCommandChanged_revoker ShellCommandChanged; // axan #30
             Control::ControlCore::ConnectionStateChanged_revoker ConnectionStateChanged;
             Control::ControlCore::ShowWindowChanged_revoker ShowWindowChanged;
             Control::ControlCore::CloseTerminalRequested_revoker CloseTerminalRequested;

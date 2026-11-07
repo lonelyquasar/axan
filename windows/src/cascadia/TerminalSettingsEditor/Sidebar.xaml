@@ -1,0 +1,414 @@
+<!--
+    Copyright (c) Lonely Quasar. All rights reserved. Licensed under
+    the MIT License. See LICENSE in the project root for license information.
+
+    axan #38: Settings > Sessions > Sidebar. Every sidebar.* global (and
+    sidebarMatchesProfileTransparency), moved here from Appearance; keys unchanged.
+-->
+<Page x:Class="Microsoft.Terminal.Settings.Editor.Sidebar"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:local="using:Microsoft.Terminal.Settings.Editor"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
+      mc:Ignorable="d">
+
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="CommonResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <DataTemplate x:Key="EnumComboBoxTemplate"
+                          x:DataType="local:EnumEntry">
+                <TextBlock Text="{x:Bind EnumName, Mode=OneWay}" />
+            </DataTemplate>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <StackPanel Style="{StaticResource SettingsStackStyle}">
+        <!--
+            axan #2: sidebar matches profile transparency. Paints the session sidebar with the
+            focused profile's background brush (color + opacity) and leaves the backdrop behind
+            the terminal clear, overriding the theme's sidebar/content keys.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarMatchesProfileTransparency">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarMatchesProfileTransparency, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        </local:SettingContainer>
+
+        <!--
+            axan: sidebar row sizes. Inline spin buttons (the Compact hover popout is not
+            wanted). Text 8-32, icons 8-48. A one-character icon also gets its font family's
+            scale (sidebar.iconFontScale over src/inc/AxanGlyphScale.h) on top of the icon
+            size; the Icon fonts rows below set it.
+        -->
+        <TextBlock x:Uid="Sidebar_TextAndIconsHeader"
+                   Style="{StaticResource TextBlockSubHeaderStyle}" />
+        <local:SettingContainer x:Uid="Globals_SidebarLabelFontSize">
+            <muxc:NumberBox LargeChange="2"
+                            Maximum="32"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarLabelFontSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <local:SettingContainer x:Uid="Globals_SidebarStateLineFontSize">
+            <muxc:NumberBox LargeChange="2"
+                            Maximum="32"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarStateLineFontSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <local:SettingContainer x:Uid="Globals_SidebarIconSize">
+            <muxc:NumberBox LargeChange="4"
+                            Maximum="48"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarIconSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphSize">
+            <muxc:NumberBox LargeChange="4"
+                            Maximum="48"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarStateGlyphSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <!--
+            axan: sidebar.iconFontScale. One row per font family the sidebar's icons come
+            from (name, an inline 0.5-3 spin box, Reset when it differs from the default),
+            built in code-behind (Sidebar::_BuildIconFontRows).
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarIconFontScale"
+                                StartExpanded="True"
+                                Style="{StaticResource ExpanderSettingContainerStyle}">
+            <StackPanel x:Name="IconFontsPanel"
+                        Spacing="8" />
+        </local:SettingContainer>
+
+        <TextBlock x:Uid="Sidebar_SessionStateHeader"
+                   Style="{StaticResource TextBlockSubHeaderStyle}" />
+        <!--
+            axan: what a finished / errored session's row keeps once it has been seen. Keep
+            leaves the last report on the second line (muted, with its age); Clear drops it.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarStatusAfterSeen">
+            <ComboBox AutomationProperties.AccessibilityView="Content"
+                      ItemTemplate="{StaticResource EnumComboBoxTemplate}"
+                      ItemsSource="{x:Bind ViewModel.SidebarStatusAfterSeenList, Mode=OneWay}"
+                      SelectedItem="{x:Bind ViewModel.CurrentSidebarStatusAfterSeen, Mode=TwoWay}"
+                      Style="{StaticResource ComboBoxSettingStyle}" />
+        </local:SettingContainer>
+
+        <!--  axan: sidebar.stateLabels, the small state word beside the right-edge icon  -->
+        <local:SettingContainer x:Uid="Globals_SidebarStateLabels">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarStateLabels, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        </local:SettingContainer>
+
+        <!--  axan: sidebar.showAgentName, an agent at rest shows its session name  -->
+        <local:SettingContainer x:Uid="Globals_SidebarShowAgentName">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarShowAgentName, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        </local:SettingContainer>
+
+        <TextBlock x:Uid="Sidebar_HoistedGroupHeader"
+                   Style="{StaticResource TextBlockSubHeaderStyle}" />
+        <!--
+            axan #34: sidebar.needsYouGroup, the hoisted group at the top of the sidebar.
+            Also toggled from the sidebar's right-click menu.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarNeedsYouGroup">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarNeedsYouGroup, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
+        </local:SettingContainer>
+
+        <!--
+            axan #34: sidebar.hoistStates, the states that list a session in the sidebar's
+            hoisted group (shown when sidebar.needsYouGroup is on). One checkbox per state,
+            built in code-behind (Sidebar::_BuildHoistStateBoxes); a Startup sessions
+            entry can override the list.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarHoistStates"
+                                CurrentValue="{x:Bind ViewModel.SidebarHoistStatesSummary, Mode=OneWay}"
+                                Style="{StaticResource ExpanderSettingContainerStyle}">
+            <StackPanel Spacing="8">
+                <VariableSizedWrapGrid x:Name="HoistStatesPanel"
+                                       Orientation="Horizontal" />
+                <HyperlinkButton x:Uid="Globals_SidebarHoistStatesReset"
+                                 Click="HoistStatesReset_Click" />
+            </StackPanel>
+        </local:SettingContainer>
+
+        <TextBlock x:Uid="Sidebar_IdleSessionsHeader"
+                   Style="{StaticResource TextBlockSubHeaderStyle}" />
+        <!--
+            axan #31: minutes before an idle session's sidebar row is de-emphasised (dimmed,
+            smaller). 0 turns it off. Rows that need attention are never de-emphasised.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarIdleAfterMinutes">
+            <muxc:NumberBox LargeChange="15"
+                            Maximum="1440"
+                            Minimum="0"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarIdleAfterMinutes, Mode=TwoWay}" />
+        </local:SettingContainer>
+
+        <!--
+            axan: sidebar.idleEffects, what a de-emphasised row does (dim, smaller, gray,
+            collapse). One checkbox per effect, built in code-behind
+            (Sidebar::_BuildIdleEffectBoxes); each box's tooltip explains its effect.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarIdleEffects"
+                                CurrentValue="{x:Bind ViewModel.SidebarIdleEffectsSummary, Mode=OneWay}"
+                                Style="{StaticResource ExpanderSettingContainerStyle}">
+            <StackPanel Spacing="8">
+                <VariableSizedWrapGrid x:Name="IdleEffectsPanel"
+                                       Orientation="Horizontal" />
+                <HyperlinkButton x:Uid="Globals_SidebarIdleEffectsReset"
+                                 Click="IdleEffectsReset_Click" />
+            </StackPanel>
+        </local:SettingContainer>
+
+        <!--
+            The header carries an info button: its tooltip says where the states come from
+            (OSC 7501 reports, with OSC 133 and the bell as fallbacks) and a click opens the
+            README section that documents them (StatusGlyphsInfo_Click).
+        -->
+        <StackPanel Orientation="Horizontal"
+                    Spacing="4">
+            <TextBlock x:Uid="Sidebar_GlyphsHeader"
+                       VerticalAlignment="Bottom"
+                       Style="{StaticResource TextBlockSubHeaderStyle}" />
+            <HyperlinkButton x:Uid="Sidebar_StatusGlyphsInfo"
+                             Margin="0,0,0,2"
+                             Padding="4"
+                             VerticalAlignment="Bottom"
+                             Click="StatusGlyphsInfo_Click">
+                <FontIcon FontSize="14"
+                          Glyph="&#xE946;" />
+            </HyperlinkButton>
+        </StackPanel>
+        <!--
+            axan: sidebar.stateGlyphs. The right-edge icon a row shows for its slot state: the
+            same picker as the Startup page's icon button, plus a Default cell. The text beside
+            the button says Default / None / the chosen value.
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphIdle">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarIdleGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the idle (agent at rest) icon"
+                        Tag="idle"
+                        ToolTipService.ToolTip="Idle: a status-reporting program is present and waiting at its prompt. Also shown once you have opened a finished or errored session. Default: a robot.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarIdleGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphWorking">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarWorkingGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the working icon"
+                        Tag="working"
+                        ToolTipService.ToolTip="Working: the agent is running a turn. Default: a lightning bolt.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarWorkingGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphBlocked">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarBlockedGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the blocked icon"
+                        Tag="blocked"
+                        ToolTipService.ToolTip="Blocked: the program is waiting for you (permission, an answer or a login). Default: none; the dot on the icon already marks it.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarBlockedGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphDone">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarDoneGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the done icon"
+                        Tag="done"
+                        ToolTipService.ToolTip="Done: finished and not yet looked at. Default: none; the dot on the icon already marks it.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarDoneGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphError">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarErrorGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the error icon"
+                        Tag="error"
+                        ToolTipService.ToolTip="Error: the program reported an error. Default: none; the red dot on the icon already marks it.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarErrorGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphRunning">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarRunningGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the running (shell command) icon"
+                        Tag="running"
+                        ToolTipService.ToolTip="Running: a shell command is executing (needs shell integration; only for a pane with no status-reporting program). Default: a play triangle.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarRunningGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphPermission">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarPermissionGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the blocked: needs permission icon"
+                        Tag="permission"
+                        ToolTipService.ToolTip="Needs permission: a tool call is waiting for your approval. Overrides Blocked for this kind. Default: same as Blocked.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarPermissionGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphQuestion">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarQuestionGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the blocked: needs answer icon"
+                        Tag="question"
+                        ToolTipService.ToolTip="Needs answer: the program (e.g. Claude Code) is waiting for you to pick an option. Overrides Blocked for this kind. Default: same as Blocked.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarQuestionGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphAuth">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="12">
+                <TextBlock VerticalAlignment="Center"
+                           Opacity="0.8"
+                           Text="{x:Bind ViewModel.SidebarAuthGlyphLabel, Mode=OneWay}" />
+                <Button MinWidth="44"
+                        AutomationProperties.Name="Choose the blocked: needs login icon"
+                        Tag="auth"
+                        ToolTipService.ToolTip="Needs login: the program is waiting for authentication. Overrides Blocked for this kind. Default: same as Blocked.">
+                    <ContentControl Width="20"
+                                    Height="20"
+                                    HorizontalContentAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    Content="{x:Bind ViewModel.SidebarAuthGlyphPreview, Mode=OneWay}"
+                                    IsTabStop="False" />
+                    <Button.Flyout>
+                        <Flyout Opening="StateGlyphFlyout_Opening" />
+                    </Button.Flyout>
+                </Button>
+            </StackPanel>
+        </local:SettingContainer>
+    </StackPanel>
+</Page>

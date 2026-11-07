@@ -20,7 +20,7 @@ namespace winrt::TerminalApp::implementation
     // source that died first makes the revoke a harmless no-op.
     void SessionNodeViewModel::RevokeRecomputeSubscriptions()
     {
-        for (auto* revoker : { &RevokeTitleSubscription, &RevokeOutputIdleSubscription, &RevokeActivePaneSubscription })
+        for (auto* revoker : { &RevokeTitleSubscription, &RevokeOutputIdleSubscription, &RevokeActivePaneSubscription, &RevokeSessionStateSubscription })
         {
             if (*revoker)
             {
@@ -33,6 +33,594 @@ namespace winrt::TerminalApp::implementation
     SessionNodeViewModel::~SessionNodeViewModel()
     {
         RevokeRecomputeSubscriptions();
+    }
+
+    // axan #30: see the header. StateSince restarts only on a state/kind transition.
+    bool SessionNodeViewModel::SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting)
+    {
+        // axan: while a preview is shown, keep the real state current underneath it. A real
+        // state change ends the preview (restoring the real fields), then applies as usual.
+        if (_realWhilePreviewing)
+        {
+            auto& real = *_realWhilePreviewing;
+            if (state == real.state && kind == real.kind)
+            {
+                real.message = message;
+                if (resting.reportKey != real.resting.reportKey)
+                {
+                    real.reportSince = resting.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
+                }
+                real.resting = resting;
+                return false;
+            }
+            ClearPreview(now);
+        }
+        const bool transition = state != _state || kind != _stateKind;
+        if (transition)
+        {
+            _state = state;
+            _stateKind = kind;
+            _stateSince = now;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"State" });
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateKind" });
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateSince" });
+        }
+        if (message != _stateMessage)
+        {
+            _stateMessage = message;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateMessage" });
+        }
+        // axan #31: anything but idle promotes the row immediately.
+        if (transition && _state != L"idle")
+        {
+            _setDeEmphasised(false);
+        }
+        // axan: the done/error report the age counts from. A new identity restarts it; the same
+        // one (e.g. done-unseen -> kept after being seen, or done -> done + msg) keeps it.
+        if (resting.reportKey != _resting.reportKey)
+        {
+            _reportSince = resting.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
+        }
+        const bool restingChanged = resting != _resting;
+        if (restingChanged)
+        {
+            _resting = resting;
+        }
+        if (transition || message != _subLabelMessage || restingChanged)
+        {
+            _subLabelMessage = message;
+            std::tie(_subLabel, _subLabelAge) = _computeSubLabel(now);
+            _raiseStatePresentation();
+        }
+        return transition;
+    }
+
+    // ----- axan #32: row presentation ------------------------------------------------------
+
+    void SessionNodeViewModel::_raiseStatePresentation()
+    {
+        for (const auto name : { L"StateDotVisibility", L"StateDotFill", L"StateDotStroke", L"StateGlyph", L"StateGlyphVisibility", L"StateGlyphIcon", L"StateWord", L"StateWordVisibility", L"SlotVisibility", L"SlotToolTip", L"SubLabel", L"SubLabelAge", L"SubLabelVisibility", L"SubLabelOpacity", L"StateToolTip", L"StateToolTipVisibility" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    // ----- axan: state preview -----------------------------------------------------------
+
+    SessionNodeViewModel::StateFields SessionNodeViewModel::_captureState() const
+    {
+        return StateFields{ _state, _stateKind, _stateMessage, _stateSince, _reportSince, _resting };
+    }
+
+    void SessionNodeViewModel::_restoreState(const StateFields& f)
+    {
+        _state = f.state;
+        _stateKind = f.kind;
+        _stateMessage = f.message;
+        _stateSince = f.since;
+        _reportSince = f.reportSince;
+        _resting = f.resting;
+    }
+
+    // Everything a preview can change on screen: the state presentation, and the idle
+    // effects (a non-idle preview is never de-emphasised).
+    void SessionNodeViewModel::_raisePreviewChange(winrt::Windows::Foundation::DateTime now)
+    {
+        _subLabelMessage = _stateMessage;
+        std::tie(_subLabel, _subLabelAge) = _computeSubLabel(now);
+        _raiseStatePresentation();
+        for (const auto name : { L"LabelFontSize", L"RowOpacity", L"RowMinHeight", L"Icon", L"LabelBrush" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    void SessionNodeViewModel::SetPreview(const hstring& id, const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime since, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting)
+    {
+        if (_isSeparator)
+        {
+            return;
+        }
+        if (!_realWhilePreviewing)
+        {
+            _realWhilePreviewing = _captureState();
+        }
+        _previewId = id;
+        const auto reportSince = resting.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : since;
+        // The agent name is the real one (sidebar.showAgentName already applied), so an idle /
+        // running preview shows what the row would.
+        auto shown = resting;
+        shown.agentName = _realWhilePreviewing->resting.agentName;
+        _restoreState(StateFields{ state, kind, message, since, reportSince, std::move(shown) });
+        _raisePreviewChange(now);
+    }
+
+    bool SessionNodeViewModel::ClearPreview(winrt::Windows::Foundation::DateTime now)
+    {
+        if (!_realWhilePreviewing)
+        {
+            return false;
+        }
+        _restoreState(*_realWhilePreviewing);
+        _realWhilePreviewing.reset();
+        _previewId = {};
+        _raisePreviewChange(now);
+        return true;
+    }
+
+    // ----- axan: sizes ---------------------------------------------------------------------
+
+    bool SessionNodeViewModel::SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize)
+    {
+        bool changed = false;
+        const auto raise = [this](const wchar_t* name) {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        };
+        if (labelFontSize != _labelFontSize)
+        {
+            _labelFontSize = labelFontSize;
+            raise(L"LabelFontSize");
+            changed = true;
+        }
+        if (stateLineFontSize != _stateLineFontSize)
+        {
+            _stateLineFontSize = stateLineFontSize;
+            raise(L"StateLineFontSize");
+            changed = true;
+        }
+        if (iconSize != _iconSize)
+        {
+            _iconSize = iconSize;
+            raise(L"IconSize");
+            raise(L"Icon");
+            changed = true;
+        }
+        if (stateGlyphSize != _stateGlyphSize)
+        {
+            _stateGlyphSize = stateGlyphSize;
+            raise(L"StateGlyphIcon");
+            changed = true;
+        }
+        return changed;
+    }
+
+    void SessionNodeViewModel::RefreshIcons()
+    {
+        for (const auto name : { L"Icon", L"StateGlyphIcon" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    // Multiply a glyph icon's font size (an IconWUX IconSourceElement over a FontIconSource,
+    // whose size already carries the AxanGlyphScale per-font factor). False for an image.
+    static bool _scaleGlyphIcon(const winrt::Windows::UI::Xaml::Controls::IconElement& icon, double factor)
+    {
+        if (const auto ise = icon.try_as<winrt::Windows::UI::Xaml::Controls::IconSourceElement>())
+        {
+            if (const auto fis = ise.IconSource().try_as<winrt::Windows::UI::Xaml::Controls::FontIconSource>())
+            {
+                fis.FontSize(fis.FontSize() * factor);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool SessionNodeViewModel::ShowsAge() const noexcept
+    {
+        return _state == L"needs-you" || _state == L"done-unseen" || _state == L"error";
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateDotVisibility() const noexcept
+    {
+        return !_isSeparator && ShowsAge() ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    // The theme's text colour (white on dark / near-black on light), which is what the
+    // inverted badge fills with; its ring is the opposite so the dot separates from the icon.
+    winrt::Windows::UI::Color SessionNodeViewModel::_textColor() const
+    {
+        if (const auto solid = _defaultTextBrush.try_as<winrt::Windows::UI::Xaml::Media::SolidColorBrush>())
+        {
+            return solid.Color();
+        }
+        return _isDarkTheme ? winrt::Windows::UI::Color{ 255, 255, 255, 255 } : winrt::Windows::UI::Color{ 255, 0x1C, 0x1C, 0x1C };
+    }
+
+    winrt::Windows::UI::Xaml::Media::Brush SessionNodeViewModel::StateDotFill() const
+    {
+        using winrt::Windows::UI::Color;
+        if (_state == L"error")
+        {
+            return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ _isDarkTheme ? Color{ 255, 0xFF, 0x6B, 0x6B } : Color{ 255, 0xC4, 0x2B, 0x1C } };
+        }
+        auto c = _textColor();
+        if (_state == L"done-unseen")
+        {
+            c.A = 0x80; // softer than needs-you
+        }
+        return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ c };
+    }
+
+    winrt::Windows::UI::Xaml::Media::Brush SessionNodeViewModel::StateDotStroke() const
+    {
+        using winrt::Windows::UI::Color;
+        return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ _isDarkTheme ? Color{ 255, 0x1C, 0x1C, 0x1C } : Color{ 255, 0xFF, 0xFF, 0xFF } };
+    }
+
+    // The right-edge slot, static and never animated: the sidebar.stateGlyphs glyph for the
+    // node's slot state, resolved by the page (AxanStateGlyphs.h). By default a lightning
+    // bolt for an agent working (OSC 7501), play for a shell command running (OSC 133), and
+    // the Robot glyph (U+E99A) for idle, i.e. a status-reporting program present and at rest
+    // (including a done/error report already seen). Robot rather than a circle or another
+    // play-like shape: it can't be mistaken for running, and it says "agent", not "state".
+    // blocked / done / error default to nothing: the attention dot on the icon carries them.
+    hstring SessionNodeViewModel::StateGlyph() const noexcept
+    {
+        return _isSeparator ? hstring{} : _resting.slotGlyph;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateWordVisibility() const noexcept
+    {
+        return StateWord().empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SlotVisibility() const noexcept
+    {
+        return StateGlyph().empty() && StateWord().empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    hstring SessionNodeViewModel::ToString() const
+    {
+        if (_isSeparator)
+        {
+            return hstring{ L"Separator" };
+        }
+        if (_resting.slotWord.empty())
+        {
+            return _Label;
+        }
+        return _Label + L", " + _resting.slotWord;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateGlyphVisibility() const noexcept
+    {
+        return StateGlyph().empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    // sidebar.stateGlyphSize, default 12px like the old TextBlock glyph. IconWUX gives a glyph
+    // / emoji a 12pt FontIconSource (Segoe Fluent for the PUA range, Segoe UI otherwise; times
+    // the AxanGlyphScale factor), rescaled here to the setting and tinted with the label
+    // brush; an image (bitmap / exe / dll icon) has no intrinsic small size, so it is boxed.
+    winrt::Windows::UI::Xaml::Controls::IconElement SessionNodeViewModel::StateGlyphIcon()
+    {
+        const auto glyph = StateGlyph();
+        if (glyph.empty())
+        {
+            return nullptr;
+        }
+        const auto icon{ winrt::Microsoft::Terminal::UI::IconPathConverter::IconWUX(glyph) };
+        if (!icon)
+        {
+            return nullptr;
+        }
+        const auto brush = LabelBrush();
+        winrt::Windows::UI::Xaml::Controls::FontIconSource font{ nullptr };
+        if (const auto ise = icon.try_as<winrt::Windows::UI::Xaml::Controls::IconSourceElement>())
+        {
+            font = ise.IconSource().try_as<winrt::Windows::UI::Xaml::Controls::FontIconSource>();
+        }
+        if (font)
+        {
+            font.FontSize(font.FontSize() * (_stateGlyphSize / 12.0));
+            font.Foreground(brush);
+            icon.Foreground(brush);
+        }
+        else
+        {
+            icon.Width(_stateGlyphSize);
+            icon.Height(_stateGlyphSize);
+        }
+        return icon;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SubLabelVisibility() const noexcept
+    {
+        return _subLabel.empty() && _subLabelAge.empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    hstring SessionNodeViewModel::FormatAge(winrt::Windows::Foundation::TimeSpan age)
+    {
+        using namespace std::chrono;
+        const auto secs = duration_cast<seconds>(age).count();
+        if (secs < 60)
+        {
+            return hstring{ L"<1m" };
+        }
+        if (secs < 3600)
+        {
+            return hstring{ std::to_wstring(secs / 60) + L"m" };
+        }
+        if (secs < 86400)
+        {
+            return hstring{ std::to_wstring(secs / 3600) + L"h" };
+        }
+        return hstring{ std::to_wstring(secs / 86400) + L"d" };
+    }
+
+    // {message, " · <age>"}. The row renders the two in separate columns: the age keeps its
+    // width at the end of the line and the message is ellipsized into whatever is left (the
+    // full message is in the tooltip).
+    static std::pair<hstring, hstring> _withAge(std::wstring what, winrt::Windows::Foundation::DateTime now, winrt::Windows::Foundation::DateTime since)
+    {
+        const auto age = now > since ? now - since : winrt::Windows::Foundation::TimeSpan{ 0 };
+        return { hstring{ what }, hstring{ L" \u00B7 " + std::wstring{ SessionNodeViewModel::FormatAge(age) } } };
+    }
+
+    // Second line: what the state is about, plus how long it has been that way for the
+    // states the user is looking for. Working shows only its message (no age); running
+    // and idle show nothing, so their rows stay one line, unless a seen report is kept
+    // (statusAfterSeen = keep): then it shows that report, muted, aged from when it arrived.
+    std::pair<hstring, hstring> SessionNodeViewModel::_computeSubLabel(winrt::Windows::Foundation::DateTime now) const
+    {
+        if (_isSeparator)
+        {
+            return {};
+        }
+        std::wstring what{ _stateMessage };
+        if (_state == L"working")
+        {
+            // axan: a working agent that sends no message shows its name instead.
+            return { what.empty() && ShowsAgentName() ? _resting.agentName : hstring{ what }, hstring{} };
+        }
+        if (!ShowsAge())
+        {
+            if (ShowsRetained())
+            {
+                std::wstring kept{ _resting.retainedMessage.empty() ? _resting.retainedWhat : _resting.retainedMessage };
+                return _withAge(std::move(kept), now, _reportSince != winrt::Windows::Foundation::DateTime{} ? _reportSince : _stateSince);
+            }
+            // axan: sidebar.showAgentName, lowest priority: an agent (idle, or running beside
+            // a shell command) shows its name.
+            if (ShowsAgentName())
+            {
+                return { _resting.agentName, hstring{} };
+            }
+            return {};
+        }
+        if (what.empty())
+        {
+            if (_state == L"needs-you")
+            {
+                what = _stateKind.empty() ? std::wstring{ L"needs you" } : std::wstring{ _stateKind };
+            }
+            else if (_state == L"done-unseen")
+            {
+                what = L"done";
+            }
+            else
+            {
+                what = L"error";
+            }
+        }
+        return _withAge(std::move(what), now, _stateSince);
+    }
+
+    // ----- axan #31: idle de-emphasis ------------------------------------------------------
+
+    void SessionNodeViewModel::SetRowHeightPx(double px)
+    {
+        if (px > 0.0 && px != _rowHeightPx)
+        {
+            _rowHeightPx = px;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"RowMinHeight" });
+        }
+    }
+
+    void SessionNodeViewModel::_setDeEmphasised(bool value)
+    {
+        if (value == _deEmphasised)
+        {
+            return;
+        }
+        _deEmphasised = value;
+        for (const auto name : { L"IsDeEmphasised", L"LabelFontSize", L"RowOpacity", L"RowMinHeight" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+        // "gray" repaints the glyph and the label; only a coloured node has anything to gray.
+        if ((_idleEffects & Axan::IdleEffects::kGray) && !_iconColor.empty())
+        {
+            for (const auto name : { L"Icon", L"LabelBrush", L"StateGlyphIcon" })
+            {
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+            }
+        }
+    }
+
+    bool SessionNodeViewModel::SetIdleEffects(Axan::IdleEffects::Mask effects)
+    {
+        if (effects == _idleEffects)
+        {
+            return false;
+        }
+        const auto changed = static_cast<Axan::IdleEffects::Mask>(effects ^ _idleEffects);
+        _idleEffects = effects;
+        if (!_deEmphasised)
+        {
+            return true; // nothing on screen depends on the mask until the row goes idle
+        }
+        for (const auto name : { L"LabelFontSize", L"RowOpacity", L"RowMinHeight" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+        if ((changed & Axan::IdleEffects::kGray) && !_iconColor.empty())
+        {
+            for (const auto name : { L"Icon", L"LabelBrush", L"StateGlyphIcon" })
+            {
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+            }
+        }
+        return true;
+    }
+
+    winrt::hstring SessionNodeViewModel::_effectiveColorToken() const
+    {
+        if (_idleEffect(Axan::IdleEffects::kGray) && !ResolveColorToken(_iconColor, _isDarkTheme).empty())
+        {
+            // Neutral mid-grays that stay legible on the sidebar in each theme.
+            return _isDarkTheme ? winrt::hstring{ L"#8A8A8A" } : winrt::hstring{ L"#6E6E6E" };
+        }
+        return _iconColor;
+    }
+
+    // Idle long enough = no input/output since the threshold AND idle state for that long
+    // (a session that just went idle after working isn't shrunk the moment it settles).
+    bool SessionNodeViewModel::UpdateDeEmphasis(winrt::Windows::Foundation::DateTime now, int32_t idleAfterMinutes)
+    {
+        bool want = false;
+        if (!_isSeparator && idleAfterMinutes > 0 && State() == L"idle") // axan: the real state, never a preview
+        {
+            const auto since = std::max(_lastActivity, StateSince());
+            want = since != winrt::Windows::Foundation::DateTime{} && now - since >= std::chrono::minutes{ idleAfterMinutes };
+        }
+        const bool flipped = want != _deEmphasised;
+        _setDeEmphasised(want);
+        return flipped;
+    }
+
+    void SessionNodeViewModel::RefreshAge(winrt::Windows::Foundation::DateTime now)
+    {
+        if (!ShowsAge() && !ShowsRetained())
+        {
+            return;
+        }
+        auto [text, age] = _computeSubLabel(now);
+        const bool visibilityChanged = (_subLabel.empty() && _subLabelAge.empty()) != (text.empty() && age.empty());
+        if (text != _subLabel)
+        {
+            _subLabel = std::move(text);
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SubLabel" });
+        }
+        if (age != _subLabelAge)
+        {
+            _subLabelAge = std::move(age);
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SubLabelAge" });
+        }
+        if (visibilityChanged)
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SubLabelVisibility" });
+        }
+    }
+
+    // For a non-idle state: the state, its kind, the absolute local time it began and the
+    // full message, e.g. "needs-you (permission) since 14:32:05" / "Allow Bash: ...".
+    // Shown under the label in the row tooltip; Collapsed when idle with nothing to explain.
+    // A preview follows the same rule: its "Preview - " prefix alone is not worth a line.
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateToolTipVisibility() const noexcept
+    {
+        return _isSeparator || (_state == L"idle" && !ShowsRetained() && _resting.slotExplanation.empty()) ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    static void _appendSince(std::wstring& tip, winrt::Windows::Foundation::DateTime since)
+    {
+        if (since == winrt::Windows::Foundation::DateTime{})
+        {
+            return;
+        }
+        const FILETIME utc = winrt::clock::to_FILETIME(since);
+        FILETIME local{};
+        SYSTEMTIME st{};
+        if (FileTimeToLocalFileTime(&utc, &local) && FileTimeToSystemTime(&local, &st))
+        {
+            wchar_t buf[32]{};
+            swprintf_s(buf, L" since %02u:%02u:%02u", st.wHour, st.wMinute, st.wSecond);
+            tip += buf;
+        }
+    }
+
+    // A kept report (statusAfterSeen = keep) adds "done (seen) since 14:32:05" and its full
+    // message, after the live state's lines when the node is running.
+    hstring SessionNodeViewModel::StateToolTip() const
+    {
+        if (_isSeparator)
+        {
+            return {};
+        }
+        // axan: a preview says so first, so it is never mistaken for a real report.
+        std::wstring tip{ _realWhilePreviewing ? L"Preview \u2014 " : L"" };
+        const auto prefixLength = tip.size();
+        // axan: the slot state's one-sentence explanation leads the state detail.
+        if (!_resting.slotExplanation.empty())
+        {
+            tip += _resting.slotExplanation;
+        }
+        if (_state != L"idle")
+        {
+            if (tip.size() > prefixLength)
+            {
+                tip += L"\n";
+            }
+            tip += _state;
+            if (!_stateKind.empty())
+            {
+                tip += L" (";
+                tip += _stateKind;
+                tip += L")";
+            }
+            _appendSince(tip, _stateSince);
+            if (!_stateMessage.empty())
+            {
+                tip += L"\n";
+                tip += _stateMessage;
+            }
+        }
+        if (ShowsRetained())
+        {
+            if (tip.size() > prefixLength)
+            {
+                tip += L"\n";
+            }
+            tip += _resting.retainedWhat;
+            tip += L" (seen)";
+            _appendSince(tip, _reportSince != winrt::Windows::Foundation::DateTime{} ? _reportSince : _stateSince);
+            if (!_resting.retainedMessage.empty())
+            {
+                tip += L"\n";
+                tip += _resting.retainedMessage;
+            }
+        }
+        return hstring{ tip };
+    }
+
+    void SessionNodeViewModel::SetLastActivity(winrt::Windows::Foundation::DateTime value)
+    {
+        if (value != _lastActivity)
+        {
+            _lastActivity = value;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LastActivity" });
+        }
     }
 
     // axan M13: parse a "#RRGGBB" or "#AARRGGBB" hex string into a Color. Returns nullopt for
@@ -157,12 +745,15 @@ namespace winrt::TerminalApp::implementation
     {
         // Only tint the icon when the recolor target includes the icon; otherwise leave the
         // glyph on the theme foreground (the text may still be recolored via LabelBrush).
-        const auto iconColor = _targetIncludesIcon(ColorTarget) ? _iconColor : winrt::hstring{};
+        const auto iconColor = _targetIncludesIcon(ColorTarget) ? _effectiveColorToken() : winrt::hstring{};
         const auto icon{ BuildIcon(_iconPath, iconColor, _isDarkTheme) };
         if (icon)
         {
-            icon.Width(16);
-            icon.Height(16);
+            // axan: sidebar.iconSize. A glyph's 12pt font size is 3/4 of the 16px default box,
+            // so it scales with the box.
+            icon.Width(_iconSize);
+            icon.Height(_iconSize);
+            _scaleGlyphIcon(icon, _iconSize / 16.0);
         }
         return icon;
     }
@@ -176,7 +767,7 @@ namespace winrt::TerminalApp::implementation
         {
             // Resolve the stored token (palette name / "#hex") to the active theme's hex first,
             // so a name like "blue" paints the label in the theme-legible blue.
-            if (const auto c = _parseHexColor(ResolveColorToken(_iconColor, _isDarkTheme)))
+            if (const auto c = _parseHexColor(ResolveColorToken(_effectiveColorToken(), _isDarkTheme)))
             {
                 return winrt::Windows::UI::Xaml::Media::SolidColorBrush{ *c };
             }
@@ -194,14 +785,33 @@ namespace winrt::TerminalApp::implementation
 
     // axan M13: the page pushes the theme-correct default text brush (from the sidebar's
     // ActualTheme); re-raise LabelBrush so any node not text-recolored repaints to it.
-    void SessionNodeViewModel::SetDefaultTextBrush(const winrt::Windows::UI::Xaml::Media::Brush& brush, bool isDarkTheme)
+    bool SessionNodeViewModel::SetDefaultTextBrush(const winrt::Windows::UI::Xaml::Media::Brush& brush, bool isDarkTheme)
     {
+        // axan #26: the page pushes this on every _updateThemeColors pass; when neither the
+        // default text color nor the palette set changed there is nothing to repaint, and
+        // re-raising LabelBrush+Icon on every node rebuilds every row's icon element. (The
+        // palette is a compile-time table, so color + isDark fully determine the output.) A
+        // new node has no brush yet, so it always takes the first push.
+        if (isDarkTheme == _isDarkTheme && _defaultTextBrush && brush)
+        {
+            const auto oldSolid = _defaultTextBrush.try_as<winrt::Windows::UI::Xaml::Media::SolidColorBrush>();
+            const auto newSolid = brush.try_as<winrt::Windows::UI::Xaml::Media::SolidColorBrush>();
+            if (oldSolid && newSolid && oldSolid.Color() == newSolid.Color())
+            {
+                return false;
+            }
+        }
         _defaultTextBrush = brush;
         _isDarkTheme = isDarkTheme;
         // A theme switch flips which palette set a stored color NAME resolves against, so both
         // the label brush and the glyph tint can change — raise Icon too, not just LabelBrush.
-        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" });
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" }); // axan: + StateGlyphIcon (tinted with it)
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateGlyphIcon" });
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"Icon" });
+        // axan #32: the state dot is derived from the theme text colour too.
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateDotFill" });
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateDotStroke" });
+        return true;
     }
 
     // axan #422: see the header. "" -> ""; "#hex" -> verbatim; a palette name -> the active set's
@@ -269,7 +879,8 @@ namespace winrt::TerminalApp::implementation
         _iconColor = color;
         ColorTarget = target.empty() ? winrt::hstring{ L"both" } : target;
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"Icon" });
-        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" });
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"LabelBrush" }); // axan: + StateGlyphIcon (tinted with it)
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"StateGlyphIcon" });
     }
 
     // axan #3: the shared ExpandedNodeTemplate holds BOTH a session Grid and a separator Grid
@@ -289,7 +900,96 @@ namespace winrt::TerminalApp::implementation
     // same height.
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SeparatorLineVisibility() const noexcept
     {
-        return (_isSeparator && _separatorStyle == L"line") ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+        // axan #33: a labelled header draws its own rule after the label instead.
+        return (_isSeparator && _separatorStyle == L"line" && _separatorLabel.empty()) ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    // ----- axan #33: section headers ---------------------------------------------------------
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SeparatorHeaderVisibility() const noexcept
+    {
+        return HasSectionHeader() ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SeparatorHeaderLineVisibility() const noexcept
+    {
+        return (HasSectionHeader() && _separatorStyle == L"line") ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    // Chevron down when expanded, chevron right when collapsed (Segoe Fluent / MDL2).
+    hstring SessionNodeViewModel::CollapseGlyph() const noexcept
+    {
+        return _collapsed ? hstring{ L"\uE76C" } : hstring{ L"\uE70D" };
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::SectionBadgeVisibility() const noexcept
+    {
+        return (_collapsed && !_sectionBadge.empty()) ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    void SessionNodeViewModel::ActivateSectionBadge()
+    {
+        if (OnSectionBadgeActivated)
+        {
+            OnSectionBadgeActivated();
+        }
+    }
+
+    void SessionNodeViewModel::SetSeparatorLabel(const hstring& label)
+    {
+        if (label == _separatorLabel)
+        {
+            return;
+        }
+        _separatorLabel = label;
+        if (_separatorLabel.empty())
+        {
+            _collapsed = false; // an unlabelled separator has no section to collapse
+        }
+        for (const auto name : { L"SeparatorLabel", L"SeparatorHeaderVisibility", L"SeparatorHeaderLineVisibility", L"SeparatorLineVisibility", L"SeparatorPixelHeight", L"IsCollapsed", L"CollapseGlyph", L"SectionBadgeVisibility" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    void SessionNodeViewModel::SetCollapsed(bool collapsed)
+    {
+        collapsed = collapsed && HasSectionHeader();
+        if (collapsed == _collapsed)
+        {
+            return;
+        }
+        _collapsed = collapsed;
+        for (const auto name : { L"IsCollapsed", L"CollapseGlyph", L"SectionBadgeVisibility" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    void SessionNodeViewModel::SetSectionSummary(const hstring& summary, const hstring& badge)
+    {
+        if (summary != _sectionSummary)
+        {
+            _sectionSummary = summary;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SectionSummary" });
+        }
+        if (badge != _sectionBadge)
+        {
+            _sectionBadge = badge;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SectionBadge" });
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"SectionBadgeVisibility" });
+        }
+    }
+
+    bool SessionNodeViewModel::SetSectionHidden(bool hidden)
+    {
+        if (hidden == _sectionHidden)
+        {
+            return false;
+        }
+        _sectionHidden = hidden;
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IsSectionHidden" });
+        return true;
     }
 
     // axan #3: flip this VM into separator mode. Called once by the page when it mints a

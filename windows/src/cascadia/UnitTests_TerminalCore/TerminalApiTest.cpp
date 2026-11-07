@@ -41,6 +41,14 @@ namespace TerminalCoreUnitTests
 
         TEST_METHOD(SetTaskbarProgress);
         TEST_METHOD(SetWorkingDirectory);
+
+        // axan #29: OSC 7501
+        TEST_METHOD(ProgramStatusQueryReply);
+        TEST_METHOD(ProgramStatusRecords);
+        TEST_METHOD(ProgramStatusRecordCap);
+
+        // axan #30: OSC 133 command lifecycle
+        TEST_METHOD(ShellCommandRunning);
     };
 };
 
@@ -476,4 +484,240 @@ void TerminalCoreUnitTests::TerminalApiTest::SetWorkingDirectory()
 
     stateMachine.ProcessString(L"\x1b]9;9;D:\\中文\x1b\\");
     VERIFY_ARE_EQUAL(term.GetWorkingDirectory(), L"D:\\中文");
+}
+
+// axan #29: OSC 7501 Program Status ---------------------------------------------------
+
+namespace
+{
+    using ::Microsoft::Console::VirtualTerminal::ProgramStatus::Kind;
+    using ::Microsoft::Console::VirtualTerminal::ProgramStatus::State;
+
+    // Find a record by id in a snapshot; nullptr if absent.
+    const Terminal::ProgramStatusRecord* FindRecord(const std::vector<Terminal::ProgramStatusRecord>& records, std::wstring_view id)
+    {
+        for (const auto& r : records)
+        {
+            if (r.id == id)
+            {
+                return &r;
+            }
+        }
+        return nullptr;
+    }
+
+    std::wstring Report(std::wstring_view payload)
+    {
+        return std::wstring{ L"\x1b]7501;" }.append(payload).append(L"\x1b\\");
+    }
+}
+
+void TerminalCoreUnitTests::TerminalApiTest::ProgramStatusQueryReply()
+{
+    Terminal term{ Terminal::TestDummyMarker{} };
+    DummyRenderer renderer{ &term };
+    term.Create({ 100, 100 }, 0, renderer);
+    std::wstring responses;
+    term.SetWriteInputCallback([&](std::wstring_view s) { responses.append(s); });
+    auto& stateMachine = *(term._stateMachine);
+
+    constexpr std::wstring_view reply{ L"\x1b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\x1b\\" };
+
+    Log::Comment(L"Enabled by default: the query is answered ahead of DA1");
+    VERIFY_IS_TRUE(term.IsProgramStatusEnabled());
+    stateMachine.ProcessString(L"\x1b]7501;?\x1b\\\x1b[c");
+    VERIFY_IS_TRUE(responses.starts_with(reply));
+    VERIFY_ARE_EQUAL(reply.size(), responses.find(L"\x1b[?61;"));
+
+    Log::Comment(L"Gate off: no reply to the query, and reports are ignored");
+    responses.clear();
+    term.SetProgramStatusEnabled(false);
+    stateMachine.ProcessString(L"\x1b]7501;?\x07\x1b[c");
+    VERIFY_ARE_EQUAL(std::wstring::npos, responses.find(L"7501"));
+    VERIFY_IS_TRUE(responses.starts_with(L"\x1b[?61;"));
+    stateMachine.ProcessString(Report(L"state=working:app=claude"));
+    VERIFY_ARE_EQUAL(0u, term.GetProgramStatusRecords().size());
+}
+
+void TerminalCoreUnitTests::TerminalApiTest::ProgramStatusRecords()
+{
+    Terminal term{ Terminal::TestDummyMarker{} };
+    DummyRenderer renderer{ &term };
+    term.Create({ 100, 100 }, 0, renderer);
+    size_t notifications = 0;
+    term.SetProgramStatusChangedCallback([&]() { ++notifications; });
+    auto& stateMachine = *(term._stateMachine);
+
+    Log::Comment(L"A report creates a record; fields round-trip");
+    stateMachine.ProcessString(Report(L"state=blocked:kind=auth:app=brew:progress=10:msg=UGFzc3dvcmQ="));
+    auto records = term.GetProgramStatusRecords();
+    VERIFY_ARE_EQUAL(1u, records.size());
+    VERIFY_ARE_EQUAL(1u, notifications);
+    auto root = FindRecord(records, L"");
+    VERIFY_IS_NOT_NULL(root);
+    VERIFY_ARE_EQUAL(State::Blocked, root->state);
+    VERIFY_ARE_EQUAL(Kind::Auth, root->kind);
+    VERIFY_ARE_EQUAL(L"brew", root->app);
+    VERIFY_ARE_EQUAL(L"brew", root->effectiveApp);
+    VERIFY_ARE_EQUAL(10, static_cast<int>(root->progress.value_or(255)));
+    VERIFY_ARE_EQUAL(L"Password", root->msg);
+    const auto firstRevision = root->revision;
+
+    Log::Comment(L"A report fully replaces its record: missing keys clear their values");
+    stateMachine.ProcessString(Report(L"state=working"));
+    records = term.GetProgramStatusRecords();
+    root = FindRecord(records, L"");
+    VERIFY_ARE_EQUAL(State::Working, root->state);
+    VERIFY_ARE_EQUAL(Kind::None, root->kind);
+    VERIFY_ARE_EQUAL(L"", root->app);
+    VERIFY_ARE_EQUAL(L"", root->msg);
+    VERIFY_IS_FALSE(root->progress.has_value());
+    VERIFY_IS_GREATER_THAN(root->revision, firstRevision);
+
+    Log::Comment(L"Children inherit app from the nearest ancestor that has one");
+    stateMachine.ProcessString(Report(L"state=working:app=deploy"));
+    stateMachine.ProcessString(Report(L"state=working:id=us-east"));
+    stateMachine.ProcessString(Report(L"state=working:id=us-east/web:app=nginx"));
+    stateMachine.ProcessString(Report(L"state=done:id=us-east/web/a"));
+    stateMachine.ProcessString(Report(L"state=done:id=eu/x/y"));
+    stateMachine.ProcessString(Report(L"state=idle:id=us-east-2"));
+    records = term.GetProgramStatusRecords();
+    VERIFY_ARE_EQUAL(6u, records.size());
+    VERIFY_ARE_EQUAL(L"", records[0].id); // sorted, root first
+    VERIFY_ARE_EQUAL(L"deploy", FindRecord(records, L"us-east")->effectiveApp);
+    VERIFY_ARE_EQUAL(L"", FindRecord(records, L"us-east")->app);
+    VERIFY_ARE_EQUAL(L"nginx", FindRecord(records, L"us-east/web/a")->effectiveApp);
+    VERIFY_ARE_EQUAL(L"deploy", FindRecord(records, L"eu/x/y")->effectiveApp); // no parent records needed
+
+    Log::Comment(L"An invalid id never touches anything, even with state=clear");
+    const auto before = notifications;
+    stateMachine.ProcessString(Report(L"state=clear:id=bad!"));
+    stateMachine.ProcessString(Report(L"state=clear:id=bad!:id=us-east"));
+    stateMachine.ProcessString(Report(L"state=idle:id=a//b"));
+    VERIFY_ARE_EQUAL(6u, term.GetProgramStatusRecords().size());
+    VERIFY_ARE_EQUAL(before, notifications);
+
+    Log::Comment(L"clear with an id removes the record and its subtree, not prefix-siblings");
+    stateMachine.ProcessString(Report(L"state=clear:id=us-east"));
+    records = term.GetProgramStatusRecords();
+    VERIFY_ARE_EQUAL(3u, records.size());
+    VERIFY_IS_NULL(FindRecord(records, L"us-east"));
+    VERIFY_IS_NULL(FindRecord(records, L"us-east/web"));
+    VERIFY_IS_NULL(FindRecord(records, L"us-east/web/a"));
+    VERIFY_IS_NOT_NULL(FindRecord(records, L"us-east-2"));
+    VERIFY_IS_NOT_NULL(FindRecord(records, L""));
+
+    Log::Comment(L"OSC 133;A drops live (working/blocked) records only");
+    stateMachine.ProcessString(Report(L"state=blocked:id=ask:kind=question"));
+    stateMachine.ProcessString(Report(L"state=error:id=failed"));
+    stateMachine.ProcessString(L"\x1b]133;A\x07");
+    records = term.GetProgramStatusRecords();
+    VERIFY_IS_NULL(FindRecord(records, L"")); // root was working
+    VERIFY_IS_NULL(FindRecord(records, L"ask"));
+    VERIFY_IS_NOT_NULL(FindRecord(records, L"eu/x/y")); // done
+    VERIFY_IS_NOT_NULL(FindRecord(records, L"failed")); // error
+    VERIFY_IS_NOT_NULL(FindRecord(records, L"us-east-2")); // idle
+
+    Log::Comment(L"Connection close drops live records too (same rule, explicit entry point)");
+    stateMachine.ProcessString(Report(L"state=working:id=job"));
+    term.ProgramStatusDropLive("test");
+    VERIFY_IS_NULL(FindRecord(term.GetProgramStatusRecords(), L"job"));
+
+    Log::Comment(L"A prompt with nothing live to drop doesn't notify");
+    const auto quiet = notifications;
+    stateMachine.ProcessString(L"\x1b]133;A\x07");
+    VERIFY_ARE_EQUAL(quiet, notifications);
+
+    Log::Comment(L"DECSTR keeps records; RIS removes them all");
+    stateMachine.ProcessString(L"\x1b[!p");
+    VERIFY_ARE_EQUAL(3u, term.GetProgramStatusRecords().size());
+    stateMachine.ProcessString(L"\x1b"
+                               L"c");
+    VERIFY_ARE_EQUAL(0u, term.GetProgramStatusRecords().size());
+
+    Log::Comment(L"clear without an id removes everything");
+    stateMachine.ProcessString(Report(L"state=done:id=a"));
+    stateMachine.ProcessString(Report(L"state=done:id=b"));
+    stateMachine.ProcessString(Report(L"state=clear"));
+    VERIFY_ARE_EQUAL(0u, term.GetProgramStatusRecords().size());
+}
+
+void TerminalCoreUnitTests::TerminalApiTest::ProgramStatusRecordCap()
+{
+    Terminal term{ Terminal::TestDummyMarker{} };
+    DummyRenderer renderer{ &term };
+    term.Create({ 100, 100 }, 0, renderer);
+    auto& stateMachine = *(term._stateMachine);
+
+    constexpr auto cap = ::Microsoft::Console::VirtualTerminal::ProgramStatus::MaxRecords;
+    for (size_t i = 0; i < cap; ++i)
+    {
+        stateMachine.ProcessString(Report(L"state=done:id=r" + std::to_wstring(i)));
+    }
+    VERIFY_ARE_EQUAL(cap, term.GetProgramStatusRecords().size());
+
+    Log::Comment(L"Touch r0 so r1 becomes the least recently updated, then overflow");
+    stateMachine.ProcessString(Report(L"state=idle:id=r0"));
+    stateMachine.ProcessString(Report(L"state=done:id=overflow"));
+    const auto records = term.GetProgramStatusRecords();
+    VERIFY_ARE_EQUAL(cap, records.size());
+    VERIFY_IS_NOT_NULL(FindRecord(records, L"r0"));
+    VERIFY_IS_NULL(FindRecord(records, L"r1"));
+    VERIFY_IS_NOT_NULL(FindRecord(records, L"overflow"));
+
+    Log::Comment(L"Updating an existing record at the cap evicts nothing");
+    stateMachine.ProcessString(Report(L"state=error:id=r2"));
+    VERIFY_ARE_EQUAL(cap, term.GetProgramStatusRecords().size());
+    VERIFY_IS_NOT_NULL(FindRecord(term.GetProgramStatusRecords(), L"r3"));
+}
+
+void TerminalCoreUnitTests::TerminalApiTest::ShellCommandRunning()
+{
+    Terminal term{ Terminal::TestDummyMarker{} };
+    DummyRenderer renderer{ &term };
+    term.Create({ 100, 100 }, 0, renderer);
+    size_t notifications = 0;
+    term.SetShellCommandChangedCallback([&]() { ++notifications; });
+    auto& stateMachine = *(term._stateMachine);
+
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    stateMachine.ProcessString(L"\x1b]133;A\x07\x1b]133;B\x07");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(0u, notifications);
+
+    stateMachine.ProcessString(L"\x1b]133;C\x07");
+    VERIFY_IS_TRUE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(1u, notifications);
+
+    Log::Comment(L"A non-zero exit just ends the command");
+    stateMachine.ProcessString(L"\x1b]133;D;1\x07");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(2u, notifications);
+
+    Log::Comment(L"A new prompt without D also ends it");
+    stateMachine.ProcessString(L"\x1b]133;C\x07\x1b]133;A\x07");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(4u, notifications);
+
+    Log::Comment(L"Repeated marks don't re-notify");
+    stateMachine.ProcessString(L"\x1b]133;D\x07\x1b]133;A\x07");
+    VERIFY_ARE_EQUAL(4u, notifications);
+
+    Log::Comment(L"The shell exiting mid-command (connection closed, no D) ends it");
+    stateMachine.ProcessString(L"\x1b]133;C\x07");
+    VERIFY_IS_TRUE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(5u, notifications);
+    term.ShellCommandEnded("test");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(6u, notifications);
+    term.ShellCommandEnded("test");
+    VERIFY_ARE_EQUAL(6u, notifications);
+
+    Log::Comment(L"RIS ends a running command too");
+    stateMachine.ProcessString(L"\x1b]133;C\x07");
+    VERIFY_IS_TRUE(term.IsShellCommandRunning());
+    stateMachine.ProcessString(L"\x1b"
+                               L"c");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(8u, notifications);
 }

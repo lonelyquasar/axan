@@ -19,6 +19,7 @@
 #include "../../renderer/base/renderer.hpp"
 #include "../../renderer/uia/UiaRenderer.hpp"
 #include "../../types/inc/CodepointWidthDetector.hpp"
+#include "../../inc/AxanLog.h"
 
 #include "ControlCore.g.cpp"
 #include "SelectionColor.g.cpp"
@@ -119,6 +120,10 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         auto pfnTerminalTaskbarProgressChanged = [this] { _terminalTaskbarProgressChanged(); };
         _terminal->TaskbarProgressChangedCallback(pfnTerminalTaskbarProgressChanged);
+
+        // axan #29: runs under the terminal write lock; just mark it and raise later.
+        _terminal->SetProgramStatusChangedCallback([this] { _programStatusChangedPending.store(true, std::memory_order_relaxed); });
+        _terminal->SetShellCommandChangedCallback([this] { _shellCommandChangedPending.store(true, std::memory_order_relaxed); }); // axan #30
 
         auto pfnShowWindowChanged = [this](auto&& PH1) { _terminalShowWindowChanged(std::forward<decltype(PH1)>(PH1)); };
         _terminal->SetShowWindowCallback(pfnShowWindowChanged);
@@ -313,10 +318,26 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         _closeConnection();
 
         _connection = newConnection;
+        _connectionEnded.store(false, std::memory_order_relaxed); // axan #29: a (re)started connection is live again
         if (_connection)
         {
             // Subscribe to the connection's disconnected event and call our connection closed handlers.
-            _connectionStateChangedRevoker = newConnection.StateChanged(winrt::auto_revoke, [this](auto&& /*s*/, auto&& /*v*/) {
+            _connectionStateChangedRevoker = newConnection.StateChanged(winrt::auto_revoke, [this](auto&& s, auto&& /*v*/) {
+                // axan #29: the process is gone, so its working/blocked OSC 7501 records
+                // are stale (spec: drop them on process exit). done/error stay.
+                // axan #30: likewise a shell that exited mid-command (133;C with no
+                // 133;D) will never end that command, so clear the running flag.
+                if (s.State() >= TerminalConnection::ConnectionState::Closed)
+                {
+                    _connectionEnded.store(true, std::memory_order_relaxed);
+                    {
+                        const auto lock = _terminal->LockForWriting();
+                        _terminal->ProgramStatusDropLive("connection-closed");
+                        _terminal->ShellCommandEnded("connection-closed");
+                    }
+                    _raiseProgramStatusChangedIfPending();
+                    _raiseShellCommandChangedIfPending();
+                }
                 ConnectionStateChanged.raise(*this, nullptr);
             });
 
@@ -351,8 +372,12 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
     void ControlCore::HardResetWithoutErase()
     {
-        const auto lock = _terminal->LockForWriting();
-        _terminal->HardResetWithoutErase();
+        {
+            const auto lock = _terminal->LockForWriting();
+            _terminal->HardResetWithoutErase();
+        }
+        _raiseProgramStatusChangedIfPending(); // axan #29: the reset clears OSC 7501 records
+        _raiseShellCommandChangedIfPending(); // axan #30: and the shell-running flag
     }
 
     bool ControlCore::Initialize(const float actualWidth,
@@ -507,6 +532,9 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         }
         else
         {
+            // axan #30: user input (keys, chars, paste, mouse reports). Focus reports and
+            // parser replies go straight to _sendInputToConnection and are not stamped.
+            _lastInputTicks.store(winrt::clock::now().time_since_epoch().count(), std::memory_order_relaxed);
             _sendInputToConnection(wstr);
         }
     }
@@ -1228,6 +1256,10 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         if (_connection)
         {
+            // axan #30: arm the resize-echo window before the resize goes out, so the
+            // repaint it provokes can't land ahead of the stamp.
+            _resizeSentTicks.store(winrt::clock::now().time_since_epoch().count(), std::memory_order_relaxed);
+            _resizeEchoLogged.store(false, std::memory_order_relaxed);
             _connection.Resize(vp.Height(), vp.Width());
         }
 
@@ -2218,9 +2250,38 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     {
         try
         {
+            // axan #30: stamp output as session activity, except the repaint a resize
+            // provokes. ConPTY's viewport redraw and an app's own redraw on the size
+            // change both arrive here as ordinary output, with nothing in the stream
+            // or the Terminal that marks them, so the only available signal is timing:
+            // output within _resizeEchoWindow of our last Resize is not activity.
+            // Tradeoff: genuine output in that window is not stamped either. A busy
+            // program keeps writing past the window and gets stamped then; only a
+            // program whose last chunk lands inside the window is under-counted, and
+            // only for idle-dimming purposes.
+            const auto nowTicks = winrt::clock::now().time_since_epoch().count();
+            const auto sinceResize = nowTicks - _resizeSentTicks.load(std::memory_order_relaxed);
+            if (sinceResize >= 0 && sinceResize < _resizeEchoWindow.count())
+            {
+                if (!_resizeEchoLogged.exchange(true, std::memory_order_relaxed))
+                {
+                    Axan::Log::Debug("SessionState", "output not stamped as activity: resize echo", { { "msSinceResize", std::to_string(sinceResize / 10'000) } });
+                }
+            }
+            else
+            {
+                _lastOutputTicks.store(nowTicks, std::memory_order_relaxed);
+            }
             {
                 const auto lock = _terminal->LockForWriting();
                 _terminal->Write(hstr);
+                // axan #29: once the connection has ended, late output must not bring
+                // working/blocked records back. Re-apply the drop after every chunk.
+                if (_connectionEnded.load(std::memory_order_relaxed))
+                {
+                    _terminal->ProgramStatusDropLive("output-after-close");
+                    _terminal->ShellCommandEnded("output-after-close");
+                }
             }
 
             if (!_pendingResponses.empty())
@@ -2228,6 +2289,9 @@ namespace winrt::Microsoft::Terminal::Control::implementation
                 _sendInputToConnection(_pendingResponses);
                 _pendingResponses.clear();
             }
+
+            _raiseProgramStatusChangedIfPending(); // axan #29: outside the lock
+            _raiseShellCommandChangedIfPending(); // axan #30
 
             // Start the throttled update of where our hyperlinks are.
             const auto shared = _shared.lock_shared();
@@ -2640,6 +2704,81 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         }
 
         return winrt::single_threaded_vector(std::move(v));
+    }
+
+    // axan #29: snapshot of the OSC 7501 records under the read lock. A copy: the
+    // caller may hold it as long as it likes; subscribe to ProgramStatusChanged for
+    // updates. Safe from any thread.
+    Windows::Foundation::Collections::IVector<Control::ProgramStatusRecord> ControlCore::ProgramStatusRecords() const
+    {
+        std::vector<Control::ProgramStatusRecord> v;
+        {
+            const auto lock = _terminal->LockForReading();
+            const auto records = _terminal->GetProgramStatusRecords();
+            v.reserve(records.size());
+            for (const auto& r : records)
+            {
+                v.emplace_back(Control::ProgramStatusRecord{
+                    winrt::hstring{ r.id },
+                    static_cast<Control::ProgramStatusState>(r.state),
+                    winrt::hstring{ r.app },
+                    winrt::hstring{ r.effectiveApp },
+                    static_cast<Control::ProgramStatusKind>(r.kind),
+                    r.progress ? static_cast<int32_t>(*r.progress) : -1,
+                    winrt::hstring{ r.title },
+                    winrt::hstring{ r.msg },
+                    r.revision,
+                });
+            }
+        }
+        return winrt::single_threaded_vector(std::move(v));
+    }
+
+    bool ControlCore::ProgramStatusEnabled() const
+    {
+        const auto lock = _terminal->LockForReading();
+        return _terminal->IsProgramStatusEnabled();
+    }
+
+    void ControlCore::ProgramStatusEnabled(bool enabled)
+    {
+        {
+            const auto lock = _terminal->LockForWriting();
+            _terminal->SetProgramStatusEnabled(enabled);
+        }
+        _raiseProgramStatusChangedIfPending();
+    }
+
+    bool ControlCore::ShellCommandRunning() const
+    {
+        const auto lock = _terminal->LockForReading();
+        return _terminal->IsShellCommandRunning();
+    }
+
+    Windows::Foundation::DateTime ControlCore::LastInputTime() const noexcept
+    {
+        return winrt::clock::time_point{ winrt::clock::duration{ _lastInputTicks.load(std::memory_order_relaxed) } };
+    }
+
+    Windows::Foundation::DateTime ControlCore::LastOutputTime() const noexcept
+    {
+        return winrt::clock::time_point{ winrt::clock::duration{ _lastOutputTicks.load(std::memory_order_relaxed) } };
+    }
+
+    void ControlCore::_raiseProgramStatusChangedIfPending()
+    {
+        if (_programStatusChangedPending.exchange(false, std::memory_order_relaxed))
+        {
+            ProgramStatusChanged.raise(*this, nullptr);
+        }
+    }
+
+    void ControlCore::_raiseShellCommandChangedIfPending()
+    {
+        if (_shellCommandChangedPending.exchange(false, std::memory_order_relaxed))
+        {
+            ShellCommandChanged.raise(*this, nullptr);
+        }
     }
 
     void ControlCore::AddMark(const Control::ScrollMark& mark)

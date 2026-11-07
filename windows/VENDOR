@@ -35,4 +35,9 @@ Updating the pin (security only):
      whole Stable line is advanced deliberately (a maintainer decision, not routine).
 
 Cherry-picked security fixes since the pin:
-  (none yet)
+  2026-09-17  microsoft/terminal#20409 "drcs: reject attempts to write a glyph that is too tall"
+              main dd494ac79a82a04e1e7252a91c8939a3c3039908, release-1.24 5a830b2bf (shipped in v1.24.11911.0)
+              Fixes an out-of-bounds write in DECDLD soft-font (DRCS) sixel parsing reachable from
+              any program writing to the terminal. Believed to be CVE-2026-59117 (MSRC, 2026-07-16;
+              MSRC does not publish the fixing commit). Files: src/terminal/adapter/FontBuffer.cpp,
+              src/terminal/adapter/adaptDispatch.cpp.

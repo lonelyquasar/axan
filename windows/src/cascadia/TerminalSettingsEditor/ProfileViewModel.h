@@ -51,7 +51,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     struct LaunchEntryViewModel : LaunchEntryViewModelT<LaunchEntryViewModel>, ViewModelHelper<LaunchEntryViewModel>
     {
     public:
-        LaunchEntryViewModel(hstring id, hstring parentId, hstring name, hstring directory, hstring command, hstring icon, hstring color, hstring colorTarget);
+        // axan #19: Id only (it's get-only); every other field is set by
+        // StartupSessionsViewModel::_rowFromModel, the sole construction site.
+        explicit LaunchEntryViewModel(hstring id);
 
         hstring Id() const { return _Id; }
 
@@ -113,6 +115,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // The color's target ("icon"/"text"/"both"/""), #422; the color itself is the
         // custom-setter property above.
         VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, ColorTarget);
+        // axan #33 (separators only): the labelled section starts collapsed.
+        VIEW_MODEL_OBSERVABLE_PROPERTY(bool, Collapsed, false);
+        // axan #34 (sessions only): the hoist override (AxanHoistRule.h canonical form).
+        VIEW_MODEL_OBSERVABLE_PROPERTY(hstring, Hoist);
 
     private:
         hstring _Id;

@@ -8,6 +8,8 @@
 #include "Interaction.h"
 #include "StartupSessions.h" // axan D19: global startup-sessions page
 #include "StartupSessionsViewModel.h"
+#include "Sidebar.h" // axan #38: Sessions > Sidebar
+#include "SidebarViewModel.h"
 #include "Compatibility.h"
 #include "Rendering.h"
 #include "RenderingViewModel.h"
@@ -49,6 +51,7 @@ static const std::wstring_view compatibilityTag{ L"Compatibility_Nav" };
 static const std::wstring_view actionsTag{ L"Actions_Nav" };
 static const std::wstring_view newTabMenuTag{ L"NewTabMenu_Nav" };
 static const std::wstring_view startupSessionsTag{ L"StartupSessions_Nav" }; // axan D19
+static const std::wstring_view sidebarTag{ L"Sidebar_Nav" }; // axan #38
 static const std::wstring_view extensionsTag{ L"Extensions_Nav" };
 static const std::wstring_view globalProfileTag{ L"GlobalProfile_Nav" };
 static const std::wstring_view addProfileTag{ L"AddProfile" };
@@ -480,6 +483,40 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             startupVM->LiveEntriesProvider(_liveStartupEntriesProvider);
             contentFrame().Navigate(xaml_typename<Editor::StartupSessions>(), *startupVM);
             const auto crumb = winrt::make<Breadcrumb>(box_value(clickedItemTag), RS_(L"Nav_StartupSessions/Content"), BreadcrumbSubPage::None);
+            _breadcrumbs.Append(crumb);
+        }
+        else if (clickedItemTag == sidebarTag)
+        {
+            // axan #38: the sidebar.* globals, moved here from Appearance.
+            // axan: the Icon fonts list also shows the families of icons in use outside the
+            // globals: the live sidebar's icon overrides (through the same provider "Save
+            // current as startup" uses) and every profile's icon.
+            auto sidebarVM = winrt::make_self<SidebarViewModel>(_settingsClone.GlobalSettings());
+            std::vector<winrt::hstring> icons;
+            if (_liveStartupEntriesProvider)
+            {
+                try
+                {
+                    if (const auto live = _liveStartupEntriesProvider())
+                    {
+                        for (const auto& entry : live)
+                        {
+                            icons.emplace_back(entry.Icon());
+                        }
+                    }
+                }
+                CATCH_LOG();
+            }
+            for (const auto& profile : _settingsClone.AllProfiles())
+            {
+                if (const auto icon = profile.Icon())
+                {
+                    icons.emplace_back(icon.Path());
+                }
+            }
+            sidebarVM->ExtraIconSources(std::move(icons));
+            contentFrame().Navigate(xaml_typename<Editor::Sidebar>(), *sidebarVM);
+            const auto crumb = winrt::make<Breadcrumb>(box_value(clickedItemTag), RS_(L"Nav_Sidebar/Content"), BreadcrumbSubPage::None);
             _breadcrumbs.Append(crumb);
         }
         else if (clickedItemTag == interactionTag)

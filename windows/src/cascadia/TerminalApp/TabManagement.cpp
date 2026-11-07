@@ -1013,7 +1013,7 @@ namespace winrt::TerminalApp::implementation
             // Raise an event that our title changed
             TitleChanged.raise(*this, nullptr);
 
-            _updateThemeColors();
+            _updateThemeColors("tab selected");
 
             auto tabImpl = _GetTabImpl(tab);
             if (tabImpl)
@@ -1023,6 +1023,9 @@ namespace winrt::TerminalApp::implementation
             }
 
             _adjustProcessPriorityThrottled->Run();
+
+            // axan #30: the user is now looking at this session -> its done/error is seen.
+            _AcknowledgeFocusedNode("tab selected");
         }
         CATCH_LOG();
     }

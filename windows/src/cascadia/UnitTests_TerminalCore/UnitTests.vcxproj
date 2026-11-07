@@ -26,6 +26,13 @@
     <ClCompile Include="TerminalBufferTests.cpp" />
     <ClCompile Include="ScrollTest.cpp" />
     <ClCompile Include="TilWinRtHelpersTests.cpp" />
+    <ClCompile Include="AxanSessionStateTest.cpp" />
+    <ClCompile Include="AxanLaunchEntryWireTest.cpp" />
+    <ClCompile Include="AxanHoistRuleTest.cpp" />
+    <ClCompile Include="AxanIdleEffectsTest.cpp" />
+    <ClCompile Include="AxanEntryTreeOpsTest.cpp" />
+    <ClCompile Include="AxanGlyphNamesTest.cpp" />
+    <ClCompile Include="AxanGlyphScaleTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\buffer\out\lib\bufferout.vcxproj">

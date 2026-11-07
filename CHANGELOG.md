@@ -2,6 +2,132 @@
 
 All notable changes to axan are documented here.
 
+## [Unreleased]
+
+### Session state in the sidebar
+
+- The terminal now implements the OSC 7501 Program Status Protocol: it answers
+  the `ESC ] 7501 ; ? ESC \` query and keeps per-pane records from programs
+  that report `idle`, `working`, `done`, `blocked` or `error` (such as Claude
+  Code). Windows only. (#29)
+- Sidebar rows show session state: a dot on the icon, a second line (`kind ·
+  age` or `message · age`; a long message is trimmed to the sidebar's width,
+  never the age), a lightning-bolt glyph while working, a play glyph
+  while a shell command runs (OSC 133), and a tooltip with the state and when
+  it began. A done or error report counts as unread until you open the tab.
+  Windows only. (#30, #32)
+- `sidebar.statusAfterSeen` (`keep` by default, or `clear`) sets whether an
+  opened tab keeps its last report as a muted line. A robot glyph at the right
+  edge marks rows where a status-reporting program is present and at rest, and
+  `sidebar.stateGlyphs` customizes the per-state glyphs (including separate
+  ones for a blocked report waiting on permission, an answer or a login).
+  Windows only.
+- The right-edge slot also shows a small state word (`idle`, `working`,
+  `needs answer`, `needs permission`, ...; `sidebar.stateLabels`, default on),
+  hovering it explains the state in one sentence, and screen readers hear the
+  state as part of the row's name. Windows only.
+- An agent shows its session name as the row's muted second line whenever
+  nothing more urgent is there, including while it works without a message
+  (the terminal title Claude Code sets from `claude --name`;
+  `sidebar.showAgentName`, default on). Windows only.
+- Idle rows are de-emphasised after `sidebar.idleAfterMinutes` (default 15;
+  `0` turns it off); the focused row never is. `sidebar.idleEffects` picks how:
+  `dim`, `smaller` (the default pair), `gray` (a coloured session loses its
+  colour) and `collapse` (a session folds its child sessions away once they're
+  all idle, and reopens on activity), with a checkbox each on the Sidebar
+  settings page. Windows only. (#31)
+- The right-click menu on empty sidebar space has a Settings item. Windows only.
+- Optional "Needs you" group above the session tree
+  (`sidebar.needsYouGroup`, default off) listing sessions that are blocked,
+  errored or finished and unseen, longest-waiting first. Windows only. (#34)
+- The group's states are configurable: `sidebar.hoistStates` (default
+  `["blocked", "error", "done"]`; add `running` to watch long commands), and
+  each startup session can follow it, opt out (`"hoist": "never"`) or set its
+  own list (the Sidebar settings page for the global list; the session's
+  Hoisted group on the Startup sessions page, or the sidebar's node editor, for
+  one session). The heading reads "Hoisted" once non-attention states are
+  included. Windows only. (#34)
+- Separators with a label are now collapsible section headers; a collapsed
+  header shows how many sessions it hides and the most urgent state among
+  them. Windows only. (#33)
+- `tools/axan-status.sh` and `tools/axan-status.ps1` send OSC 7501 reports for
+  manual testing, with `--query` and `--demo` modes.
+
+### Settings
+
+- New "Sessions" group in Settings with the Startup sessions page and a new
+  Sidebar page. Every sidebar setting moves there from Appearance (sidebar
+  matches profile transparency, status after seen, state labels, agent name,
+  the hoisted group and its states, idle dimming, the state glyphs); the
+  `settings.json` keys are unchanged. `sidebar.needsYouGroup` gets its first
+  Settings toggle. Windows only. (#38)
+- The Startup sessions page is now a list and a detail panel. The list shows
+  each row's nesting, icon, colour and name, with separators as header rows;
+  the panel edits the selected row: Identity (the same name, icon and colour
+  editor as the sidebar's Edit node card, plus the icon as text), Launch
+  (profile, directory, command) and Hoisted group for a session, or a
+  separator's label, start collapsed, style, height and placement. A toolbar
+  under the list moves, outdents, indents, duplicates and deletes the selected
+  row; with the list focused, Alt+Up/Down, Alt+Left/Right, Ctrl+D and Delete do
+  the same. Drag a row to reorder it; its children move with it. Narrow windows
+  stack the panel under the list. Windows only. (#38)
+- The icon picker offers the whole Segoe Fluent Icons font (about 1,400
+  glyphs) instead of eleven, with search by name, the current icon and a Clear
+  button above the grid. It is the same picker in the Edit node card, the
+  Startup sessions panel and the Sidebar page's state glyphs. A picked icon is
+  stored by name (`"icon": "robot"`); glyph characters, emoji, image paths and
+  `builtin:NAME` keep working. Windows only. (#39)
+- The Sidebar page has a "Text and icons" group that sizes the session name
+  (`sidebar.labelFontSize`, default 14), the status line and state word
+  (`sidebar.stateLineFontSize`, 11), the session icon (`sidebar.iconSize`, 16)
+  and the right-edge status glyph (`sidebar.stateGlyphSize`, 12). Windows only.
+- Egyptian hieroglyphs, runes and the other historic scripts used as icons are
+  drawn larger, so they match emoji and Segoe Fluent glyphs instead of looking
+  undersized. Windows only.
+- The Sidebar page's "Text and icons" group lists the fonts the sidebar's icons
+  are drawn from under "Icon fonts", each with a size factor (0.5–3) and a
+  Reset button. The list covers the built-in fonts, the startup entries', live
+  sessions' and profiles' icons, and any font already set; it writes
+  `sidebar.iconFontScale`, e.g. `{ "Segoe UI Historic": 1.5 }`. Segoe UI
+  Historic defaults to 1.35, every other font to 1.0. Windows only.
+- A session's right-click menu has a "Preview state" submenu that shows the row
+  as if it were in any state (needs answer, done, error, ...), for checking how
+  sizes and glyphs look. It is purely visual, marked "Preview" in the tooltip,
+  and ends on "Clear preview" or the session's next real report. Windows only.
+- "Open profile in Settings" is gone from the titlebar app menu, which already
+  has Settings, and from a session's right-click menu, where a plain Settings
+  item replaces it. It opened Settings without going to the session's profile.
+  Windows only.
+- An icon can be written as a code point (`"U+131A3"`, `"0x131A3"` or
+  `"131A3"`; the bare form needs a digit 0-9, so write `"U+FACE"` for an
+  all-letter one) in `settings.json` or the startup TOML, and renders as that
+  character. Windows only. (#44)
+- Importing a startup TOML resolves a row's `profile-name` on its own (exact,
+  then case-insensitive), so a cross-machine file needn't know profile GUIDs.
+  Windows only. (#44)
+
+### Security
+
+- Cherry-picked upstream Windows Terminal #20409: DRCS soft-font sixel
+  writes are bounds-checked (CVE-2026-59117). Windows only. (#25)
+
+### Fixes
+
+- Separators are drop targets during a drag, and the flat list is verified
+  after drops. Windows only. (#28)
+- Settings reloads coalesce theme refreshes and skip unchanged node brushes,
+  and the Startup sessions page no longer does quadratic work on long lists.
+  Windows only. (#26, #19)
+- Duplicate on the Startup sessions page places the copy after the source's
+  children instead of between the source and its children. Windows only. (#38)
+- Copying from a text flyout no longer crashes the terminal when the clipboard
+  is busy. Windows only.
+- The bash shell wrapper no longer reports an idle WSL prompt as a running
+  command. Windows only.
+- Startup TOML import logs a warning for each unknown key or wrongly typed
+  value, naming the row and key, and an unknown glyph name in an icon is logged
+  once instead of silently drawing the placeholder. Windows only. (#44)
+
 ## [0.1.2] — 2026-09-01
 
 ### Session tree & menus

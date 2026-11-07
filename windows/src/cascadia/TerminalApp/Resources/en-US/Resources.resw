@@ -1010,11 +1010,74 @@
   <data name="AxanMenuDuplicateSession" xml:space="preserve">
     <value>Duplicate session</value>
   </data>
-  <data name="AxanMenuOpenProfileSettings" xml:space="preserve">
-    <value>Open profile in Settings</value>
+  <data name="AxanMenuKeepStatusAfterOpening" xml:space="preserve">
+    <value>Keep last status after opening</value>
+    <comment>axan: Sidebar context-menu toggle: once a finished session has been opened, keep its last status message on the row (dimmed) instead of clearing it.</comment>
+  </data>
+  <data name="AxanMenuShowNeedsYouGroup" xml:space="preserve">
+    <value>Show "Needs you" group</value>
+    <comment>axan #34: Sidebar context-menu toggle: list sessions that need attention (needs input, error, finished unseen) in a group above the session tree.</comment>
+  </data>
+  <data name="AxanNeedsYouHeader.Text" xml:space="preserve">
+    <value>Needs you</value>
+    <comment>axan #34: Heading of the sidebar group that lists sessions needing attention.</comment>
+  </data>
+  <data name="AxanHoistGroupNeedsYou" xml:space="preserve">
+    <value>Needs you</value>
+    <comment>axan #34: Heading of the sidebar group while it lists only sessions needing attention (the default).</comment>
+  </data>
+  <data name="AxanHoistGroupHoisted" xml:space="preserve">
+    <value>Hoisted</value>
+    <comment>axan #34: Heading of the sidebar group when the user also hoists non-attention states (for example running).</comment>
+  </data>
+  <data name="AxanMenuCollapseSection" xml:space="preserve">
+    <value>Collapse section</value>
+    <comment>axan #33: Sidebar context-menu item on a labelled separator (section header): hide the rows below it up to the next separator.</comment>
+  </data>
+  <data name="AxanMenuExpandSection" xml:space="preserve">
+    <value>Expand section</value>
+    <comment>axan #33: Sidebar context-menu item on a collapsed section header: show its rows again.</comment>
   </data>
   <data name="AxanMenuCloseSession" xml:space="preserve">
     <value>Close session</value>
+  </data>
+  <data name="AxanMenuPreviewState" xml:space="preserve">
+    <value>Preview state</value>
+    <comment>axan: a session row's context submenu that shows the row as if its session were in a given state, for debugging and for trying out the sidebar's sizes and glyphs. Purely visual.</comment>
+  </data>
+  <data name="AxanMenuPreviewClear" xml:space="preserve">
+    <value>Clear preview</value>
+    <comment>axan: the last item of the "Preview state" submenu: go back to the session's real state.</comment>
+  </data>
+  <data name="AxanPreviewStateIdle" xml:space="preserve">
+    <value>Idle (agent at rest)</value>
+  </data>
+  <data name="AxanPreviewStateWorking" xml:space="preserve">
+    <value>Working</value>
+  </data>
+  <data name="AxanPreviewStateRunning" xml:space="preserve">
+    <value>Running a command</value>
+  </data>
+  <data name="AxanPreviewStateNeedsPermission" xml:space="preserve">
+    <value>Needs permission</value>
+  </data>
+  <data name="AxanPreviewStateNeedsAnswer" xml:space="preserve">
+    <value>Needs answer</value>
+  </data>
+  <data name="AxanPreviewStateNeedsLogin" xml:space="preserve">
+    <value>Needs login</value>
+  </data>
+  <data name="AxanPreviewStateNeedsYou" xml:space="preserve">
+    <value>Needs you</value>
+  </data>
+  <data name="AxanPreviewStateDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="AxanPreviewStateError" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="AxanPreviewStateDoneSeen" xml:space="preserve">
+    <value>Done, already seen</value>
   </data>
   <data name="AxanMenuToggleSidebar" xml:space="preserve">
     <value>Toggle sidebar</value>
@@ -1037,5 +1100,77 @@
   </data>
   <data name="AboutDialog_WindowsTerminalLinksLabel.Text" xml:space="preserve">
     <value>Windows Terminal links:</value>
+  </data>
+  <data name="AxanSlotWordIdle" xml:space="preserve">
+    <value>idle</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainIdle" xml:space="preserve">
+    <value>Idle: a status-reporting program is present and waiting at its prompt.</value>
+    <comment>axan: Tooltip explaining the "idle" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordWorking" xml:space="preserve">
+    <value>working</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainWorking" xml:space="preserve">
+    <value>Working: the agent is running a turn.</value>
+    <comment>axan: Tooltip explaining the "working" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordRunning" xml:space="preserve">
+    <value>running</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainRunning" xml:space="preserve">
+    <value>Running: a shell command is executing.</value>
+    <comment>axan: Tooltip explaining the "running" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordNeedsPermission" xml:space="preserve">
+    <value>needs permission</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainNeedsPermission" xml:space="preserve">
+    <value>Needs permission: a tool call is waiting for your approval.</value>
+    <comment>axan: Tooltip explaining the "needs permission" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordNeedsAnswer" xml:space="preserve">
+    <value>needs answer</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainNeedsAnswer" xml:space="preserve">
+    <value>Needs answer: the program (e.g. Claude Code) is waiting for you to pick an option.</value>
+    <comment>axan: Tooltip explaining the "needs answer" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordNeedsLogin" xml:space="preserve">
+    <value>needs login</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainNeedsLogin" xml:space="preserve">
+    <value>Needs login: the program is waiting for authentication.</value>
+    <comment>axan: Tooltip explaining the "needs login" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordNeedsYou" xml:space="preserve">
+    <value>needs you</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainNeedsYou" xml:space="preserve">
+    <value>Needs you: the program is waiting for your input.</value>
+    <comment>axan: Tooltip explaining the "needs you" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordDone" xml:space="preserve">
+    <value>done</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainDone" xml:space="preserve">
+    <value>Done: finished and not yet looked at.</value>
+    <comment>axan: Tooltip explaining the "done" state of a sidebar row.</comment>
+  </data>
+  <data name="AxanSlotWordError" xml:space="preserve">
+    <value>error</value>
+    <comment>axan: The small state word at the right edge of a sidebar row (sidebar.stateLabels). Keep it short.</comment>
+  </data>
+  <data name="AxanSlotExplainError" xml:space="preserve">
+    <value>Error: the program reported an error.</value>
+    <comment>axan: Tooltip explaining the "error" state of a sidebar row.</comment>
   </data>
 </root>

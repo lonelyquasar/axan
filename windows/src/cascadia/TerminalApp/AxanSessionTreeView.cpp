@@ -33,12 +33,20 @@
 #include <LibraryResources.h>
 
 #include "AxanLabelTemplate.h"
+#include "AxanSessionState.h" // axan #30
+#include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs
+#include <AxanSidebarSizes.h> // axan: sidebar row size ranges and defaults
 #include "SessionNodeViewModel.h"
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
+#include <AxanHoistRule.h> // axan #34: the hoisted group's match rule
+#include <AxanIdleEffects.h> // axan: sidebar.idleEffects
+#include <AxanCheckBoxWrap.h> // full-label columns for the node card's hoist checkboxes
+#include <AxanEntryIdentityEditor.h> // axan #38: the node editor's identity section, shared with Settings
 
 #include <shlobj.h>
 #include <array>
+#include <deque> // axan #30: stable string owners for the session-state inputs
 #include <map> // axan #3: startup-separator insert counters
 #include <unordered_set> // axan #14: captured-entry id dedup
 
@@ -147,6 +155,33 @@ namespace winrt::TerminalApp::implementation
             }
         }
         return nullptr;
+    }
+
+    // axan #30: the terminal title only reaches session state as the agent name, and only
+    // after CleanTerminalTitle strips the leading spinner/status mark. Claude Code rewrites
+    // its title several times a second just to animate that spinner, so the Title handler
+    // re-derives the node only when the cleaned titles of the tab's panes actually change.
+    // Returns true (and records the new value) on a change.
+    static bool _cleanedTitlesChanged(const MUX::Controls::TreeViewNode& node)
+    {
+        const auto vm = _nodeVM(node);
+        const auto tab = _nodeTab(node);
+        if (!vm || !tab)
+        {
+            return false;
+        }
+        std::wstring key;
+        for (const auto& control : winrt::get_self<winrt::TerminalApp::implementation::Tab>(tab)->AxanTerminalControls())
+        {
+            key += Axan::SessionState::CleanTerminalTitle(control.Title());
+            key += L'';
+        }
+        if (key == vm->LastCleanedTitles)
+        {
+            return false;
+        }
+        vm->LastCleanedTitles = std::move(key);
+        return true;
     }
 
     // axan #3: is this node a separator row (a VM with IsSeparator, no session behind it)?
@@ -383,6 +418,11 @@ namespace winrt::TerminalApp::implementation
     // sidebar's item style used to floor every row at (now carried by the template's session
     // Grid instead, so a separator can be shorter). A separator's pixel height is its
     // row-unit Height times this. Falls back to WinUI 2.8's 32 if the lookup fails.
+    // axan #32/#31: rows are no longer all one height (a state second line makes a row
+    // taller; an idle-de-emphasised row is shorter), so the separator "row unit" is pinned
+    // to this value - one full-size, single-line session row - rather than to whatever the
+    // neighbouring rows currently measure. A separator therefore keeps its height while the
+    // rows around it change state.
     double TerminalPage::_SessionRowHeightPx()
     {
         constexpr double kFallbackRowHeight = 32.0;
@@ -408,15 +448,27 @@ namespace winrt::TerminalApp::implementation
     // normalized style/height/placement, and no TabRef — so every Tab-resolving path sees
     // null and skips it. EntryId is kept so "Save current as startup" round-trips the row. The
     // node isn't parented here; the caller inserts it at its resolved position.
-    MUX::Controls::TreeViewNode TerminalPage::_CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement)
+    MUX::Controls::TreeViewNode TerminalPage::_CreateSeparatorNode(const winrt::hstring& entryId, const winrt::hstring& style, double height, const winrt::hstring& placement, const winrt::hstring& label, bool collapsed)
     {
         auto vm = winrt::make<winrt::TerminalApp::implementation::SessionNodeViewModel>();
         const auto vmImpl = winrt::get_self<winrt::TerminalApp::implementation::SessionNodeViewModel>(vm);
         vmImpl->EntryId = entryId;
         vmImpl->ConfigureSeparator(style, height, placement, _SessionRowHeightPx());
+        // axan #33: a label makes it a collapsible section header.
+        vmImpl->SetSeparatorLabel(label);
+        vmImpl->SetCollapsed(collapsed);
 
         MUX::Controls::TreeViewNode node;
         node.Content(vm);
+        vmImpl->OnSectionBadgeActivated = [weakThis{ get_weak() }, weakNode = winrt::make_weak(node)]() {
+            if (const auto page{ weakThis.get() })
+            {
+                if (const auto n = weakNode.get())
+                {
+                    page->_ActivateSectionBadge(n);
+                }
+            }
+        };
         Axan::Log::Debug("TerminalPage", "created separator node", { { "entryId", winrt::to_string(entryId) }, { "style", winrt::to_string(vmImpl->SeparatorStyle()) }, { "height", std::to_string(vmImpl->SeparatorHeight()) }, { "placement", winrt::to_string(vmImpl->Placement()) }, { "pixelHeight", std::to_string(vmImpl->SeparatorPixelHeight()) } });
         return node;
     }
@@ -497,7 +549,7 @@ namespace winrt::TerminalApp::implementation
                 ++appended;
             }
 
-            const auto node = _CreateSeparatorNode(sep.id, sep.style, sep.height, sep.placement);
+            const auto node = _CreateSeparatorNode(sep.id, sep.style, sep.height, sep.placement, sep.label, sep.collapsed);
             container.InsertAt(insertAt, node);
             if (parentNode)
             {
@@ -544,6 +596,7 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         std::set<winrt::hstring> persisted;
+        std::map<winrt::hstring, winrt::hstring> labels; // axan #33: live label edits
         if (const auto entries = _settings.GlobalSettings().StartupSessions())
         {
             for (const auto& entry : entries)
@@ -551,9 +604,21 @@ namespace winrt::TerminalApp::implementation
                 if (entry.IsSeparator() && !entry.Id().empty())
                 {
                     persisted.insert(entry.Id());
+                    labels[entry.Id()] = entry.Name();
                 }
             }
         }
+        // axan #33: a header label edited on the Startup sessions page applies live (the
+        // collapsed flag is the startup state, so it is left to the next launch).
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            if (const auto vm = _nodeVM(node); vm && vm->IsSeparator() && !vm->EntryId.empty())
+            {
+                if (const auto it = labels.find(vm->EntryId); it != labels.end())
+                {
+                    vm->SetSeparatorLabel(it->second);
+                }
+            }
+        });
         std::vector<MUX::Controls::TreeViewNode> stale;
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             const auto vm = _nodeVM(node);
@@ -645,6 +710,8 @@ namespace winrt::TerminalApp::implementation
         {
             Axan::Log::Debug("TerminalPage", "sank bottom-placed separators", { { "moved", std::to_string(moved) } });
         }
+        // axan #33: every tree mutation funnels through here, so re-derive the sections.
+        _RecomputeSections();
     }
 
     // axan M6: build a sidebar node for `tab` whose Content is a SessionNodeViewModel (the
@@ -660,6 +727,7 @@ namespace winrt::TerminalApp::implementation
             vmImpl->TabRef = winrt::make_weak(tab.as<winrt::Windows::Foundation::IInspectable>());
             vmImpl->LabelTemplate = labelTemplate;
             vmImpl->EntryId = entryId; // #422: remember the source entry so a Save can persist back to it
+            vmImpl->HoistOverride = _HoistOverrideForEntry(entryId); // axan #34
             // axan M7/M13: seed the per-node icon override + recolor (persisted from a prior
             // run, or empty for a fresh tab), then resolve and store the icon path
             // (override -> profile -> auto-assigned glyph). The icon only changes when the
@@ -692,10 +760,19 @@ namespace winrt::TerminalApp::implementation
         // when the node is pruned (_RemoveNodeSelfHealing) — so re-minting a node for a
         // still-live tab can never stack duplicate handlers on the tab/control.
         {
-            const auto titleToken = tab.PropertyChanged([recompute](auto&&, const WUX::Data::PropertyChangedEventArgs& e) {
+            const auto titleToken = tab.PropertyChanged([recompute, weakThis{ get_weak() }, weakNode](auto&&, const WUX::Data::PropertyChangedEventArgs& e) {
                 if (e.PropertyName() == L"Title")
                 {
                     recompute();
+                    // axan: sidebar.showAgentName reads the terminal title; re-derive only
+                    // when its cleaned form changed (spinner frames don't count).
+                    if (const auto page{ weakThis.get() })
+                    {
+                        if (const auto n = weakNode.get(); n && _cleanedTitlesChanged(n))
+                        {
+                            page->_RecomputeNodeState(n);
+                        }
+                    }
                 }
             });
             vmImpl->RevokeTitleSubscription = [weakTab, titleToken]() {
@@ -742,9 +819,19 @@ namespace winrt::TerminalApp::implementation
 
         {
             const auto apToken = winrt::get_self<Tab>(tab)->ActivePaneChanged(
-                [hookActiveControlOutputIdle, recompute](auto&&, auto&&) {
+                [hookActiveControlOutputIdle, recompute, weakThis{ get_weak() }, weakNode, weakTab](auto&&, auto&&) {
                     hookActiveControlOutputIdle();
                     recompute(); // the newly-active pane's title/cwd are the label's inputs now
+                    // axan #30: a pane of the focused tab gained focus -> its done/error is seen.
+                    if (const auto page{ weakThis.get() })
+                    {
+                        const auto n = weakNode.get();
+                        const auto t = weakTab.get();
+                        if (n && t && t == page->_GetFocusedTab())
+                        {
+                            page->_AcknowledgeNodeState(n, "pane focused");
+                        }
+                    }
                 });
             vmImpl->RevokeActivePaneSubscription = [weakTab, apToken]() {
                 if (const auto t{ weakTab.get() })
@@ -775,6 +862,30 @@ namespace winrt::TerminalApp::implementation
                 }
             }
         });
+
+        // axan #30: session state. The tab raises AxanSessionStateChanged on the UI thread for
+        // every state input (7501 records, 133 command lifecycle, bell, connection, panes
+        // added/removed), so the node recomputes from all of its panes each time.
+        {
+            const auto stateToken = winrt::get_self<Tab>(tab)->AxanSessionStateChanged([weakThis{ get_weak() }, weakNode]() {
+                if (const auto page{ weakThis.get() })
+                {
+                    if (const auto n = weakNode.get())
+                    {
+                        page->_RecomputeNodeState(n);
+                    }
+                }
+            });
+            vmImpl->RevokeSessionStateSubscription = [weakTab, stateToken]() {
+                if (const auto t{ weakTab.get() })
+                {
+                    winrt::get_self<Tab>(t)->AxanSessionStateChanged(stateToken);
+                }
+            };
+        }
+        vmImpl->SetRowHeightPx(_SessionRowHeightPx()); // axan #31: the full-size row floor
+        _RecomputeNodeState(node);
+        _EnsureSessionStateClock();
 
         // Kick the first templated recompute (async; replaces the placeholder set above).
         recompute();
@@ -961,17 +1072,24 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         const bool isDark = _SidebarIsDarkTheme(themeOverride);
-        Axan::Log::Debug("TerminalPage", "refresh node theme brushes", { { "isDark", isDark ? "1" : "0" }, { "themeOverride", std::to_string(static_cast<int32_t>(themeOverride)) } });
         const auto col = isDark ? kDefaultLabelColorDark : kDefaultLabelColorLight;
         const WUX::Media::SolidColorBrush brush{ col };
         // Pass isDark so a node's stored color NAME re-resolves to the right palette set; this
         // path runs on every theme switch (_updateThemeColors), so colors retrack the theme.
-        _forEachSessionNode(SessionTree().RootNodes(), [&brush, isDark](const MUX::Controls::TreeViewNode& node) {
+        // axan #26: nodes whose color and palette set are unchanged skip the repaint.
+        size_t nodes = 0;
+        size_t repainted = 0;
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             if (const auto vm = _nodeVM(node))
             {
-                vm->SetDefaultTextBrush(brush, isDark);
+                ++nodes;
+                if (vm->SetDefaultTextBrush(brush, isDark))
+                {
+                    ++repainted;
+                }
             }
         });
+        Axan::Log::Debug("TerminalPage", "refresh node theme brushes", { { "isDark", isDark ? "1" : "0" }, { "themeOverride", std::to_string(static_cast<int32_t>(themeOverride)) }, { "nodes", std::to_string(nodes) }, { "repainted", std::to_string(repainted) } });
     }
 
     // axan M2/M6: keep the sidebar tree in sync with the session list (_tabs). Since drag
@@ -1056,6 +1174,11 @@ namespace winrt::TerminalApp::implementation
         }
         if (_nodeIsSeparator(node))
         {
+            // axan #33: clicking a section header toggles its section.
+            if (const auto vm = _nodeVM(node); vm && vm->HasSectionHeader())
+            {
+                _SetSectionCollapsed(node, !vm->IsCollapsed(), "header click");
+            }
             // axan #3: separators activate nothing (and _SelectTabForNodeVM would no-op anyway) —
             // but the click that got here just made the separator the tree's selection.
             _ResetSeparatorSelection("separator invoked");
@@ -1074,14 +1197,15 @@ namespace winrt::TerminalApp::implementation
     // Drops between siblings at the root leave Parent() as the tree's hidden root node
     // (Depth -1); nothing to expand there.
     // axan #3: also the drag's epilogue for separators — the drag-active freeze on the
-    // Ctrl+Alt lock ends here, a session that somehow landed UNDER a separator (AllowDrop is
-    // off on separator containers, so this is a guard) is moved out to sit right after it,
+    // Ctrl+Alt lock ends here, a row dropped ONTO a separator (separators are drop targets
+    // during a drag, #28) is moved out to sit right after it at the separator's depth,
     // bottom-placed separators re-sink, and every realized container's lock state is
     // re-applied (the drop recycles containers).
     void TerminalPage::_OnSessionTreeDragItemsCompleted(const MUX::Controls::TreeView& /*sender*/,
                                                         const MUX::Controls::TreeViewDragItemsCompletedEventArgs& args)
     {
         _separatorDragActive = false;
+        std::vector<MUX::Controls::TreeViewNode> droppedNodes; // axan #33
         const auto items = args.Items();
         if (items)
         {
@@ -1092,24 +1216,37 @@ namespace winrt::TerminalApp::implementation
                 {
                     continue;
                 }
+                droppedNodes.push_back(node); // axan #33
                 auto parent = node.Parent();
-                if (parent && parent.Depth() >= 0 && _nodeIsSeparator(parent) && !_nodeIsSeparator(node))
+                if (parent && parent.Depth() >= 0 && _nodeIsSeparator(parent))
                 {
-                    // Guard: a separator can't own sessions. Relocate the dropped session to
-                    // the separator's own scope, immediately after it.
+                    // axan #28: a separator can't own children, so dropping a row (session or
+                    // unlocked separator) ONTO a separator means "insert directly after it":
+                    // relocate the dropped node to the separator's own scope, right after it.
+                    // Separators are drop targets during a drag (see _ApplySeparatorContainerState)
+                    // precisely so the drop takes this node-level path.
+                    const auto separator = parent;
                     Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode> sepContainer{ nullptr };
                     uint32_t sepIndex = 0;
-                    if (_locateNodeContainer(SessionTree().RootNodes(), parent, sepContainer, sepIndex))
+                    if (_locateNodeContainer(SessionTree().RootNodes(), separator, sepContainer, sepIndex))
                     {
                         uint32_t childIndex = 0;
-                        if (parent.Children().IndexOf(node, childIndex))
+                        if (separator.Children().IndexOf(node, childIndex))
                         {
-                            parent.Children().RemoveAt(childIndex);
+                            separator.Children().RemoveAt(childIndex);
                         }
                         sepContainer.InsertAt(std::min(sepIndex + 1, sepContainer.Size()), node);
-                        Axan::Log::Warn("TerminalPage", "drag-drop: session dropped under a separator; moved it after the separator instead (#3)");
-                        parent = node.Parent();
+                        // The drop may have expanded the separator / shown its chevron; it's a
+                        // leaf again, so put both back.
+                        separator.IsExpanded(false);
+                        if (const auto sepItem = SessionTree().ContainerFromNode(separator).try_as<MUX::Controls::TreeViewItem>())
+                        {
+                            sepItem.GlyphOpacity(0.0);
+                        }
+                        Axan::Log::Info("TerminalPage", "drag-drop: dropped onto a separator; inserted after it at the same depth (#28)", { { "isSeparator", _nodeIsSeparator(node) ? "1" : "0" }, { "depth", std::to_string(node.Depth()) } });
+                        continue;
                     }
+                    Axan::Log::Warn("TerminalPage", "drag-drop: dropped onto a separator that isn't in the tree; leaving the node where it landed (#28)");
                 }
                 if (!parent || parent.Depth() < 0)
                 {
@@ -1124,9 +1261,94 @@ namespace winrt::TerminalApp::implementation
                 Axan::Log::Info("TerminalPage", "drag-drop reparent: expanded new parent", { { "wasExpanded", wasExpanded ? "1" : "0" }, { "childCount", std::to_string(parent.Children().Size()) }, { "isSeparator", _nodeIsSeparator(node) ? "1" : "0" } });
             }
         }
+        // axan #33: a row dropped into a collapsed section was put there on purpose; show it.
+        for (const auto& dropped : droppedNodes)
+        {
+            if (!_nodeIsSeparator(dropped))
+            {
+                _ExpandSectionsContaining(dropped, "dropped into section");
+            }
+        }
         _SinkBottomSeparators();
+        // axan #28: the drag is over; separators go back to their lock state (no drop target
+        // outside a drag) on the re-apply below.
+        _sessionTreeDragInFlight = false;
         _ApplySeparatorContainerStates();
         _UpdateSeparatorUnlockFromKeyboard("drag completed");
+        _VerifySessionTreeFlatList("drag completed");
+    }
+
+    // axan #28: the TreeView's inner TreeViewList keeps a flat vector of the visible nodes
+    // that is meant to mirror RootNodes (each node, then its children when expanded). A drop
+    // that WinUI handles as a list-level reorder instead of a node move can desync the two —
+    // the dragged node ends up in the flat list twice and a sibling vanishes from view while
+    // still present in RootNodes. Compare the two after every drop; on a mismatch rebuild the
+    // view from RootNodes (re-appending a node re-adds its expanded descendants).
+    void TerminalPage::_VerifySessionTreeFlatList(const char* reason)
+    {
+        const auto tree = SessionTree();
+        if (!tree || !_sessionTreeList)
+        {
+            return;
+        }
+        const auto countVisible = [](const auto& self, const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>& nodes) -> uint32_t {
+            uint32_t n = 0;
+            for (const auto& node : nodes)
+            {
+                ++n;
+                if (node.IsExpanded())
+                {
+                    n += self(self, node.Children());
+                }
+            }
+            return n;
+        };
+        const auto inspect = [&](uint32_t& modelCount, uint32_t& flatCount, uint32_t& duplicates) {
+            modelCount = countVisible(countVisible, tree.RootNodes());
+            const auto flat = _sessionTreeList.Items();
+            flatCount = flat ? flat.Size() : 0;
+            duplicates = 0;
+            std::unordered_set<void*> seen;
+            seen.reserve(flatCount);
+            for (uint32_t i = 0; i < flatCount; ++i)
+            {
+                const auto item = flat.GetAt(i);
+                void* const key = item ? winrt::get_abi(item) : nullptr;
+                if (!seen.insert(key).second)
+                {
+                    ++duplicates;
+                }
+            }
+        };
+        uint32_t modelCount = 0, flatCount = 0, duplicates = 0;
+        inspect(modelCount, flatCount, duplicates);
+        if (modelCount == flatCount && duplicates == 0)
+        {
+            Axan::Log::Debug("TerminalPage", "session tree flat list matches RootNodes", { { "reason", reason }, { "visible", std::to_string(modelCount) }, { "flat", std::to_string(flatCount) } });
+            return;
+        }
+        Axan::Log::Error("TerminalPage", "session tree flat list desynced from RootNodes; rebuilding the view (#28)", { { "reason", reason }, { "visible", std::to_string(modelCount) }, { "flat", std::to_string(flatCount) }, { "duplicates", std::to_string(duplicates) } });
+
+        std::vector<MUX::Controls::TreeViewNode> roots;
+        for (const auto& node : tree.RootNodes())
+        {
+            roots.push_back(node);
+        }
+        tree.RootNodes().Clear();
+        for (const auto& node : roots)
+        {
+            tree.RootNodes().Append(node);
+        }
+        _ApplySeparatorContainerStates();
+        if (const auto tab = _GetFocusedTab())
+        {
+            if (const auto node = _FindNodeForTab(tab))
+            {
+                tree.SelectedNode(node);
+            }
+        }
+        inspect(modelCount, flatCount, duplicates);
+        Axan::Log::Info("TerminalPage", "session tree view rebuilt from RootNodes", { { "visible", std::to_string(modelCount) }, { "flat", std::to_string(flatCount) }, { "duplicates", std::to_string(duplicates) } });
     }
 
     // ===================== axan #3: separator lock (Ctrl+Alt unlock) =====================
@@ -1207,24 +1429,42 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
-        _ApplySeparatorContainerState(container, _nodeIsSeparator(node));
+        const auto vm = _nodeVM(node); // axan #33: header + section-hidden state too
+        _ApplySeparatorContainerState(container, _nodeIsSeparator(node), vm && vm->HasSectionHeader(), vm && vm->IsSectionHidden());
     }
 
     // Push the lock state onto one container. A session container only has its flags
     // RESTORED (a recycled container may have last hosted a locked separator) — nothing a
     // session already has is disturbed.
-    void TerminalPage::_ApplySeparatorContainerState(const MUX::Controls::TreeViewItem& container, bool isSeparator)
+    void TerminalPage::_ApplySeparatorContainerState(const MUX::Controls::TreeViewItem& container, bool isSeparator, bool isSectionHeader, bool sectionHidden)
     {
         if (!container)
         {
             return;
         }
+        // axan #33: a row hidden by a collapsed section keeps its place in the tree (and in
+        // TreeViewList's flat list, so the #28 check is unaffected); only its container
+        // collapses to zero size.
+        const auto wantVisibility = sectionHidden ? Visibility::Collapsed : Visibility::Visible;
+        if (container.Visibility() != wantVisibility)
+        {
+            container.Visibility(wantVisibility);
+        }
         if (isSeparator)
         {
+            // axan #28: during a drag every separator is an enabled drop target, locked or not.
+            // A disabled / AllowDrop(false) container refuses the node-level drop and the drop
+            // falls through to TreeViewList's flat-list reorder, which desyncs from RootNodes
+            // (duplicated row, vanished separator). DragItemsCompleted turns a drop onto a
+            // separator into "insert after it". Outside a drag the lock is unchanged.
             const bool unlocked = _separatorsUnlocked;
-            container.IsEnabled(unlocked);
+            const bool dragInFlight = _sessionTreeDragInFlight;
+            // axan #33: a section header stays enabled so a click can toggle it (ItemInvoked)
+            // and its badge button works; it still can't be dragged unless unlocked, and it
+            // stays out of the tab order like every separator.
+            container.IsEnabled(unlocked || dragInFlight || isSectionHeader);
             container.IsTabStop(false);
-            container.AllowDrop(false);
+            container.AllowDrop(dragInFlight);
             container.CanDrag(unlocked);
             return;
         }
@@ -1264,7 +1504,8 @@ namespace winrt::TerminalApp::implementation
             }
             if (const auto container = SessionTree().ContainerFromNode(node).try_as<MUX::Controls::TreeViewItem>())
             {
-                _ApplySeparatorContainerState(container, isSeparator);
+                const auto vm = _nodeVM(node);
+                _ApplySeparatorContainerState(container, isSeparator, vm && vm->HasSectionHeader(), vm && vm->IsSectionHidden());
             }
         });
         if (separators > 0)
@@ -1375,7 +1616,11 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         _separatorDragActive = true;
+        _sessionTreeDragInFlight = true;
         Axan::Log::Debug("TerminalPage", "session tree drag starting", { { "draggingSeparator", draggingSeparator ? "1" : "0" }, { "unlocked", _separatorsUnlocked ? "1" : "0" } });
+        // axan #28: make the realized separator rows drop targets for this drag (rows realized
+        // later pick it up from ContainerContentChanging).
+        _ApplySeparatorContainerStates();
     }
 
     // ===================== axan M13: session-node context menu =====================
@@ -1419,6 +1664,13 @@ namespace winrt::TerminalApp::implementation
             // "create a session here" surface — offer the New session split row.
             Axan::Log::Debug("TerminalPage", "sidebar right-tap: no node under pointer; showing background menu");
             _ShowSidebarBackgroundContextMenu(args.GetPosition(SessionTree()));
+            args.Handled(true);
+            return;
+        }
+        if (const auto vm = _nodeVM(node); vm && vm->HasSectionHeader())
+        {
+            // axan #33: a section header offers Collapse/Expand ahead of the background items.
+            _ShowSectionHeaderMenu(node, args.GetPosition(SessionTree()));
             args.Handled(true);
             return;
         }
@@ -1539,16 +1791,17 @@ namespace winrt::TerminalApp::implementation
             flyout.Items().Append(mi);
         }
         flyout.Items().Append(MenuFlyoutSeparator{});
-        {
-            auto mi = makeItem(RS_(L"AxanMenuOpenProfileSettings"), L"");
-            mi.Click([node, weakThis{ get_weak() }](auto&&, auto&&) { if (auto p{ weakThis.get() }) p->_OpenNodeProfileSettings(node); });
-            flyout.Items().Append(mi);
-        }
+        // axan: plain Settings (the profile is WT-owned and SettingsTarget cannot deep-link
+        // to it), the same item as the empty-area menu.
+        flyout.Items().Append(_MakeSettingsMenuItem());
         {
             auto mi = makeItem(RS_(L"AxanMenuCloseSession"), L"");
             mi.Click([node, weakThis{ get_weak() }](auto&&, auto&&) { if (auto p{ weakThis.get() }) p->_CloseNodeSession(node); });
             flyout.Items().Append(mi);
         }
+        // axan: debugging / preview aid, last so it stays out of the way.
+        flyout.Items().Append(MenuFlyoutSeparator{});
+        _AppendStatePreviewSubMenu(flyout, node);
 
         _sessionNodeMenu = flyout;
         // axan #3: a Ctrl/Alt release while the menu has focus never reaches Root()'s key
@@ -1570,6 +1823,28 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Debug("TerminalPage", "showed session-node context menu");
     }
 
+    // axan: the sidebar menus' Settings item, the same entry point as the titlebar app menu's
+    // Settings item (_SettingsButtonOnClick honours Alt/Shift the same way there), with its
+    // key binding shown. Used by the empty-area menu and the session node menu.
+    MenuFlyoutItem TerminalPage::_MakeSettingsMenuItem()
+    {
+        MenuFlyoutItem settingsItem{};
+        settingsItem.Text(RS_(L"SettingsMenuItem"));
+        FontIcon fi{};
+        fi.FontFamily(WUX::Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" });
+        fi.Glyph(winrt::hstring{ L"\xE713" });
+        settingsItem.Icon(fi);
+        settingsItem.Click({ this, &TerminalPage::_SettingsButtonOnClick });
+        if (_settings)
+        {
+            if (const auto keyChord{ _settings.ActionMap().GetKeyBindingForAction(L"Terminal.OpenSettingsUI") })
+            {
+                _SetAcceleratorForMenuItem(settingsItem, keyChord);
+            }
+        }
+        return settingsItem;
+    }
+
     // axan #12: the menu for a right-tap on empty sidebar space (below the last row) —
     // no target node, so just the New session split row, anchored at the pointer.
     // Reuses _sessionNodeMenu's double-open guard: a gesture that raises both RightTapped
@@ -1582,6 +1857,12 @@ namespace winrt::TerminalApp::implementation
         }
         MenuFlyout flyout{};
         _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
+        _AppendNeedsYouGroupToggle(flyout); // axan #34
+
+        // axan: Settings at the bottom (see _MakeSettingsMenuItem).
+        flyout.Items().Append(MenuFlyoutSeparator{});
+        flyout.Items().Append(_MakeSettingsMenuItem());
+
         _sessionNodeMenu = flyout;
         flyout.Closed([weak = get_weak()](auto&&, auto&&) {
             if (auto p{ weak.get() })
@@ -1743,7 +2024,6 @@ namespace winrt::TerminalApp::implementation
         addSessionItem(RS_(L"AxanMenuAddChildSession"), L"", &TerminalPage::_AddChildSession);
         addSessionItem(RS_(L"AxanMenuDuplicateSession"), L"", &TerminalPage::_DuplicateNodeSession);
         flyout.Items().Append(MenuFlyoutSeparator{});
-        addSessionItem(RS_(L"AxanMenuOpenProfileSettings"), L"", &TerminalPage::_OpenNodeProfileSettings);
         addSessionItem(RS_(L"AxanMenuCloseSession"), L"", &TerminalPage::_CloseNodeSession);
 
         flyout.Items().Append(MenuFlyoutSeparator{});
@@ -1935,6 +2215,7 @@ namespace winrt::TerminalApp::implementation
                 e.Icon(vm->IconOverride);
                 e.Color(vm->IconColor());
                 e.ColorTarget(vm->ColorTarget);
+                e.Hoist(vm->HoistOverride); // axan #34
                 found = true;
             }
             updated.push_back(e);
@@ -1998,6 +2279,8 @@ namespace winrt::TerminalApp::implementation
                     entry.SeparatorStyle(vm->SeparatorStyle());
                     entry.Height(vm->SeparatorHeight());
                     entry.Placement(vm->Placement());
+                    entry.Name(vm->SeparatorLabel()); // axan #33: header label + live collapsed state
+                    entry.Collapsed(vm->IsCollapsed());
                     captured.push_back(entry);
                     vm->EntryId = id;
                     for (const auto& child : node.Children())
@@ -2043,6 +2326,7 @@ namespace winrt::TerminalApp::implementation
                 entry.Icon(vm->IconOverride);
                 entry.Color(vm->IconColor());
                 entry.ColorTarget(vm->ColorTarget);
+                entry.Hoist(vm->HoistOverride); // axan #34
                 captured.push_back(entry);
                 vm->EntryId = id;
                 for (const auto& child : node.Children())
@@ -2064,9 +2348,11 @@ namespace winrt::TerminalApp::implementation
     // The editor card is built programmatically (the XAML hosts only the NodeEditOverlay
     // scrim + empty NodeEditCard border). #436 split the original ~420-line builder into
     // the per-section helpers below; the file-statics need no page state, the members read
-    // and wire the _nodeEdit* fields.
+    // and wire the _nodeEdit* fields. #38 moved the identity sections (name + "?" help,
+    // icon grid + Browse, swatches, Apply color to) into the shared
+    // AxanEntryIdentityEditor.h, which the Startup sessions settings page hosts too.
 
-    // A bold section caption ("Icon", "Color").
+    // A bold section caption ("Hoisted group").
     static TextBlock _buildNodeEditSectionLabel(const wchar_t* text)
     {
         TextBlock t{};
@@ -2087,355 +2373,84 @@ namespace winrt::TerminalApp::implementation
         return title;
     }
 
-    // The "?" button whose flyout documents the label-template variables.
-    static Button _buildNodeEditHelpButton()
+    // axan #34: "Hoisted group": Default (follow sidebar.hoistStates) / Never / Custom, the
+    // Custom list as the same state checkboxes as Settings > Sidebar, shown inline only
+    // while Custom is chosen. Applied on Save, like the rest of the card.
+    StackPanel TerminalPage::_BuildNodeEditHoistSection()
     {
-        Button helpBtn{};
-        helpBtn.Content(winrt::box_value(winrt::hstring{ L"?" }));
-        helpBtn.Width(22);
-        helpBtn.Height(22);
-        helpBtn.Padding(WUX::Thickness{ 0, 0, 0, 0 });
-        // axan #429: "?" alone is a useless Narrator name.
-        Automation::AutomationProperties::SetName(helpBtn, L"Session name variables help");
-        {
-            const auto varRow = [](const wchar_t* code, const wchar_t* desc) {
-                StackPanel row{};
-                row.Orientation(Orientation::Horizontal);
-                row.Spacing(8);
-                TextBlock c{};
-                c.Text(code);
-                c.FontFamily(WUX::Media::FontFamily{ L"Cascadia Mono, Consolas, monospace" });
-                c.Width(92);
-                TextBlock d{};
-                d.Text(desc);
-                d.TextWrapping(WUX::TextWrapping::Wrap);
-                row.Children().Append(c);
-                row.Children().Append(d);
-                return row;
-            };
-            StackPanel vars{};
-            vars.Spacing(3);
-            vars.MaxWidth(330);
-            TextBlock head{};
-            head.Text(L"Session name variables — type any of these and axan substitutes the live value; mix with plain text.");
-            head.TextWrapping(WUX::TextWrapping::Wrap);
-            head.Margin(WUX::Thickness{ 0, 0, 0, 6 });
-            vars.Children().Append(head);
-            vars.Children().Append(varRow(L"$shell", L"Shell name — pwsh, cmd, bash…"));
-            vars.Children().Append(varRow(L"$dir", L"Current folder name only"));
-            vars.Children().Append(varRow(L"$cwd  $pwd", L"Full working-directory path"));
-            vars.Children().Append(varRow(L"$~", L"Home-relative working directory"));
-            vars.Children().Append(varRow(L"$branch", L"Active git branch, if any"));
-            vars.Children().Append(varRow(L"$repo", L"Git repository name"));
-            vars.Children().Append(varRow(L"$user", L"Logged-in user"));
-            vars.Children().Append(varRow(L"$host", L"Machine hostname"));
-            vars.Children().Append(varRow(L"$title", L"Terminal title (OSC 0/2)"));
-            vars.Children().Append(varRow(L"$cmd", L"Foreground command"));
-            vars.Children().Append(varRow(L"${file:path}", L"First line of the file at path"));
-            TextBlock eg{};
-            eg.Text(L"Example:  $dir — $shell  →  axan — pwsh");
-            eg.Margin(WUX::Thickness{ 0, 8, 0, 0 });
-            eg.FontFamily(WUX::Media::FontFamily{ L"Cascadia Mono, Consolas, monospace" });
-            vars.Children().Append(eg);
-            Flyout helpFlyout{};
-            helpFlyout.Content(vars);
-            helpBtn.Flyout(helpFlyout);
-        }
-        return helpBtn;
-    }
-
-    // The name section: the "Session name" caption with its "?" help popover, then the
-    // [icon preview | Session name field] row. Stores _nodeEditPreview / _nodeEditLabelBox.
-    // (Escape handling lives on the card content — #436 item 4 — not on the TextBox.)
-    StackPanel TerminalPage::_BuildNodeEditNameSection(const winrt::hstring& currentTemplate,
-                                                       const WUX::Media::SolidColorBrush& neutralBrush)
-    {
-        StackPanel nameLabelRow{};
-        nameLabelRow.Orientation(Orientation::Horizontal);
-        nameLabelRow.Spacing(6);
-        nameLabelRow.Margin(WUX::Thickness{ 0, 0, 0, 5 });
-        {
-            TextBlock t{};
-            t.Text(L"Session name");
-            t.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
-            t.VerticalAlignment(WUX::VerticalAlignment::Center);
-            nameLabelRow.Children().Append(t);
-        }
-        nameLabelRow.Children().Append(_buildNodeEditHelpButton());
-
-        // [icon preview | Session name field]
-        ContentPresenter preview{};
-        preview.HorizontalAlignment(WUX::HorizontalAlignment::Center);
-        preview.VerticalAlignment(WUX::VerticalAlignment::Center);
-        _nodeEditPreview = preview;
-        Border previewBox{};
-        previewBox.Width(40);
-        previewBox.Height(40);
-        previewBox.CornerRadius(WUX::CornerRadius{ 5, 5, 5, 5 });
-        previewBox.BorderThickness(WUX::Thickness{ 1, 1, 1, 1 });
-        previewBox.BorderBrush(neutralBrush);
-        previewBox.Child(preview);
-
-        TextBox labelBox{};
-        labelBox.Text(currentTemplate);
-        labelBox.PlaceholderText(L"$dir — $shell");
-        labelBox.AcceptsReturn(false);
-        labelBox.Height(40);
-        labelBox.VerticalContentAlignment(WUX::VerticalAlignment::Center);
-        _nodeEditLabelBox = labelBox;
-
-        Grid nameRow{};
-        {
-            ColumnDefinition c0{};
-            c0.Width(GridLengthHelper::FromValueAndType(0, GridUnitType::Auto));
-            ColumnDefinition c1{};
-            c1.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star));
-            nameRow.ColumnDefinitions().Append(c0);
-            nameRow.ColumnDefinitions().Append(c1);
-            nameRow.ColumnSpacing(8);
-            Grid::SetColumn(previewBox, 0);
-            Grid::SetColumn(labelBox, 1);
-            nameRow.Children().Append(previewBox);
-            nameRow.Children().Append(labelBox);
-        }
-
-        // Spacing(2) matches the assembled card's own child spacing, so wrapping the two
-        // rows in this section panel is layout-neutral.
+        using namespace Axan::HoistRule;
         StackPanel section{};
         section.Spacing(2);
-        section.Children().Append(nameLabelRow);
-        section.Children().Append(nameRow);
-        return section;
-    }
+        section.Children().Append(_buildNodeEditSectionLabel(L"Hoisted group"));
 
-    // The icon row: one pickable button per registry builtin, plus "Browse to icon file…".
-    Grid TerminalPage::_BuildNodeEditIconRow(const WUX::Media::SolidColorBrush& accentBrush,
-                                             const WUX::Media::SolidColorBrush& neutralBrush)
-    {
-        auto iconBtns = std::make_shared<std::vector<Button>>();
-        const auto selectIconButton = [iconBtns, accentBrush, neutralBrush](const Button& chosen) {
-            for (const auto& b : *iconBtns)
-            {
-                const bool sel = (b == chosen);
-                b.BorderBrush(sel ? accentBrush : neutralBrush);
-                b.BorderThickness(sel ? WUX::Thickness{ 2, 2, 2, 2 } : WUX::Thickness{ 1, 1, 1, 1 });
-            }
-        };
-        // axan #10: a horizontal StackPanel clipped everything past ~6 buttons at the card's
-        // width. Wrap into a fixed 6-per-row grid instead (the same shape as the startup
-        // page's picker), led by a "No icon" cell that clears the override back to the
-        // session's own resolved icon.
-        VariableSizedWrapGrid iconBtnRow{};
-        iconBtnRow.Orientation(Orientation::Horizontal);
-        iconBtnRow.MaximumRowsOrColumns(6);
-        iconBtnRow.ItemWidth(42);
-        iconBtnRow.ItemHeight(42);
-        // axan #436 item 1: the picker offers exactly AxanIconRegistry's builtins (all 11),
-        // so every pickable glyph round-trips to a portable `builtin:NAME` token on TOML
-        // export. (The old hardcoded 8-glyph row had five glyphs outside the registry, which
-        // exported as raw PUA chars that Linux renders as nothing.)
-        const auto addIconCell = [&](const winrt::hstring& glyph, const winrt::hstring& name, const winrt::hstring& storedValue) {
-            Button b{};
-            b.Width(36);
-            b.Height(36);
-            b.Padding(WUX::Thickness{ 0, 0, 0, 0 });
-            b.BorderThickness(WUX::Thickness{ 1, 1, 1, 1 });
-            b.BorderBrush(neutralBrush);
-            // axan #429/#436: the picker buttons are icon-only (a bare Segoe glyph reads as
-            // nothing or as a codepoint); the registry's portable name names them for
-            // Narrator (and a tooltip) — better than the old positional "Icon option N".
-            Automation::AutomationProperties::SetName(b, winrt::hstring{ L"Icon: " + std::wstring{ name } });
-            WUX::Controls::ToolTipService::SetToolTip(b, winrt::box_value(name));
-            FontIcon fi{};
-            fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-            fi.Glyph(glyph);
-            b.Content(fi);
-            iconBtns->push_back(b);
-            b.Click([weakThis{ get_weak() }, storedValue, b, selectIconButton](auto&&, auto&&) {
+        ComboBox mode{};
+        mode.MinWidth(160);
+        mode.Items().Append(winrt::box_value(winrt::hstring{ L"Default" }));
+        mode.Items().Append(winrt::box_value(winrt::hstring{ L"Never" }));
+        mode.Items().Append(winrt::box_value(winrt::hstring{ L"Custom" }));
+        WUX::Automation::AutomationProperties::SetName(mode, L"Hoist in the sidebar");
+        ToolTipService::SetToolTip(mode, winrt::box_value(winrt::hstring{ L"Default follows Settings > Sidebar; Never keeps this session out of the group; Custom picks its own states" }));
+        mode.SelectedIndex(static_cast<int32_t>(Parse(_nodeEditHoist).mode));
+
+        WUX::Controls::VariableSizedWrapGrid boxes{};
+        boxes.Orientation(Orientation::Horizontal);
+        boxes.Margin(WUX::Thickness{ 0, 6, 0, 0 });
+        // One box per name in display order (checks[i] is kDisplayOrder[i], for sync below),
+        // in columns as wide as the longest label, so "needs permission" etc. wrap instead of
+        // clipping.
+        std::vector<CheckBox> checks;
+        Axan::Ui::CheckBoxWrap::BuildNameBoxes(
+            boxes,
+            kDisplayOrder,
+            [](std::wstring_view name) { return DisplayName(name); },
+            [&checks](const CheckBox& box, std::wstring_view) { checks.push_back(box); },
+            [weakThis{ get_weak() }](const winrt::hstring& key, bool on) {
                 if (auto p{ weakThis.get() })
                 {
-                    p->_nodeEditIconOverride = storedValue;
-                    selectIconButton(b);
-                    p->_UpdateNodeEditPreview();
+                    const auto o = Parse(p->_nodeEditHoist);
+                    const Mask cur = o.mode == Mode::Custom ? o.mask : 0;
+                    const auto next = With(cur, key, on);
+                    // An emptied custom list stays Custom in the card (Save writes "never").
+                    p->_nodeEditHoist = next == 0 ? winrt::hstring{ kNever } : winrt::hstring{ Format(FromMask(next)) };
                 }
             });
-            if (_nodeEditIconOverride == storedValue)
+        const auto sync = [checks, boxes](const winrt::hstring& hoist, bool custom) {
+            const auto o = Parse(hoist);
+            for (size_t i = 0; i < checks.size(); ++i)
             {
-                b.BorderBrush(accentBrush);
-                b.BorderThickness(WUX::Thickness{ 2, 2, 2, 2 });
+                checks[i].IsChecked(o.mode == Mode::Custom && Has(o.mask, kDisplayOrder[i]));
             }
-            iconBtnRow.Children().Append(b);
+            boxes.Visibility(custom ? Visibility::Visible : Visibility::Collapsed);
         };
-        addIconCell(L"", L"No icon", L"" /* clear -> the session's own icon */);
-        for (const auto& builtin : Axan::IconRegistry::Builtins())
-        {
-            const winrt::hstring glyph{ std::wstring(1, builtin.glyph) };
-            addIconCell(glyph, winrt::hstring{ builtin.name }, glyph);
-        }
-        Button browseBtn{};
-        {
-            StackPanel bc{};
-            bc.Orientation(Orientation::Horizontal);
-            bc.Spacing(7);
-            FontIcon fi{};
-            fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-            fi.Glyph(L"");
-            fi.FontSize(14);
-            TextBlock t{};
-            t.Text(L"Browse to icon file…");
-            bc.Children().Append(fi);
-            bc.Children().Append(t);
-            browseBtn.Content(bc);
-        }
-        // axan #429: the StackPanel content yields no automatic UIA name.
-        Automation::AutomationProperties::SetName(browseBtn, L"Browse to icon file");
-        browseBtn.VerticalAlignment(WUX::VerticalAlignment::Center);
-        browseBtn.Click([weakThis{ get_weak() }, selectIconButton](auto&&, auto&&) {
-            if (auto p{ weakThis.get() })
+        sync(_nodeEditHoist, Parse(_nodeEditHoist).mode == Mode::Custom);
+        mode.SelectionChanged([weakThis{ get_weak() }, sync](const winrt::Windows::Foundation::IInspectable& s, auto&&) {
+            auto p{ weakThis.get() };
+            const auto combo = s.try_as<ComboBox>();
+            if (!p || !combo || combo.SelectedIndex() < 0)
             {
-                selectIconButton(Button{ nullptr });
-                p->_BrowseNodeIconFile();
+                return;
             }
+            const auto idx = combo.SelectedIndex();
+            if (idx == static_cast<int32_t>(Mode::Never))
+            {
+                p->_nodeEditHoist = winrt::hstring{ kNever };
+            }
+            else if (idx == static_cast<int32_t>(Mode::Custom))
+            {
+                if (Parse(p->_nodeEditHoist).mode != Mode::Custom)
+                {
+                    p->_nodeEditHoist = winrt::hstring{ Format(FromMask(kDefault)) }; // start from the default list
+                }
+            }
+            else
+            {
+                p->_nodeEditHoist = {};
+            }
+            sync(p->_nodeEditHoist, idx == static_cast<int32_t>(Mode::Custom));
         });
-        Grid iconRow{};
-        {
-            ColumnDefinition c0{};
-            c0.Width(GridLengthHelper::FromValueAndType(1, GridUnitType::Star));
-            ColumnDefinition c1{};
-            c1.Width(GridLengthHelper::FromValueAndType(0, GridUnitType::Auto));
-            iconRow.ColumnDefinitions().Append(c0);
-            iconRow.ColumnDefinitions().Append(c1);
-            iconRow.ColumnSpacing(8);
-            Grid::SetColumn(iconBtnRow, 0);
-            Grid::SetColumn(browseBtn, 1);
-            iconRow.Children().Append(iconBtnRow);
-            iconRow.Children().Append(browseBtn);
-        }
-        return iconRow;
-    }
 
-    // The color swatch row.
-    StackPanel TerminalPage::_BuildNodeEditSwatchRow(const WUX::Media::SolidColorBrush& accentBrush,
-                                                     const WUX::Media::SolidColorBrush& neutralBrush)
-    {
-        auto swatchEls = std::make_shared<std::vector<std::pair<winrt::hstring, Border>>>();
-        const auto selectSwatch = [swatchEls, accentBrush, neutralBrush](const winrt::hstring& token) {
-            for (const auto& entry : *swatchEls)
-            {
-                const bool sel = (entry.first == token);
-                entry.second.BorderBrush(sel ? accentBrush : neutralBrush);
-                entry.second.BorderThickness(sel ? WUX::Thickness{ 2, 2, 2, 2 } : WUX::Thickness{ 1, 1, 1, 1 });
-            }
-        };
-        StackPanel swatchRow{};
-        swatchRow.Orientation(Orientation::Horizontal);
-        swatchRow.Spacing(8);
-        // axan #422: a swatch STORES a semantic palette name ("blue") — the cross-OS-portable
-        // token — and FILLS with that name resolved to the active theme's hex (WYSIWYG). The
-        // names match SessionNodeViewModel's palette + the Linux set. First entry is "no color".
-        struct Swatch
-        {
-            const wchar_t* name;
-            bool none;
-        };
-        static constexpr std::array<Swatch, 7> swatches{ {
-            { L"", true },
-            { L"red", false },
-            { L"orange", false },
-            { L"yellow", false },
-            { L"green", false },
-            { L"blue", false },
-            { L"purple", false } } };
-        for (const auto& sw : swatches)
-        {
-            Border el{};
-            el.Width(34);
-            el.Height(34);
-            el.CornerRadius(WUX::CornerRadius{ 5, 5, 5, 5 });
-            el.BorderThickness(WUX::Thickness{ 1, 1, 1, 1 });
-            el.BorderBrush(neutralBrush);
-            const winrt::hstring token{ sw.name };
-            if (sw.none)
-            {
-                FontIcon fi{};
-                fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
-                fi.Glyph(L"");
-                fi.FontSize(14);
-                el.Child(fi);
-            }
-            else if (const auto fill = winrt::TerminalApp::implementation::SessionNodeViewModel::ResolveColorBrush(token, _nodeEditIsDark))
-            {
-                el.Background(fill);
-                WUX::Controls::ToolTipService::SetToolTip(el, winrt::box_value(token));
-            }
-            swatchEls->push_back({ token, el });
-            el.Tapped([weakThis{ get_weak() }, token, selectSwatch](auto&&, auto&&) {
-                if (auto p{ weakThis.get() })
-                {
-                    p->_nodeEditColor = token;
-                    selectSwatch(token);
-                    p->_UpdateNodeEditPreview();
-                }
-            });
-            if (_nodeEditColor == token)
-            {
-                el.BorderBrush(accentBrush);
-                el.BorderThickness(WUX::Thickness{ 2, 2, 2, 2 });
-            }
-            swatchRow.Children().Append(el);
-        }
-        return swatchRow;
-    }
-
-    // The "Apply color to" section: caption + hint, then the Icon/Text/Both radio row.
-    StackPanel TerminalPage::_BuildNodeEditApplyColorSection()
-    {
-        const auto makeRadio = [this](const wchar_t* text, const wchar_t* val) {
-            RadioButton rb{};
-            rb.Content(winrt::box_value(winrt::hstring{ text }));
-            rb.GroupName(L"axanApplyColorTo");
-            const winrt::hstring v{ val };
-            rb.IsChecked(_nodeEditColorTarget == v);
-            rb.Checked([weakThis{ get_weak() }, v](auto&&, auto&&) {
-                if (auto p{ weakThis.get() })
-                {
-                    p->_nodeEditColorTarget = v;
-                    p->_UpdateNodeEditPreview();
-                }
-            });
-            return rb;
-        };
-        StackPanel applyRow{};
-        applyRow.Orientation(Orientation::Horizontal);
-        applyRow.Spacing(18);
-        applyRow.Children().Append(makeRadio(L"Icon", L"icon"));
-        applyRow.Children().Append(makeRadio(L"Text", L"text"));
-        applyRow.Children().Append(makeRadio(L"Both", L"both"));
-
-        // Apply-to label + hint.
-        StackPanel applyLabelRow{};
-        applyLabelRow.Orientation(Orientation::Horizontal);
-        applyLabelRow.Spacing(6);
-        applyLabelRow.Margin(WUX::Thickness{ 0, 10, 0, 4 });
-        {
-            TextBlock t{};
-            t.Text(L"Apply color to");
-            t.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
-            t.VerticalAlignment(WUX::VerticalAlignment::Bottom);
-            TextBlock h{};
-            h.Text(L"recolors glyph icons; image files keep their own colors");
-            h.Opacity(0.6);
-            h.VerticalAlignment(WUX::VerticalAlignment::Bottom);
-            h.TextWrapping(WUX::TextWrapping::Wrap);
-            applyLabelRow.Children().Append(t);
-            applyLabelRow.Children().Append(h);
-        }
-
-        // Spacing(2) matches the assembled card's own child spacing — layout-neutral wrap.
-        StackPanel section{};
-        section.Spacing(2);
-        section.Children().Append(applyLabelRow);
-        section.Children().Append(applyRow);
+        section.Children().Append(mode);
+        section.Children().Append(boxes);
         return section;
     }
 
@@ -2471,6 +2486,8 @@ namespace winrt::TerminalApp::implementation
                             }
                         }
                         p->_ApplyNodeIcon(n, p->_nodeEditIconOverride, p->_nodeEditColor, p->_nodeEditColorTarget);
+                        v->HoistOverride = p->_nodeEditHoist; // axan #34
+                        p->_RefreshNeedsYouGroup();
                         // #422: persist the edit back to its curated startup entry so it survives
                         // a restart (no-op for a runtime session with no source entry).
                         p->_PersistNodeToEntry(n);
@@ -2519,30 +2536,60 @@ namespace winrt::TerminalApp::implementation
         _nodeEditColor = vm->IconColor();
         _nodeEditColorTarget = vm->ColorTarget.empty() ? winrt::hstring{ L"both" } : vm->ColorTarget;
         _nodeEditFallbackPath = _resolveNodeIconPath({}, _nodeTab(node));
+        _nodeEditHoist = vm->HoistOverride; // axan #34
         // Capture the sidebar's resolved theme so the swatches + preview resolve color NAMES
         // against the matching palette set (the same derivation _RefreshNodeLabelBrushes uses).
         _nodeEditIsDark = _SidebarIsDarkTheme();
 
-        // Accent + neutral brushes for selection highlights.
-        winrt::Windows::UI::Color accentColor{ 255, 0x4c, 0xc2, 0xff };
-        if (const auto a = Application::Current().Resources().TryLookup(winrt::box_value(winrt::hstring{ L"SystemAccentColor" })))
-        {
-            accentColor = winrt::unbox_value_or<winrt::Windows::UI::Color>(a, accentColor);
-        }
-        const WUX::Media::SolidColorBrush accentBrush{ accentColor };
-        const WUX::Media::SolidColorBrush neutralBrush{ winrt::Windows::UI::Color{ 0x40, 0x80, 0x80, 0x80 } };
+        // axan #38: the identity sections (name + "?" help, icon grid + Browse, swatches,
+        // Apply color to) are the shared AxanEntryIdentityEditor, also hosted by the Startup
+        // sessions settings page. Edits stage into _nodeEditIconOverride / _nodeEditColor /
+        // _nodeEditColorTarget through onChanged; the name is read from the field on Save.
+        // Nothing is applied until Save (the footer), exactly as before.
+        namespace Identity = Axan::Ui::IdentityEditor;
+        Identity::Options identity;
+        identity.initial.name = vm->LabelTemplate;
+        identity.initial.icon = _nodeEditIconOverride;
+        identity.initial.color = _nodeEditColor;
+        identity.initial.colorTarget = _nodeEditColorTarget;
+        identity.isDark = _nodeEditIsDark;
+        // The preview uses the same BuildIcon as the sidebar row, falls back to the node's own
+        // icon before a glyph is picked, and tints only when the target paints the icon, so
+        // it matches the realized row.
+        identity.renderPreview = [weakThis{ get_weak() }](const Identity::Fields& f) -> WUX::UIElement {
+            const auto p{ weakThis.get() };
+            if (!p)
+            {
+                return nullptr;
+            }
+            const auto path = f.icon.empty() ? p->_nodeEditFallbackPath : f.icon;
+            const auto effColor = (f.colorTarget != L"text") ? f.color : winrt::hstring{};
+            return winrt::TerminalApp::implementation::SessionNodeViewModel::BuildIcon(path, effColor, p->_nodeEditIsDark);
+        };
+        identity.onChanged = [weakThis{ get_weak() }](const Identity::Fields& f) {
+            if (const auto p{ weakThis.get() })
+            {
+                p->_nodeEditIconOverride = f.icon;
+                p->_nodeEditColor = f.color;
+                p->_nodeEditColorTarget = f.colorTarget;
+            }
+        };
+        identity.onBrowseIcon = [weakThis{ get_weak() }]() {
+            if (const auto p{ weakThis.get() })
+            {
+                p->_BrowseNodeIconFile();
+            }
+        };
+        _nodeEditor = Identity::Build(std::move(identity));
+        _nodeEditLabelBox = _nodeEditor->NameBox();
 
         // --- assemble ---
         StackPanel content{};
         content.Spacing(2);
         content.MinWidth(420);
         content.Children().Append(_buildNodeEditTitle());
-        content.Children().Append(_BuildNodeEditNameSection(vm->LabelTemplate, neutralBrush));
-        content.Children().Append(_buildNodeEditSectionLabel(L"Icon"));
-        content.Children().Append(_BuildNodeEditIconRow(accentBrush, neutralBrush));
-        content.Children().Append(_buildNodeEditSectionLabel(L"Color"));
-        content.Children().Append(_BuildNodeEditSwatchRow(accentBrush, neutralBrush));
-        content.Children().Append(_BuildNodeEditApplyColorSection());
+        content.Children().Append(_nodeEditor->Root());
+        content.Children().Append(_BuildNodeEditHoistSection()); // axan #34
         content.Children().Append(_BuildNodeEditFooter());
 
         // axan #436 item 4: Escape dismisses the editor from ANY focused control — the
@@ -2561,9 +2608,8 @@ namespace winrt::TerminalApp::implementation
             }
         });
 
-        card.Child(content);
+        card.Child(content); // the identity editor rendered its preview during Build
 
-        _UpdateNodeEditPreview();
         overlay.Visibility(Visibility::Visible);
 
         // Focus the Session name field on its 2nd LayoutUpdated (in-tree focus timing).
@@ -2583,28 +2629,10 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Debug("TerminalPage", "opened node edit panel");
     }
 
-    // axan M13: rebuild the editor's live icon preview from the current icon choice + recolor,
-    // via the same BuildIcon the sidebar row uses. The preview tints only when the target paints
-    // the icon (so it matches the realized row).
-    void TerminalPage::_UpdateNodeEditPreview()
-    {
-        if (!_nodeEditPreview)
-        {
-            return;
-        }
-        const auto path = _nodeEditIconOverride.empty() ? _nodeEditFallbackPath : _nodeEditIconOverride;
-        const auto effColor = (_nodeEditColorTarget != L"text") ? _nodeEditColor : winrt::hstring{};
-        auto el = winrt::TerminalApp::implementation::SessionNodeViewModel::BuildIcon(path, effColor, _nodeEditIsDark);
-        if (el)
-        {
-            el.Width(24);
-            el.Height(24);
-        }
-        _nodeEditPreview.Content(el);
-    }
-
     // axan M13 (design handoff): "Browse to icon file…" — pick an image/exe and set it as the
     // editor's current icon override; the preview updates. Mirrors WT's profile icon picker.
+    // #38: the pick goes through the identity editor (SetIcon), which refreshes its preview and
+    // stages the override via onChanged; a panel closed while the picker was up is left alone.
     safe_void_coroutine TerminalPage::_BrowseNodeIconFile()
     {
         auto strongThis{ get_strong() };
@@ -2625,10 +2653,9 @@ namespace winrt::TerminalApp::implementation
             }
             CATCH_LOG();
         });
-        if (!file.empty())
+        if (!file.empty() && _nodeEditor)
         {
-            _nodeEditIconOverride = file;
-            _UpdateNodeEditPreview();
+            _nodeEditor->SetIcon(winrt::hstring{ file });
         }
     }
 
@@ -2647,11 +2674,12 @@ namespace winrt::TerminalApp::implementation
         }
         _nodeEditTarget = {};
         _nodeEditLabelBox = nullptr;
-        _nodeEditPreview = nullptr;
+        _nodeEditor.reset(); // its controls go inert (they hold only a weak_ptr)
         _nodeEditIconOverride = {};
         _nodeEditColor = {};
         _nodeEditColorTarget = L"both";
         _nodeEditFallbackPath = {};
+        _nodeEditHoist = {};
     }
 
     // axan M13: spawn a new session from this node's profile and nest it under the node.
@@ -2711,15 +2739,6 @@ namespace winrt::TerminalApp::implementation
             Axan::Log::Info("TerminalPage", "closing node session from context menu");
             _RemoveTab(tab);
         }
-    }
-
-    // axan M13: open WT's Settings UI for the node's profile. Deep-linking to the specific
-    // profile page isn't exposed by SettingsTarget, so we open the editor and let the user
-    // navigate — the profile is WT-owned (Divergence 1). A deep link is a future enhancement.
-    void TerminalPage::_OpenNodeProfileSettings(const MUX::Controls::TreeViewNode& /*node*/)
-    {
-        Axan::Log::Info("TerminalPage", "opening WT Settings for node profile");
-        _LaunchSettings(Settings::Model::SettingsTarget::SettingsUI);
     }
 
     // Method Description:
@@ -3047,5 +3066,1109 @@ namespace winrt::TerminalApp::implementation
             break;
         }
         Axan::Log::Info("TerminalPage", "applied sidebar state", { { "state", state == SidebarState::Minimized ? "minimized" : state == SidebarState::Collapsed ? "collapsed" : "expanded" } });
+        _RefreshNeedsYouGroup(); // axan #34: only shown in the expanded state
+    }
+
+    // ----- axan #30: session state ---------------------------------------------------------
+
+    // Gather the node's tab's panes into AxanSessionState inputs, derive, push onto the VM.
+    // UI thread. If the node's tab is the focused tab in an activated window, the user is
+    // looking at it, so its done/error records are acknowledged first (the bell rule: WT
+    // clears the bell indicator for a focused tab the same way).
+    // axan: the localized state word and its one-sentence explanation for a WordToken
+    // (AxanStateGlyphs.h). Literal RS_ keys (USES_RESOURCE checks them at build time).
+    static std::pair<winrt::hstring, winrt::hstring> _slotWordAndExplanation(std::wstring_view token)
+    {
+        if (token == L"idle")
+        {
+            return { RS_(L"AxanSlotWordIdle"), RS_(L"AxanSlotExplainIdle") };
+        }
+        if (token == L"working")
+        {
+            return { RS_(L"AxanSlotWordWorking"), RS_(L"AxanSlotExplainWorking") };
+        }
+        if (token == L"running")
+        {
+            return { RS_(L"AxanSlotWordRunning"), RS_(L"AxanSlotExplainRunning") };
+        }
+        if (token == L"needs-permission")
+        {
+            return { RS_(L"AxanSlotWordNeedsPermission"), RS_(L"AxanSlotExplainNeedsPermission") };
+        }
+        if (token == L"needs-answer")
+        {
+            return { RS_(L"AxanSlotWordNeedsAnswer"), RS_(L"AxanSlotExplainNeedsAnswer") };
+        }
+        if (token == L"needs-login")
+        {
+            return { RS_(L"AxanSlotWordNeedsLogin"), RS_(L"AxanSlotExplainNeedsLogin") };
+        }
+        if (token == L"needs-you")
+        {
+            return { RS_(L"AxanSlotWordNeedsYou"), RS_(L"AxanSlotExplainNeedsYou") };
+        }
+        if (token == L"done")
+        {
+            return { RS_(L"AxanSlotWordDone"), RS_(L"AxanSlotExplainDone") };
+        }
+        if (token == L"error")
+        {
+            return { RS_(L"AxanSlotWordError"), RS_(L"AxanSlotExplainError") };
+        }
+        return {};
+    }
+
+    // axan: the right-edge slot of a SessionRestingState for a slot state + blocked kind: the
+    // sidebar.stateGlyphs glyph (a missing key keeps the default; "" shows nothing) and the
+    // state word + explanation (sidebar.stateLabels hides only the visible word; the
+    // accessible name and tooltips keep it). Shared by the real derive and the state preview.
+    static void _fillSlot(SessionRestingState& resting, const CascadiaSettings& settings, std::wstring_view slotKey, std::wstring_view kind)
+    {
+        resting.slotKey = winrt::hstring{ slotKey };
+        winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring> map{ nullptr };
+        if (settings)
+        {
+            map = settings.GlobalSettings().SidebarStateGlyphs();
+        }
+        resting.slotGlyph = winrt::hstring{ Axan::StateGlyphs::GlyphFor(slotKey, kind, [&](std::wstring_view key) -> std::optional<std::wstring> {
+            const winrt::hstring k{ key };
+            if (map && map.HasKey(k))
+            {
+                return std::wstring{ map.Lookup(k) };
+            }
+            return std::nullopt;
+        }) };
+        const auto [word, explanation] = _slotWordAndExplanation(Axan::StateGlyphs::WordToken(slotKey, kind));
+        resting.slotWord = word;
+        resting.slotExplanation = explanation;
+        resting.showSlotWord = !settings || settings.GlobalSettings().SidebarStateLabels();
+    }
+
+    // axan: the "Preview state" submenu's entries: what each one makes the row look like. The
+    // message is what an OSC 7501 msg would carry; "Done, already seen" is the kept report
+    // that sidebar.statusAfterSeen = keep leaves on an idle row.
+    struct StatePreviewSpec
+    {
+        std::wstring_view id;
+        const wchar_t* label; // resource key (USES_RESOURCE)
+        std::wstring_view state;
+        std::wstring_view kind;
+        std::wstring_view slot;
+        std::wstring_view message;
+        std::wstring_view retainedWhat;
+    };
+    static const std::array<StatePreviewSpec, 10> kStatePreviews{ {
+        { L"idle", USES_RESOURCE(L"AxanPreviewStateIdle"), L"idle", L"", L"idle", L"", L"" },
+        { L"working", USES_RESOURCE(L"AxanPreviewStateWorking"), L"working", L"", L"working", L"Preview: editing files", L"" },
+        { L"running", USES_RESOURCE(L"AxanPreviewStateRunning"), L"running", L"", L"running", L"", L"" },
+        { L"needs-permission", USES_RESOURCE(L"AxanPreviewStateNeedsPermission"), L"needs-you", L"permission", L"blocked", L"Preview: allow a tool to run?", L"" },
+        { L"needs-answer", USES_RESOURCE(L"AxanPreviewStateNeedsAnswer"), L"needs-you", L"question", L"blocked", L"Preview: waiting for your input", L"" },
+        { L"needs-login", USES_RESOURCE(L"AxanPreviewStateNeedsLogin"), L"needs-you", L"auth", L"blocked", L"Preview: sign-in required", L"" },
+        { L"needs-you", USES_RESOURCE(L"AxanPreviewStateNeedsYou"), L"needs-you", L"", L"blocked", L"Preview: waiting for you", L"" },
+        { L"done", USES_RESOURCE(L"AxanPreviewStateDone"), L"done-unseen", L"", L"done", L"Preview: task finished", L"" },
+        { L"error", USES_RESOURCE(L"AxanPreviewStateError"), L"error", L"", L"error", L"Preview: build failed", L"" },
+        { L"done-seen", USES_RESOURCE(L"AxanPreviewStateDoneSeen"), L"idle", L"", L"idle", L"", L"done" },
+    } };
+
+    // axan: a pane's highest OSC 7501 record revision (0 for none): what "seen" and the state
+    // preview's baseline are measured in.
+    static uint64_t _maxRecordRevision(const winrt::Windows::Foundation::Collections::IVector<winrt::Microsoft::Terminal::Control::ProgramStatusRecord>& records)
+    {
+        uint64_t maxRevision = 0;
+        for (const auto& r : records)
+        {
+            maxRevision = std::max(maxRevision, r.Revision);
+        }
+        return maxRevision;
+    }
+
+    void TerminalPage::_RecomputeNodeState(const MUX::Controls::TreeViewNode& node)
+    {
+        const auto vm = _nodeVM(node);
+        const auto tab = _nodeTab(node);
+        if (!vm || !tab || vm->IsSeparator())
+        {
+            return;
+        }
+        // axan: the row sizes (sidebar.labelFontSize etc.), NaN read as the default and
+        // clamped to the settings page's ranges. A no-op unless one changed; this runs on node
+        // creation and settings reload.
+        if (_settings)
+        {
+            namespace Sizes = Axan::SidebarSizes;
+            const auto globals = _settings.GlobalSettings();
+            vm->SetSizes(Sizes::SanitizeSize(globals.SidebarLabelFontSize(), Sizes::kLabelFontSize),
+                         Sizes::SanitizeSize(globals.SidebarStateLineFontSize(), Sizes::kStateLineFontSize),
+                         Sizes::SanitizeSize(globals.SidebarIconSize(), Sizes::kIconSize),
+                         Sizes::SanitizeSize(globals.SidebarStateGlyphSize(), Sizes::kStateGlyphSize));
+        }
+        // axan: sidebar.idleEffects, resolved once per settings change (_IdleEffectsMask); a
+        // no-op unless it changed. Covers new nodes and the post-reload re-derive.
+        vm->SetIdleEffects(static_cast<Axan::IdleEffects::Mask>(_IdleEffectsMask()));
+        const auto tabImpl = winrt::get_self<Tab>(tab);
+        const auto controls = tabImpl->AxanTerminalControls();
+        const bool focused = _activated && tab == _GetFocusedTab();
+
+        // Drop "seen" bookkeeping for panes that have closed (keyed by ContentId, which a
+        // new pane never reuses), so a long-lived tab's map doesn't grow with every split.
+        std::erase_if(vm->SeenRevisions, [&](const auto& entry) {
+            return std::none_of(controls.begin(), controls.end(), [&](const auto& control) { return control.ContentId() == entry.first; });
+        });
+
+        // RecordInput holds string views; a deque keeps the owning hstrings at stable
+        // addresses while the inputs are built.
+        std::deque<winrt::hstring> texts;
+        std::vector<Axan::SessionState::PaneInput> panes;
+        Axan::SessionState::RevisionsByPane reportRevisions; // axan: a new report ends a state preview
+        for (const auto& control : controls)
+        {
+            // One snapshot per control (each call takes the terminal read lock and
+            // allocates); it feeds both the focused-tab acknowledge and the inputs.
+            const auto records = control.ProgramStatusRecords();
+            const auto contentId = control.ContentId();
+            const auto maxRevision = _maxRecordRevision(records);
+            reportRevisions[contentId] = maxRevision;
+            if (focused)
+            {
+                auto& seen = vm->SeenRevisions[contentId];
+                seen = std::max(seen, maxRevision);
+            }
+
+            auto& pane = panes.emplace_back();
+            pane.commandRunning = control.ShellCommandRunning();
+            pane.paneId = contentId;
+            pane.terminalTitle = texts.emplace_back(control.Title()); // axan: agent name source
+            const auto seenIt = vm->SeenRevisions.find(contentId);
+            const uint64_t seenRevision = seenIt == vm->SeenRevisions.end() ? 0 : seenIt->second;
+            pane.records.reserve(records.Size());
+            for (const auto& r : records)
+            {
+                auto& in = pane.records.emplace_back();
+                in.isRoot = r.Id.empty();
+                in.id = texts.emplace_back(r.Id);
+                in.state = static_cast<Axan::SessionState::RecordState>(r.State);
+                in.kind = static_cast<Axan::SessionState::RecordKind>(r.Kind);
+                in.revision = r.Revision;
+                in.seen = r.Revision <= seenRevision;
+                in.msg = texts.emplace_back(r.Msg);
+                in.title = texts.emplace_back(r.Title);
+            }
+        }
+
+        Axan::SessionState::Options options;
+        options.keepAfterSeen = _settings && _settings.GlobalSettings().SidebarStatusAfterSeen() == winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen::Keep;
+        const auto result = Axan::SessionState::Derive(panes, tabImpl->AxanBellIndicator(), options);
+        const auto now = winrt::clock::now();
+        SessionRestingState resting;
+        if (result.retained.present)
+        {
+            resting.retainedWhat = result.retained.state == Axan::SessionState::RecordState::Error ? L"error" : L"done";
+            resting.retainedMessage = winrt::hstring{ result.retained.message };
+        }
+        resting.reportKey = winrt::hstring{ result.reportKey };
+        _fillSlot(resting, _settings, Axan::SessionState::SlotKey(result.slot), result.kind);
+        // axan: the resting agent name.
+        if (!_settings || _settings.GlobalSettings().SidebarShowAgentName())
+        {
+            resting.agentName = winrt::hstring{ result.agentName };
+        }
+        // axan: a new OSC 7501 report ends a state preview, so a preview is never mistaken for
+        // what the program said. (SetSessionState also ends it on a real state change.)
+        if (vm->IsPreviewing() && Axan::SessionState::HasNewReport(vm->PreviewBaselineRevisions, reportRevisions) && vm->ClearPreview(now))
+        {
+            Axan::Log::Debug("TerminalPage", "state preview cleared: new report", { { "label", winrt::to_string(vm->Label()) } });
+        }
+        const bool wasPreviewing = vm->IsPreviewing();
+        // axan #34: hoist membership is matched on the slot state + kind, and the slot can
+        // change while the state doesn't (an agent at rest -> state=clear, still idle), so
+        // compare those around the update rather than relying on the transition alone.
+        const auto hoistSlotBefore = vm->SlotKey();
+        const auto hoistKindBefore = vm->StateKind();
+        const bool transition = vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now, resting);
+        if (wasPreviewing && !vm->IsPreviewing())
+        {
+            Axan::Log::Debug("TerminalPage", "state preview cleared: state changed", { { "label", winrt::to_string(vm->Label()) } });
+        }
+        if (transition)
+        {
+            _RecomputeSections(); // axan #33: a collapsed header's badge summarises hidden states
+            Axan::Log::Info("SessionState",
+                            "node state changed",
+                            { { "label", winrt::to_string(vm->Label()) },
+                              { "state", winrt::to_string(Axan::SessionState::Name(result.state)) },
+                              { "kind", winrt::to_string(result.kind) },
+                              { "source", std::string{ result.source } },
+                              { "panes", std::to_string(panes.size()) } });
+        }
+        else if (vm->SlotKey() != hoistSlotBefore || vm->StateKind() != hoistKindBefore)
+        {
+            _RecomputeSections(); // axan #34: refreshes the hoisted group too
+            Axan::Log::Debug("SessionState",
+                             "node slot changed without a state transition",
+                             { { "label", winrt::to_string(vm->Label()) },
+                               { "from", winrt::to_string(hoistSlotBefore) },
+                               { "to", winrt::to_string(vm->SlotKey()) } });
+        }
+    }
+
+    // axan: the node menu's "Preview state" submenu: one check item per kStatePreviews entry
+    // (the one being previewed is checked) and "Clear preview".
+    void TerminalPage::_AppendStatePreviewSubMenu(const MenuFlyout& flyout, const MUX::Controls::TreeViewNode& node)
+    {
+        const auto vm = _nodeVM(node);
+        if (!vm || vm->IsSeparator())
+        {
+            return;
+        }
+        const auto current = vm->PreviewId();
+        MenuFlyoutSubItem sub{};
+        sub.Text(RS_(L"AxanMenuPreviewState"));
+        FontIcon fi{};
+        fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
+        fi.Glyph(L"\xE7B3"); // RedEye: a look at how it would appear
+        sub.Icon(fi);
+        for (const auto& spec : kStatePreviews)
+        {
+            ToggleMenuFlyoutItem item{};
+            item.Text(GetLibraryResourceString(spec.label));
+            item.IsChecked(std::wstring_view{ current } == spec.id);
+            item.Click([node, id = std::wstring{ spec.id }, weakThis{ get_weak() }](auto&&, auto&&) {
+                if (const auto p{ weakThis.get() })
+                {
+                    p->_PreviewNodeState(node, id);
+                }
+            });
+            sub.Items().Append(item);
+        }
+        sub.Items().Append(MenuFlyoutSeparator{});
+        MenuFlyoutItem clear{};
+        clear.Text(RS_(L"AxanMenuPreviewClear"));
+        clear.IsEnabled(vm->IsPreviewing());
+        clear.Click([node, weakThis{ get_weak() }](auto&&, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                p->_PreviewNodeState(node, {});
+            }
+        });
+        sub.Items().Append(clear);
+        flyout.Items().Append(sub);
+    }
+
+    // axan: show a node as if it were in a previewed state (id = a kStatePreviews id), or go
+    // back to its real state (id = ""). Purely visual; see SessionNodeViewModel::SetPreview.
+    // The age counts from two minutes ago so the second line shows one.
+    void TerminalPage::_PreviewNodeState(const MUX::Controls::TreeViewNode& node, std::wstring_view id)
+    {
+        const auto vm = _nodeVM(node);
+        const auto tab = _nodeTab(node);
+        if (!vm || !tab || vm->IsSeparator())
+        {
+            return;
+        }
+        const auto now = winrt::clock::now();
+        const auto spec = std::find_if(kStatePreviews.begin(), kStatePreviews.end(), [&](const auto& s) { return s.id == id; });
+        if (id.empty() || spec == kStatePreviews.end())
+        {
+            if (vm->ClearPreview(now))
+            {
+                Axan::Log::Debug("TerminalPage", "state preview cleared: menu", { { "label", winrt::to_string(vm->Label()) } });
+            }
+            return;
+        }
+        Axan::SessionState::RevisionsByPane baseline;
+        for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
+        {
+            baseline[control.ContentId()] = _maxRecordRevision(control.ProgramStatusRecords());
+        }
+        SessionRestingState resting;
+        _fillSlot(resting, _settings, spec->slot, spec->kind);
+        if (!spec->retainedWhat.empty())
+        {
+            resting.retainedWhat = winrt::hstring{ spec->retainedWhat };
+            resting.retainedMessage = winrt::hstring{ L"Preview: task finished" };
+            resting.reportKey = winrt::hstring{ L"preview" };
+        }
+        vm->PreviewBaselineRevisions = std::move(baseline);
+        vm->SetPreview(winrt::hstring{ spec->id }, winrt::hstring{ spec->state }, winrt::hstring{ spec->message }, winrt::hstring{ spec->kind }, now - std::chrono::minutes{ 2 }, now, resting);
+        Axan::Log::Debug("TerminalPage", "state preview set", { { "label", winrt::to_string(vm->Label()) }, { "preview", winrt::to_string(spec->id) }, { "state", winrt::to_string(spec->state) }, { "kind", winrt::to_string(spec->kind) } });
+    }
+
+    // Mark everything the node currently shows as seen, then recompute. One-shot: called on
+    // selection / pane focus / window activation, never per keystroke.
+    void TerminalPage::_AcknowledgeNodeState(const MUX::Controls::TreeViewNode& node, const char* reason)
+    {
+        const auto vm = _nodeVM(node);
+        const auto tab = _nodeTab(node);
+        if (!vm || !tab)
+        {
+            return;
+        }
+        // axan #30: a background window isn't being looked at, so nothing in it is seen yet
+        // (same rule as the implicit acknowledge in _RecomputeNodeState). WindowActivated
+        // acknowledges the focused node when the user comes back.
+        if (!_activated)
+        {
+            Axan::Log::Debug("SessionState", "node acknowledge skipped", { { "label", winrt::to_string(vm->Label()) }, { "reason", reason }, { "skipped", "window inactive" } });
+            _RecomputeNodeState(node);
+            return;
+        }
+        bool advanced = false;
+        for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
+        {
+            const auto maxRevision = _maxRecordRevision(control.ProgramStatusRecords());
+            auto& seen = vm->SeenRevisions[control.ContentId()];
+            if (maxRevision > seen)
+            {
+                seen = maxRevision;
+                advanced = true;
+            }
+        }
+        if (advanced)
+        {
+            Axan::Log::Debug("SessionState", "node acknowledged", { { "label", winrt::to_string(vm->Label()) }, { "reason", reason } });
+        }
+        _RecomputeNodeState(node);
+    }
+
+    // axan: re-derive every node, e.g. after sidebar.statusAfterSeen / stateGlyphs changed
+    // (settings reload or the sidebar menu).
+    void TerminalPage::_RecomputeAllNodeStates()
+    {
+        _idleEffectsMask.reset(); // axan: re-resolve sidebar.idleEffects (each node picks it up below)
+        if (!SessionTree())
+        {
+            return;
+        }
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            _RecomputeNodeState(node);
+        });
+    }
+
+    // axan: sidebar.iconFontScale. IconPathConverter keeps one process-wide copy (every
+    // window's icons, the Settings UI's previews included, render through it) and a generation
+    // that changes only when that copy does; each page tracks the generation it last applied
+    // so every window rebuilds its own node icons after a change, whichever window's reload
+    // pushed the new map first. Icons are only rebuilt on a change.
+    void TerminalPage::_ApplyIconFontScales()
+    {
+        winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double> map{ nullptr };
+        if (_settings)
+        {
+            map = _settings.GlobalSettings().SidebarIconFontScale();
+        }
+        const auto generation = winrt::Microsoft::Terminal::UI::IconPathConverter::SetIconFontScales(map);
+        if (_appliedIconFontScales == generation)
+        {
+            return;
+        }
+        const bool firstApply = !_appliedIconFontScales;
+        _appliedIconFontScales = generation;
+        Axan::Log::Debug("TerminalPage", "icon font scales applied", { { "families", std::to_string(map ? map.Size() : 0u) }, { "generation", std::to_string(generation) } });
+        if (!firstApply && SessionTree())
+        {
+            _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+                if (const auto vm = _nodeVM(node))
+                {
+                    vm->RefreshIcons();
+                }
+            });
+        }
+    }
+
+    void TerminalPage::_AcknowledgeFocusedNode(const char* reason)
+    {
+        if (const auto tab = _GetFocusedTab())
+        {
+            if (const auto node = _FindNodeForTab(tab))
+            {
+                _AcknowledgeNodeState(node, reason);
+            }
+            _RecomputeSections(); // axan #33: the focused row is exempt from section hiding
+        }
+    }
+
+    // The ONE sidebar-wide 1s clock (#30 ambient activity; #32 ages and #31 idle
+    // de-emphasis hang off the same tick). Started lazily when the first node is created.
+    void TerminalPage::_EnsureSessionStateClock()
+    {
+        if (_sessionStateClock)
+        {
+            return;
+        }
+        _sessionStateClock = Windows::UI::Xaml::DispatcherTimer{};
+        _sessionStateClock.Interval(std::chrono::seconds{ 1 });
+        _sessionStateClock.Tick([weakThis{ get_weak() }](auto&&, auto&&) {
+            if (const auto page{ weakThis.get() })
+            {
+                page->_SessionStateClockTick();
+            }
+        });
+        _sessionStateClock.Start();
+        Axan::Log::Debug("SessionState", "session state clock started");
+    }
+
+    void TerminalPage::_SessionStateClockTick()
+    {
+        const auto now = winrt::clock::now();
+        const auto idleAfterMinutes = _settings ? _settings.GlobalSettings().SidebarIdleAfterMinutes() : 0; // axan #31
+        const auto focusedTab = _GetFocusedTab(); // axan #31: the row being looked at is never de-emphasised
+        const auto idleEffects = static_cast<Axan::IdleEffects::Mask>(_IdleEffectsMask()); // axan: sidebar.idleEffects (cached)
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            const auto vm = _nodeVM(node);
+            const auto tab = _nodeTab(node);
+            if (!vm || !tab || vm->IsSeparator())
+            {
+                return;
+            }
+            winrt::Windows::Foundation::DateTime latest{};
+            for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
+            {
+                latest = std::max({ latest, control.LastInputTime(), control.LastOutputTime() });
+            }
+            vm->SetLastActivity(latest);
+            vm->RefreshAge(now); // axan #32: only rows showing an age ever change
+            if (vm->UpdateDeEmphasis(now, tab == focusedTab ? 0 : idleAfterMinutes)) // axan #31
+            {
+                Axan::Log::Debug("SessionState", vm->IsDeEmphasised() ? "row de-emphasised: idle" : "row promoted", { { "label", winrt::to_string(vm->Label()) }, { "idleAfterMinutes", std::to_string(idleAfterMinutes) } });
+            }
+        });
+        // axan: the collapse pass walks the whole tree, so skip it while the effect is off,
+        // except for the one pass after it was turned off that re-expands what it collapsed
+        // (after that pass no node has AutoCollapsed set).
+        const bool collapse = (idleEffects & Axan::IdleEffects::kCollapse) != 0;
+        if (collapse || _idleCollapseApplied)
+        {
+            _ApplyIdleCollapse(collapse);
+            _idleCollapseApplied = collapse;
+        }
+    }
+
+    // axan: sidebar.idleEffects as a mask, resolved on first use and again after
+    // _RecomputeAllNodeStates drops the cache (settings reload, sidebar menu). Not cached
+    // before settings exist, so an early call can't pin the default.
+    uint8_t TerminalPage::_IdleEffectsMask()
+    {
+        if (!_idleEffectsMask)
+        {
+            const auto mask = _ResolveIdleEffects();
+            if (!_settings)
+            {
+                return mask;
+            }
+            _idleEffectsMask = mask;
+            Axan::Log::Debug("SessionState", "idle effects resolved", { { "mask", std::to_string(mask) } });
+        }
+        return *_idleEffectsMask;
+    }
+
+    // axan: sidebar.idleEffects -> mask. Unset = dim + smaller (the original #31 look); an
+    // empty list = no effects; unknown names are ignored and logged once per process.
+    uint8_t TerminalPage::_ResolveIdleEffects() const
+    {
+        if (!_settings || !_settings.GlobalSettings().HasSidebarIdleEffects())
+        {
+            return Axan::IdleEffects::kDefault;
+        }
+        const auto names = _settings.GlobalSettings().SidebarIdleEffects();
+        if (!names)
+        {
+            return Axan::IdleEffects::kDefault;
+        }
+        std::vector<std::wstring> unknown;
+        const auto mask = Axan::IdleEffects::MaskFromNames(names, &unknown);
+        static std::set<std::wstring> logged;
+        for (const auto& u : unknown)
+        {
+            if (logged.insert(u).second)
+            {
+                Axan::Log::Warn("SessionState", "sidebar.idleEffects: unknown effect name ignored", { { "name", winrt::to_string(u) } });
+            }
+        }
+        return mask;
+    }
+
+    // axan: the "collapse" idle effect. Rule: a session node with session children closes
+    // its expander when it AND every session descendant are de-emphasised (idle past
+    // sidebar.idleAfterMinutes). The focused session is never de-emphasised, so a node that
+    // is or contains the focused pane never qualifies. It fires on the transition into
+    // all-idle only, so a user who re-expands an idle subtree isn't fought every second.
+    // When any node in the subtree becomes active again (or the effect is turned off), a
+    // node the page collapsed is re-expanded, the same way dim/smaller are undone; a node
+    // the user collapsed by hand is never touched. Separators don't count either way.
+    void TerminalPage::_ApplyIdleCollapse(bool enabled)
+    {
+        const auto visit = [&](const auto& self, const MUX::Controls::TreeViewNode& node) -> bool {
+            bool childrenIdle = true;
+            bool hasSessionChild = false;
+            for (const auto& child : node.Children())
+            {
+                const bool childIdle = self(self, child);
+                if (!_nodeIsSeparator(child))
+                {
+                    hasSessionChild = true;
+                    childrenIdle = childrenIdle && childIdle;
+                }
+            }
+            const auto vm = _nodeVM(node);
+            if (!vm || vm->IsSeparator())
+            {
+                return true;
+            }
+            const bool subtreeIdle = enabled && vm->IsDeEmphasised() && childrenIdle;
+            if (subtreeIdle && !vm->SubtreeIdle && hasSessionChild && node.IsExpanded())
+            {
+                node.IsExpanded(false);
+                vm->AutoCollapsed = true;
+                Axan::Log::Debug("SessionState", "idle subtree collapsed", { { "label", winrt::to_string(vm->Label()) } });
+            }
+            else if (!subtreeIdle && vm->AutoCollapsed)
+            {
+                vm->AutoCollapsed = false;
+                if (!node.IsExpanded() && node.Children().Size() > 0)
+                {
+                    node.IsExpanded(true);
+                    Axan::Log::Debug("SessionState", enabled ? "idle subtree re-expanded: activity" : "idle subtree re-expanded: effect off", { { "label", winrt::to_string(vm->Label()) } });
+                }
+            }
+            vm->SubtreeIdle = subtreeIdle;
+            return subtreeIdle;
+        };
+        for (const auto& root : SessionTree().RootNodes())
+        {
+            visit(visit, root);
+        }
+    }
+
+    // ----- axan #33: section headers ---------------------------------------------------------
+
+    static int _stateRank(const winrt::hstring& state) noexcept
+    {
+        if (state == L"needs-you")
+        {
+            return 5;
+        }
+        if (state == L"error")
+        {
+            return 4;
+        }
+        if (state == L"done-unseen")
+        {
+            return 3;
+        }
+        if (state == L"working")
+        {
+            return 2;
+        }
+        if (state == L"running")
+        {
+            return 1;
+        }
+        return 0;
+    }
+
+    static std::wstring _stateBadge(int rank, uint32_t count)
+    {
+        const auto n = std::to_wstring(count);
+        switch (rank)
+        {
+        case 5:
+            return n + L" needs you";
+        case 4:
+            return n + (count == 1 ? L" error" : L" errors");
+        case 3:
+            return n + L" done";
+        case 2:
+            return n + L" working";
+        case 1:
+            return n + L" running";
+        default:
+            return {};
+        }
+    }
+
+    // Recompute which rows a collapsed section hides and what each collapsed header
+    // summarises. The model never changes shape: a hidden row keeps its place among its
+    // siblings and only its VM's IsSectionHidden (mapped onto the container's Visibility by
+    // _ApplySeparatorContainerState) flips. A section is the run of siblings after a
+    // labelled separator up to the next separator at that depth; a hidden row's children
+    // hide with it. The focused session (and its ancestors) is exempt: collapsing the section
+    // you're working in keeps your row visible under the header instead of hiding it, and
+    // it isn't counted in the header's summary. It hides once you move elsewhere.
+    void TerminalPage::_RecomputeSections()
+    {
+        if (!SessionTree())
+        {
+            return;
+        }
+        std::vector<MUX::Controls::TreeViewNode> activeChain;
+        if (const auto tab = _GetFocusedTab())
+        {
+            for (auto n = _FindNodeForTab(tab); n && n.Depth() >= 0; n = n.Parent())
+            {
+                activeChain.push_back(n);
+            }
+        }
+        const auto isActive = [&](const MUX::Controls::TreeViewNode& node) {
+            return std::find(activeChain.begin(), activeChain.end(), node) != activeChain.end();
+        };
+
+        size_t hiddenRows = 0;
+        size_t collapsedHeaders = 0;
+        const std::function<void(const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>&, bool)> walk =
+            [&](const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>& container, bool parentHidden) {
+                if (!container)
+                {
+                    return;
+                }
+                winrt::com_ptr<winrt::TerminalApp::implementation::SessionNodeViewModel> headerVm;
+                uint32_t count = 0;
+                int strongest = 0;
+                uint32_t strongestCount = 0;
+                const auto finish = [&]() {
+                    if (headerVm)
+                    {
+                        if (headerVm->IsCollapsed())
+                        {
+                            ++collapsedHeaders;
+                            headerVm->SetSectionSummary(winrt::hstring{ L" \u00B7 " + std::to_wstring(count) }, winrt::hstring{ _stateBadge(strongest, strongestCount) });
+                        }
+                        else
+                        {
+                            headerVm->SetSectionSummary({}, {});
+                        }
+                    }
+                    headerVm = nullptr;
+                    count = 0;
+                    strongest = 0;
+                    strongestCount = 0;
+                };
+                const std::function<void(const MUX::Controls::TreeViewNode&)> tally = [&](const MUX::Controls::TreeViewNode& n) {
+                    if (const auto v = _nodeVM(n); v && !v->IsSeparator())
+                    {
+                        ++count;
+                        const auto rank = _stateRank(v->State());
+                        if (rank > strongest)
+                        {
+                            strongest = rank;
+                            strongestCount = 1;
+                        }
+                        else if (rank == strongest && rank > 0)
+                        {
+                            ++strongestCount;
+                        }
+                    }
+                    for (const auto& c : n.Children())
+                    {
+                        tally(c);
+                    }
+                };
+
+                for (const auto& node : container)
+                {
+                    const auto vm = _nodeVM(node);
+                    if (!vm)
+                    {
+                        continue;
+                    }
+                    const bool exempt = isActive(node);
+                    if (vm->IsSeparator())
+                    {
+                        finish();
+                        headerVm = vm->HasSectionHeader() ? vm : nullptr;
+                        vm->SetSectionHidden(parentHidden);
+                        walk(node.Children(), parentHidden);
+                        continue;
+                    }
+                    const bool bySection = headerVm && headerVm->IsCollapsed() && !exempt;
+                    const bool hidden = (parentHidden && !exempt) || bySection;
+                    vm->SetSectionHidden(hidden);
+                    if (hidden)
+                    {
+                        ++hiddenRows;
+                    }
+                    if (bySection)
+                    {
+                        tally(node);
+                    }
+                    walk(node.Children(), hidden);
+                }
+                finish();
+            };
+        walk(SessionTree().RootNodes(), false);
+        _ApplySeparatorContainerStates();
+        _RefreshNeedsYouGroup(); // axan #34: same trigger set (mutations, state transitions, focus)
+        if (collapsedHeaders > 0)
+        {
+            Axan::Log::Debug("TerminalPage", "recomputed sections", { { "collapsedHeaders", std::to_string(collapsedHeaders) }, { "hiddenRows", std::to_string(hiddenRows) } });
+        }
+    }
+
+    void TerminalPage::_SetSectionCollapsed(const MUX::Controls::TreeViewNode& header, bool collapsed, const char* reason)
+    {
+        const auto vm = _nodeVM(header);
+        if (!vm || !vm->HasSectionHeader() || vm->IsCollapsed() == collapsed)
+        {
+            return;
+        }
+        vm->SetCollapsed(collapsed);
+        Axan::Log::Info("TerminalPage", collapsed ? "section collapsed" : "section expanded", { { "label", winrt::to_string(vm->SeparatorLabel()) }, { "reason", reason } });
+        _RecomputeSections();
+    }
+
+    // The section header a row sits under (nearest preceding separator among its siblings),
+    // or nullptr when it isn't in a labelled section.
+    MUX::Controls::TreeViewNode TerminalPage::_SectionHeaderFor(const MUX::Controls::TreeViewNode& node)
+    {
+        Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode> container{ nullptr };
+        uint32_t index = 0;
+        if (!_locateNodeContainer(SessionTree().RootNodes(), node, container, index))
+        {
+            return nullptr;
+        }
+        for (uint32_t i = index; i-- > 0;)
+        {
+            const auto sibling = container.GetAt(i);
+            if (const auto vm = _nodeVM(sibling); vm && vm->IsSeparator())
+            {
+                return vm->HasSectionHeader() ? sibling : nullptr;
+            }
+        }
+        return nullptr;
+    }
+
+    // Expand every collapsed section that hides `node` (its own, and its ancestors').
+    void TerminalPage::_ExpandSectionsContaining(const MUX::Controls::TreeViewNode& node, const char* reason)
+    {
+        bool changed = false;
+        for (auto n = node; n && n.Depth() >= 0; n = n.Parent())
+        {
+            if (const auto header = _SectionHeaderFor(n))
+            {
+                if (const auto vm = _nodeVM(header); vm && vm->IsCollapsed())
+                {
+                    vm->SetCollapsed(false);
+                    changed = true;
+                    Axan::Log::Info("TerminalPage", "section expanded", { { "label", winrt::to_string(vm->SeparatorLabel()) }, { "reason", reason } });
+                }
+            }
+        }
+        if (changed)
+        {
+            _RecomputeSections();
+        }
+    }
+
+    // The badge: expand the section and select the hidden row with the strongest state
+    // (on a tie, the one that has been in that state longest).
+    void TerminalPage::_ActivateSectionBadge(const MUX::Controls::TreeViewNode& header)
+    {
+        Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode> container{ nullptr };
+        uint32_t index = 0;
+        if (!_locateNodeContainer(SessionTree().RootNodes(), header, container, index))
+        {
+            return;
+        }
+        MUX::Controls::TreeViewNode target{ nullptr };
+        int bestRank = 0;
+        winrt::Windows::Foundation::DateTime bestSince{};
+        const std::function<void(const MUX::Controls::TreeViewNode&)> scan = [&](const MUX::Controls::TreeViewNode& n) {
+            if (const auto v = _nodeVM(n); v && !v->IsSeparator())
+            {
+                const auto rank = _stateRank(v->State());
+                if (rank > bestRank || (rank == bestRank && rank > 0 && v->StateSince() < bestSince))
+                {
+                    bestRank = rank;
+                    bestSince = v->StateSince();
+                    target = n;
+                }
+            }
+            for (const auto& c : n.Children())
+            {
+                scan(c);
+            }
+        };
+        for (uint32_t i = index + 1; i < container.Size(); ++i)
+        {
+            const auto sibling = container.GetAt(i);
+            if (_nodeIsSeparator(sibling))
+            {
+                break;
+            }
+            scan(sibling);
+        }
+        _SetSectionCollapsed(header, false, "badge");
+        if (target)
+        {
+            _SelectTabForNodeVM(target.Content().try_as<winrt::TerminalApp::SessionNodeViewModel>());
+        }
+    }
+
+    // Right-click on a section header: Collapse / Expand. Headers are not keyboard focusable
+    // (separators keep IsTabStop(false) under the #3 lock), so this and the row click are the
+    // two ways to toggle; there is no Left/Right-on-focused-header binding.
+    void TerminalPage::_ShowSectionHeaderMenu(const MUX::Controls::TreeViewNode& header, const winrt::Windows::Foundation::Point& position)
+    {
+        if (_sessionNodeMenu && _sessionNodeMenu.IsOpen())
+        {
+            return;
+        }
+        const auto vm = _nodeVM(header);
+        if (!vm)
+        {
+            return;
+        }
+        MenuFlyout flyout{};
+        MenuFlyoutItem toggle{};
+        toggle.Text(vm->IsCollapsed() ? RS_(L"AxanMenuExpandSection") : RS_(L"AxanMenuCollapseSection"));
+        FontIcon fi{};
+        fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
+        fi.Glyph(vm->IsCollapsed() ? winrt::hstring{ L"\uE70D" } : winrt::hstring{ L"\uE76C" });
+        toggle.Icon(fi);
+        toggle.Click([header, weakThis{ get_weak() }](auto&&, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                if (const auto v = _nodeVM(header))
+                {
+                    p->_SetSectionCollapsed(header, !v->IsCollapsed(), "context menu");
+                }
+            }
+        });
+        flyout.Items().Append(toggle);
+        flyout.Items().Append(MenuFlyoutSeparator{});
+        _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
+        _AppendNeedsYouGroupToggle(flyout); // axan #34
+        _sessionNodeMenu = flyout;
+        flyout.Closed([weak = get_weak()](auto&&, auto&&) {
+            if (auto p{ weak.get() })
+            {
+                p->_UpdateSeparatorUnlockFromKeyboard("section menu closed");
+            }
+        });
+        flyout.ShowAt(SessionTree(), position);
+    }
+
+    // ----- axan #34: hoisted "Needs you" group ---------------------------------------------
+
+    // Rebuild the small projection above the tree: every session node whose #30 state is
+    // needs-you / error / done-unseen, longest-waiting first (StateSince ascending). The
+    // list holds the SAME SessionNodeViewModel objects the tree shows (nothing duplicated in
+    // the model); it is rebuilt only when its membership or order changes. Hidden entirely
+    // when the setting is off, when it would be empty, or when the sidebar isn't expanded.
+    void TerminalPage::_RefreshNeedsYouGroup()
+    {
+        if (!SessionTree())
+        {
+            return;
+        }
+        if (!_needsYouItems)
+        {
+            _needsYouItems = winrt::single_threaded_observable_vector<winrt::TerminalApp::SessionNodeViewModel>();
+            NeedsYouList().ItemsSource(_needsYouItems);
+        }
+        const bool enabled = _settings && _settings.GlobalSettings().SidebarNeedsYouGroup();
+        // axan #34: the global list (sidebar.hoistStates; unset = blocked / error / done).
+        auto globalMask = Axan::HoistRule::kDefault;
+        if (_settings && _settings.GlobalSettings().HasSidebarHoistStates())
+        {
+            if (const auto names = _settings.GlobalSettings().SidebarHoistStates())
+            {
+                std::vector<std::wstring> unknown;
+                globalMask = Axan::HoistRule::MaskFromNames(names, &unknown);
+                static std::set<std::wstring> logged; // log each unknown name once per process
+                for (const auto& u : unknown)
+                {
+                    if (logged.insert(u).second)
+                    {
+                        Axan::Log::Warn("TerminalPage", "sidebar.hoistStates: unknown state name ignored", { { "name", winrt::to_string(u) } });
+                    }
+                }
+            }
+        }
+        {
+            const auto header = winrt::hstring{ Axan::HoistRule::IsAttentionOnly(globalMask) ? RS_(L"AxanHoistGroupNeedsYou") : RS_(L"AxanHoistGroupHoisted") };
+            if (NeedsYouHeader().Text() != header)
+            {
+                NeedsYouHeader().Text(header);
+                WUX::Automation::AutomationProperties::SetName(NeedsYouList(), header);
+            }
+        }
+        std::vector<std::pair<winrt::Windows::Foundation::DateTime, winrt::TerminalApp::SessionNodeViewModel>> wanted;
+        if (enabled)
+        {
+            _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+                const auto vm = _nodeVM(node);
+                if (!vm || vm->IsSeparator())
+                {
+                    return;
+                }
+                // Matched on the slot state + blocked kind (AxanHoistRule.h): blocked = any
+                // kind, done = an unseen report, idle = an agent at rest (never a plain shell).
+                const auto slot = vm->SlotKey();
+                const auto kind = vm->StateKind();
+                if (Axan::HoistRule::IsHoisted(slot, kind, Axan::HoistRule::Parse(vm->HoistOverride), globalMask))
+                {
+                    wanted.emplace_back(vm->StateSince(), node.Content().as<winrt::TerminalApp::SessionNodeViewModel>());
+                }
+            });
+            std::stable_sort(wanted.begin(), wanted.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        }
+
+        bool same = wanted.size() == _needsYouItems.Size();
+        for (uint32_t i = 0; same && i < wanted.size(); ++i)
+        {
+            same = _needsYouItems.GetAt(i) == wanted[i].second;
+        }
+        if (!same)
+        {
+            std::vector<winrt::TerminalApp::SessionNodeViewModel> items;
+            items.reserve(wanted.size());
+            for (const auto& w : wanted)
+            {
+                items.push_back(w.second);
+            }
+            _needsYouItems.ReplaceAll(items);
+            Axan::Log::Debug("TerminalPage", "needs-you group refreshed", { { "rows", std::to_string(items.size()) } });
+        }
+        const bool show = enabled && !wanted.empty() && SessionTree().Visibility() == Visibility::Visible;
+        const auto vis = show ? Visibility::Visible : Visibility::Collapsed;
+        if (NeedsYouGroup().Visibility() != vis)
+        {
+            NeedsYouGroup().Visibility(vis);
+        }
+    }
+
+    // axan #34: the hoist override stored on a startup entry ("" when the entry is unknown,
+    // or for a runtime session with no entry).
+    winrt::hstring TerminalPage::_HoistOverrideForEntry(const winrt::hstring& entryId) const
+    {
+        if (entryId.empty() || !_settings)
+        {
+            return {};
+        }
+        if (const auto entries = _settings.GlobalSettings().StartupSessions())
+        {
+            for (const auto& e : entries)
+            {
+                if (e.Id() == entryId)
+                {
+                    return e.Hoist();
+                }
+            }
+        }
+        return {};
+    }
+
+    // axan #34: on settings reload, re-read every curated node's hoist override, so a change
+    // made on the Startup sessions page applies to the live tree. Runtime nodes (no entry id)
+    // keep their live-only value.
+    void TerminalPage::_SyncHoistOverridesFromSettings()
+    {
+        if (!SessionTree() || !_settings)
+        {
+            return;
+        }
+        std::map<winrt::hstring, winrt::hstring> hoists;
+        if (const auto entries = _settings.GlobalSettings().StartupSessions())
+        {
+            for (const auto& e : entries)
+            {
+                if (!e.IsSeparator() && !e.Id().empty())
+                {
+                    hoists[e.Id()] = e.Hoist();
+                }
+            }
+        }
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            if (const auto vm = _nodeVM(node); vm && !vm->IsSeparator() && !vm->EntryId.empty())
+            {
+                if (const auto it = hoists.find(vm->EntryId); it != hoists.end())
+                {
+                    vm->HoistOverride = it->second;
+                }
+            }
+        });
+        _RefreshNeedsYouGroup();
+    }
+
+    void TerminalPage::_OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& /*sender*/,
+                                            const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args)
+    {
+        _SelectTabForNodeVM(args.ClickedItem().try_as<winrt::TerminalApp::SessionNodeViewModel>());
+    }
+
+    // The toggle (sidebar background / separator right-click menu). Persisted as the global
+    // `sidebar.needsYouGroup` setting.
+    void TerminalPage::_SetNeedsYouGroupEnabled(bool enabled)
+    {
+        if (!_settings || _settings.GlobalSettings().SidebarNeedsYouGroup() == enabled)
+        {
+            return;
+        }
+        _settings.GlobalSettings().SidebarNeedsYouGroup(enabled);
+        if (!_settings.WriteSettingsToDisk())
+        {
+            Axan::Log::Error("TerminalPage", "needs-you group toggle: WriteSettingsToDisk failed; applied live only");
+        }
+        Axan::Log::Info("TerminalPage", enabled ? "needs-you group enabled" : "needs-you group disabled");
+        _RefreshNeedsYouGroup();
+    }
+
+    // Shared by the background and section-header menus.
+    void TerminalPage::_AppendNeedsYouGroupToggle(const MenuFlyout& flyout)
+    {
+        ToggleMenuFlyoutItem item{};
+        item.Text(RS_(L"AxanMenuShowNeedsYouGroup"));
+        item.IsChecked(_settings && _settings.GlobalSettings().SidebarNeedsYouGroup());
+        item.Click([weakThis{ get_weak() }](auto&& sender, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                if (const auto t = sender.template try_as<ToggleMenuFlyoutItem>())
+                {
+                    p->_SetNeedsYouGroupEnabled(t.IsChecked());
+                }
+            }
+        });
+        flyout.Items().Append(MenuFlyoutSeparator{});
+        flyout.Items().Append(item);
+
+        // axan: the two session-status display settings ride along in the same menus.
+        // Persisted to settings.json like the group toggle; every row re-derives at once.
+        ToggleMenuFlyoutItem keepItem{};
+        keepItem.Text(RS_(L"AxanMenuKeepStatusAfterOpening"));
+        keepItem.IsChecked(_settings && _settings.GlobalSettings().SidebarStatusAfterSeen() == winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen::Keep);
+        keepItem.Click([weakThis{ get_weak() }](auto&& sender, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                if (const auto t = sender.template try_as<ToggleMenuFlyoutItem>())
+                {
+                    p->_SetSidebarStatusSetting("statusAfterSeen", [keep = t.IsChecked()](const auto& globals) {
+                        const auto want = keep ? winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen::Keep : winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen::Clear;
+                        if (globals.SidebarStatusAfterSeen() == want)
+                        {
+                            return false;
+                        }
+                        globals.SidebarStatusAfterSeen(want);
+                        return true;
+                    });
+                }
+            }
+        });
+        flyout.Items().Append(keepItem);
+    }
+
+    // axan: apply one sidebar status-display setting change from the menu, persist it, and
+    // re-derive every row.
+    void TerminalPage::_SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply)
+    {
+        if (!_settings || !apply(_settings.GlobalSettings()))
+        {
+            return;
+        }
+        if (!_settings.WriteSettingsToDisk())
+        {
+            Axan::Log::Error("TerminalPage", "sidebar status setting: WriteSettingsToDisk failed; applied live only", { { "setting", name } });
+        }
+        Axan::Log::Info("TerminalPage", "sidebar status setting changed", { { "setting", name } });
+        _RecomputeAllNodeStates();
     }
 }

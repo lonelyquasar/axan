@@ -222,6 +222,7 @@ namespace Microsoft::Console::VirtualTerminal
             FinalTermAction = 133,
             VsCodeAction = 633,
             ITerm2Action = 1337,
+            ProgramStatus = 7501, // axan #29: OSC 7501 Program Status Protocol
             WTAction = 9001,
         };
 

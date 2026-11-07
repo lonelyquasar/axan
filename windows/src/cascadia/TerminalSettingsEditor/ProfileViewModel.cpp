@@ -849,15 +849,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
     }
 
-    LaunchEntryViewModel::LaunchEntryViewModel(hstring id, hstring parentId, hstring name, hstring directory, hstring command, hstring icon, hstring color, hstring colorTarget) :
-        _Id{ id },
-        _Icon{ icon },
-        _ParentId{ parentId },
-        _Name{ name },
-        _Directory{ directory },
-        _Command{ command },
-        _Color{ color },
-        _ColorTarget{ colorTarget }
+    LaunchEntryViewModel::LaunchEntryViewModel(hstring id) :
+        _Id{ std::move(id) }
     {
     }
 

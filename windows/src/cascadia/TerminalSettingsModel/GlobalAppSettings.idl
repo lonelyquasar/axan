@@ -3,6 +3,8 @@
 
 #include "IInheritable.idl.h"
 
+#define COMMA , // axan: sidebar.stateGlyphs (an IMap inside INHERITABLE_SETTING)
+
 import "Theme.idl";
 import "ColorScheme.idl";
 import "ActionMap.idl";
@@ -50,6 +52,13 @@ namespace Microsoft.Terminal.Settings.Model
         AfterCurrentTab,
     };
 
+    // axan: what a sidebar row shows once a finished / errored session has been seen.
+    enum SidebarStatusAfterSeen
+    {
+        Keep, // keep the last report on the second line, muted, with its age
+        Clear, // drop it; the row goes back to plain
+    };
+
     [default_interface] runtimeclass GlobalAppSettings {
         Guid DefaultProfile;
 
@@ -68,6 +77,43 @@ namespace Microsoft.Terminal.Settings.Model
         // axan #2: sidebar takes the focused profile's background brush (color + opacity),
         // content backdrop goes fully clear. Overrides the theme's sidebar/content keys.
         INHERITABLE_SETTING(Boolean, SidebarMatchesProfileTransparency);
+        // axan #31: an idle session's sidebar row is de-emphasised (dimmed, smaller) after
+        // this many minutes without input/output. 0 turns de-emphasis off. Default 15.
+        INHERITABLE_SETTING(Int32, SidebarIdleAfterMinutes);
+        // axan: what an idle row does once SidebarIdleAfterMinutes has passed: names from
+        // src/inc/AxanIdleEffects.h (dim / smaller / gray / collapse). Unset = ["dim", "smaller"];
+        // an empty list = no visible effect. Unknown names are ignored and logged once.
+        INHERITABLE_SETTING(IVector<String>, SidebarIdleEffects);
+        // axan #34: show the hoisted "Needs you" group above the session tree. Off by default.
+        INHERITABLE_SETTING(Boolean, SidebarNeedsYouGroup);
+        // axan #34: the states that list a session in that group: names from
+        // src/inc/AxanHoistRule.h (idle / working / blocked / done / error / running, and the
+        // blocked kinds permission / question / auth). Unset = ["blocked", "error", "done"].
+        INHERITABLE_SETTING(IVector<String>, SidebarHoistStates);
+        // axan: after a done/error session is seen, keep its last report on the row (muted)
+        // or clear it. Default Keep. Either way it stops counting as needing attention.
+        INHERITABLE_SETTING(SidebarStatusAfterSeen, SidebarStatusAfterSeen);
+        // axan: the right-edge glyph per slot state, keys idle / working / blocked / done /
+        // error / running (+ permission / question / auth overriding blocked by kind), each in the node icon vocabulary ("" = nothing; a missing key =
+        // the default glyph). See
+        // src/inc/AxanStateGlyphs.h. Unset by default.
+        INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA String>, SidebarStateGlyphs);
+        // axan: a small state word next to the slot glyph ("working", "needs answer"). Default true.
+        INHERITABLE_SETTING(Boolean, SidebarStateLabels);
+        // axan: an agent shows its session name (record title, else the terminal
+        // title) as the row's muted second line. Default true.
+        INHERITABLE_SETTING(Boolean, SidebarShowAgentName);
+        // axan: sidebar row sizes. The row title (14; the idle "smaller" effect takes 2 off),
+        // the second line and the state word (11), the node icon box (16; its glyph is drawn
+        // at 3/4 of that) and the right-edge state glyph (12).
+        INHERITABLE_SETTING(Double, SidebarLabelFontSize);
+        INHERITABLE_SETTING(Double, SidebarStateLineFontSize);
+        INHERITABLE_SETTING(Double, SidebarIconSize);
+        INHERITABLE_SETTING(Double, SidebarStateGlyphSize);
+        // axan: per-font-family icon scale, { "Segoe UI Historic": 1.5 }. A family missing
+        // from the map keeps its built-in multiplier (src/inc/AxanGlyphScale.h kFonts); values
+        // are clamped to 0.5-3 when read. Unset by default.
+        INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA Double>, SidebarIconFontScale);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

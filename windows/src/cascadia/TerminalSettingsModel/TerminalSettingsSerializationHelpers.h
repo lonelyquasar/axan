@@ -258,6 +258,15 @@ JSON_ENUM_MAPPER(::winrt::Microsoft::Terminal::Settings::Model::NewTabPosition)
     };
 };
 
+// axan: sidebar.statusAfterSeen
+JSON_ENUM_MAPPER(::winrt::Microsoft::Terminal::Settings::Model::SidebarStatusAfterSeen)
+{
+    JSON_MAPPINGS(2) = {
+        pair_type{ "keep", ValueType::Keep },
+        pair_type{ "clear", ValueType::Clear },
+    };
+};
+
 JSON_ENUM_MAPPER(::winrt::Microsoft::Terminal::Settings::Model::FirstWindowPreference)
 {
     JSON_MAPPINGS(2) = {

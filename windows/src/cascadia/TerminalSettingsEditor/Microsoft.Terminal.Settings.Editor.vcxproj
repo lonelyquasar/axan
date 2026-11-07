@@ -158,6 +158,14 @@
       <DependentUpon>StartupSessionsViewModel.idl</DependentUpon>
       <SubType>Code</SubType>
     </ClInclude>
+    <ClInclude Include="Sidebar.h">
+      <DependentUpon>Sidebar.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </ClInclude>
+    <ClInclude Include="SidebarViewModel.h">
+      <DependentUpon>SidebarViewModel.idl</DependentUpon>
+      <SubType>Code</SubType>
+    </ClInclude>
     <ClInclude Include="Appearances.h">
       <DependentUpon>Appearances.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -231,6 +239,9 @@
       <SubType>Designer</SubType>
     </Page>
     <Page Include="StartupSessions.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Sidebar.xaml">
       <SubType>Designer</SubType>
     </Page>
     <Page Include="Appearances.xaml">
@@ -357,6 +368,14 @@
       <DependentUpon>StartupSessionsViewModel.idl</DependentUpon>
       <SubType>Code</SubType>
     </ClCompile>
+    <ClCompile Include="Sidebar.cpp">
+      <DependentUpon>Sidebar.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </ClCompile>
+    <ClCompile Include="SidebarViewModel.cpp">
+      <DependentUpon>SidebarViewModel.idl</DependentUpon>
+      <SubType>Code</SubType>
+    </ClCompile>
     <ClCompile Include="Profiles_Terminal.cpp">
       <DependentUpon>Profiles_Terminal.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -441,6 +460,7 @@
     <Midl Include="LaunchViewModel.idl" />
     <Midl Include="NewTabMenuViewModel.idl" />
     <Midl Include="StartupSessionsViewModel.idl" />
+    <Midl Include="SidebarViewModel.idl" />
     <Midl Include="Extensions.idl">
       <DependentUpon>Extensions.xaml</DependentUpon>
       <SubType>Code</SubType>
@@ -463,6 +483,10 @@
     </Midl>
     <Midl Include="StartupSessions.idl">
       <DependentUpon>StartupSessions.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Midl>
+    <Midl Include="Sidebar.idl">
+      <DependentUpon>Sidebar.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Midl>
     <Midl Include="Profiles_Terminal.idl">

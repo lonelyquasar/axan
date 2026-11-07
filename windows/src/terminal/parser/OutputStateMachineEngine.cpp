@@ -888,6 +888,13 @@ bool OutputStateMachineEngine::ActionOscDispatch(const size_t parameter, const s
         _dispatch->DoWTAction(string);
         break;
     }
+    case OscActionCodes::ProgramStatus:
+    {
+        // axan #29: the query must be answered synchronously from here (no async hop),
+        // so the reply is queued ahead of any DA1 reply that follows it in the stream.
+        _dispatch->DoProgramStatusAction(string);
+        break;
+    }
     default:
         break;
     }

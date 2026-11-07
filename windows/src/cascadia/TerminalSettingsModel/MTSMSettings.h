@@ -15,6 +15,12 @@ Author(s):
 --*/
 #pragma once
 
+// axan: a string -> string map setting type (sidebar.stateGlyphs). An alias because a
+// template argument list's comma would split the X-macro's arguments.
+using IAxanStringMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring>;
+// axan: a string -> number map (sidebar.iconFontScale), aliased for the same reason.
+using IAxanDoubleMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>;
+
 // Macro format (defaultArgs are optional):
 // (type, name, jsonKey, defaultArgs)
 
@@ -43,6 +49,19 @@ Author(s):
     X(winrt::Microsoft::UI::Xaml::Controls::TabViewWidthMode, TabWidthMode, "tabWidthMode", winrt::Microsoft::UI::Xaml::Controls::TabViewWidthMode::Equal)                                            \
     X(bool, UseAcrylicInTabRow, "useAcrylicInTabRow", false)                                                                                                                                          \
     X(bool, SidebarMatchesProfileTransparency, "sidebarMatchesProfileTransparency", false)                                                                                                            \
+    X(int32_t, SidebarIdleAfterMinutes, "sidebar.idleAfterMinutes", 15)                                                                                                                              \
+    X(winrt::Windows::Foundation::Collections::IVector<winrt::hstring>, SidebarIdleEffects, "sidebar.idleEffects", nullptr)                                                                          \
+    X(bool, SidebarNeedsYouGroup, "sidebar.needsYouGroup", false)                                                                                                                                    \
+    X(winrt::Windows::Foundation::Collections::IVector<winrt::hstring>, SidebarHoistStates, "sidebar.hoistStates", nullptr)                                                                          \
+    X(Model::SidebarStatusAfterSeen, SidebarStatusAfterSeen, "sidebar.statusAfterSeen", Model::SidebarStatusAfterSeen::Keep)                                                                         \
+    X(IAxanStringMap, SidebarStateGlyphs, "sidebar.stateGlyphs", nullptr)                                                                                                                            \
+    X(bool, SidebarStateLabels, "sidebar.stateLabels", true)                                                                                                                                         \
+    X(bool, SidebarShowAgentName, "sidebar.showAgentName", true)                                                                                                                                     \
+    X(double, SidebarLabelFontSize, "sidebar.labelFontSize", 14.0)                                                                                                                                  \
+    X(double, SidebarStateLineFontSize, "sidebar.stateLineFontSize", 11.0)                                                                                                                          \
+    X(double, SidebarIconSize, "sidebar.iconSize", 16.0)                                                                                                                                            \
+    X(double, SidebarStateGlyphSize, "sidebar.stateGlyphSize", 12.0)                                                                                                                                \
+    X(IAxanDoubleMap, SidebarIconFontScale, "sidebar.iconFontScale", nullptr)                                                                                                                       \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \

@@ -1,0 +1,13 @@
+// Copyright (c) Lonely Quasar.
+// Licensed under the MIT license.
+
+import "SidebarViewModel.idl";
+
+namespace Microsoft.Terminal.Settings.Editor
+{
+    [default_interface] runtimeclass Sidebar : Windows.UI.Xaml.Controls.Page
+    {
+        Sidebar();
+        SidebarViewModel ViewModel { get; };
+    }
+}

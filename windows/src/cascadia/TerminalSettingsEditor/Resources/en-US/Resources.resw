@@ -528,6 +528,194 @@
     <value>Paint the session sidebar with the focused profile's background and opacity, and leave the backdrop behind the terminal clear, so the whole window shares one transparency. Set the opacity per profile under Appearance &gt; Transparency.</value>
     <comment>axan #2: A description for what the "sidebar matches profile transparency" setting does. Presented near "Globals_SidebarMatchesProfileTransparency.Header".</comment>
   </data>
+  <data name="Globals_SidebarIdleAfterMinutes.Header" xml:space="preserve">
+    <value>De-emphasise idle sessions after (minutes)</value>
+    <comment>axan #31: Header for a number box: minutes of inactivity before an idle session's sidebar row is dimmed and drawn smaller.</comment>
+  </data>
+  <data name="Globals_SidebarIdleAfterMinutes.HelpText" xml:space="preserve">
+    <value>An idle session with no input or output for this long is de-emphasised in the sidebar (see below), so the sessions you're working with stand out. Sessions that need you, finished unseen, or errored are never de-emphasised. Set to 0 to turn this off.</value>
+    <comment>axan #31: A description for the "de-emphasise idle sessions" setting. Presented near "Globals_SidebarIdleAfterMinutes.Header".</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffects.Header" xml:space="preserve">
+    <value>When a session goes idle</value>
+    <comment>axan: Header for a set of checkboxes: how an idle session's sidebar row is de-emphasised.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffects.HelpText" xml:space="preserve">
+    <value>What happens to an idle session's row once the time above has passed: dim it, draw it smaller, gray out its colour, or fold its child sessions away. Hover a choice for details. Uncheck all of them to leave idle rows unchanged.</value>
+    <comment>axan: A description for the "when a session goes idle" setting. Presented near "Globals_SidebarIdleEffects.Header".</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectsReset.Content" xml:space="preserve">
+    <value>Reset to default (dim, smaller)</value>
+    <comment>axan: Button that resets the idle-effect checkboxes to the default set.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectsNone" xml:space="preserve">
+    <value>None</value>
+    <comment>axan: Current-value summary of the idle-effect checkboxes when none is checked.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectDim" xml:space="preserve">
+    <value>Dim</value>
+    <comment>axan: Idle-effect checkbox: the row is drawn faded.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectDimHelp" xml:space="preserve">
+    <value>Draw the row faded.</value>
+    <comment>axan: Tooltip for the "Dim" idle-effect checkbox.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectSmaller" xml:space="preserve">
+    <value>Smaller</value>
+    <comment>axan: Idle-effect checkbox: smaller text and a shorter row.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectSmallerHelp" xml:space="preserve">
+    <value>Draw the name smaller and the row shorter.</value>
+    <comment>axan: Tooltip for the "Smaller" idle-effect checkbox.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectGray" xml:space="preserve">
+    <value>Gray</value>
+    <comment>axan: Idle-effect checkbox: a coloured session loses its colour.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectGrayHelp" xml:space="preserve">
+    <value>A session with a colour shows its icon and name in gray. Sessions without a colour are unaffected.</value>
+    <comment>axan: Tooltip for the "Gray" idle-effect checkbox.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectCollapse" xml:space="preserve">
+    <value>Collapse</value>
+    <comment>axan: Idle-effect checkbox: an idle session folds its child sessions away.</comment>
+  </data>
+  <data name="Globals_SidebarIdleEffectCollapseHelp" xml:space="preserve">
+    <value>A session with child sessions folds them away once it and all of them are idle, and opens again when any of them becomes active. A session holding the focused pane never collapses, and one you collapsed yourself is left alone.</value>
+    <comment>axan: Tooltip for the "Collapse" idle-effect checkbox.</comment>
+  </data>
+  <data name="Globals_SidebarStatusAfterSeen.Header" xml:space="preserve">
+    <value>After opening a finished session</value>
+    <comment>axan: Header for a combo box: what a sidebar row shows once the user has opened a session that finished or errored.</comment>
+  </data>
+  <data name="Globals_SidebarStatusAfterSeen.HelpText" xml:space="preserve">
+    <value>When a session that finished or errored has been opened, it no longer counts as needing you. "Keep last status" leaves its last message on the row, dimmed, with how long ago it arrived, until a new status replaces it or the program exits.</value>
+    <comment>axan: A description for the "after opening a finished session" setting. Presented near "Globals_SidebarStatusAfterSeen.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStatusAfterSeenKeep.Content" xml:space="preserve">
+    <value>Keep last status</value>
+    <comment>axan: An option for the "after opening a finished session" setting: the row keeps the last status message, dimmed.</comment>
+  </data>
+  <data name="Globals_SidebarStatusAfterSeenClear.Content" xml:space="preserve">
+    <value>Clear status after opening</value>
+    <comment>axan: An option for the "after opening a finished session" setting: the row goes back to plain once opened.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphIdle.Header" xml:space="preserve">
+    <value>Idle (agent at rest)</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "idle" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphIdle.HelpText" xml:space="preserve">
+    <value>Idle: a status-reporting program is present and waiting at its prompt. Also shown once you have opened a finished or errored session. Default: a robot.</value>
+    <comment>axan: A description for the "idle" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphIdle.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphWorking.Header" xml:space="preserve">
+    <value>Working</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "working" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphWorking.HelpText" xml:space="preserve">
+    <value>Working: the agent is running a turn. Default: a lightning bolt.</value>
+    <comment>axan: A description for the "working" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphWorking.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphBlocked.Header" xml:space="preserve">
+    <value>Blocked</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "blocked" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphBlocked.HelpText" xml:space="preserve">
+    <value>Blocked: the program is waiting for you (permission, an answer or a login). Default: none; the dot on the icon already marks it.</value>
+    <comment>axan: A description for the "blocked" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphBlocked.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDone.Header" xml:space="preserve">
+    <value>Done</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "done" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDone.HelpText" xml:space="preserve">
+    <value>Done: finished and not yet looked at. Default: none; the dot on the icon already marks it.</value>
+    <comment>axan: A description for the "done" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphDone.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphError.Header" xml:space="preserve">
+    <value>Error</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "error" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphError.HelpText" xml:space="preserve">
+    <value>Error: the program reported an error. Default: none; the red dot on the icon already marks it.</value>
+    <comment>axan: A description for the "error" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphError.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphRunning.Header" xml:space="preserve">
+    <value>Running (shell command)</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "running" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphRunning.HelpText" xml:space="preserve">
+    <value>Running: a shell command is executing (needs shell integration; only for a pane with no status-reporting program). Default: a play triangle.</value>
+    <comment>axan: A description for the "running" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphRunning.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphPermission.Header" xml:space="preserve">
+    <value>Blocked: needs permission</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "permission" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphPermission.HelpText" xml:space="preserve">
+    <value>Needs permission: a tool call is waiting for your approval. Overrides Blocked for this kind. Default: same as Blocked.</value>
+    <comment>axan: A description for the "permission" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphPermission.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphQuestion.Header" xml:space="preserve">
+    <value>Blocked: needs answer</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "question" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphQuestion.HelpText" xml:space="preserve">
+    <value>Needs answer: the program (e.g. Claude Code) is waiting for you to pick an option. Overrides Blocked for this kind. Default: same as Blocked.</value>
+    <comment>axan: A description for the "question" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphQuestion.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphAuth.Header" xml:space="preserve">
+    <value>Blocked: needs login</value>
+    <comment>axan: Header for an icon picker: the icon at the right edge of a sidebar row in the "auth" state.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphAuth.HelpText" xml:space="preserve">
+    <value>Needs login: the program is waiting for authentication. Overrides Blocked for this kind. Default: same as Blocked.</value>
+    <comment>axan: A description for the "auth" sidebar state icon setting. Presented near "Globals_SidebarStateGlyphAuth.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDefault" xml:space="preserve">
+    <value>Default</value>
+    <comment>axan: Label for a sidebar state icon that uses its built-in icon; also the name of the picker cell that restores it.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDefaultNone" xml:space="preserve">
+    <value>Default (none)</value>
+    <comment>axan: Label for a sidebar state icon whose built-in default is to show nothing.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphDefaultBlocked" xml:space="preserve">
+    <value>Default (same as Blocked)</value>
+    <comment>axan: Label for a blocked-kind sidebar state icon (permission / question / login) that follows the Blocked icon.</comment>
+  </data>
+  <data name="Globals_SidebarStateLabels.Header" xml:space="preserve">
+    <value>Show state words next to the icons</value>
+    <comment>axan: Header for a toggle: show a small word (working, needs answer, idle...) at the right edge of sidebar rows.</comment>
+  </data>
+  <data name="Globals_SidebarStateLabels.HelpText" xml:space="preserve">
+    <value>Adds a short word beside the right-edge icon: idle, working, running, needs permission, needs answer, needs login, done or error. Hover the icon or word for a one-sentence explanation. Screen readers hear the word either way.</value>
+    <comment>axan: A description for the "show state words" setting. Presented near "Globals_SidebarStateLabels.Header".</comment>
+  </data>
+  <data name="Globals_SidebarShowAgentName.Header" xml:space="preserve">
+    <value>Show the agent's session name</value>
+    <comment>axan: Header for a toggle: an agent shows its session name as the second line of its sidebar row.</comment>
+  </data>
+  <data name="Globals_SidebarShowAgentName.HelpText" xml:space="preserve">
+    <value>When a status-reporting program (such as Claude Code) is present and nothing else is on the row's second line, show its session name there, dimmed: the name it reports, or else its terminal title (Claude Code sets this from --name).</value>
+    <comment>axan: A description for the "show the agent's session name" setting. Presented near "Globals_SidebarShowAgentName.Header".</comment>
+  </data>
+  <data name="Globals_SidebarHoistStates.Header" xml:space="preserve">
+    <value>Hoist sessions in these states</value>
+    <comment>axan #34: Header for a set of checkboxes: which session states list a session in the group at the top of the sidebar.</comment>
+  </data>
+  <data name="Globals_SidebarHoistStates.HelpText" xml:space="preserve">
+    <value>When the hoisted group is on (sidebar right-click menu), a session in any checked state is also listed at the top of the sidebar, longest-waiting first. The group is titled "Needs you" while only attention states are checked, "Hoisted" otherwise. A session can override this on the Startup sessions page or from the sidebar's Edit node card.</value>
+    <comment>axan #34: A description for the "hoist sessions in these states" setting. Presented near "Globals_SidebarHoistStates.Header". "Needs you" and "Hoisted" are the group's titles.</comment>
+  </data>
+  <data name="Globals_SidebarHoistStatesReset.Content" xml:space="preserve">
+    <value>Reset to default (needs you, done, error)</value>
+    <comment>axan #34: Button that resets the hoisted-states checkboxes to the default set.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphNone" xml:space="preserve">
+    <value>None</value>
+    <comment>axan: Label for a sidebar state icon set to show nothing; also the name of the picker cell that chooses that.</comment>
+  </data>
   <data name="Globals_ShowTitleInTitlebar.Header" xml:space="preserve">
     <value>Use active terminal title as application title</value>
     <comment>Header for a control to toggle whether the terminal's title is shown as the application title, or not.</comment>
@@ -675,6 +863,98 @@
   <data name="Nav_Launch.Content" xml:space="preserve">
     <value>Startup</value>
     <comment>Header for the "startup" menu item. This navigates to a page that lets you see and modify settings related to the app's launch experience (i.e. screen position, mode, etc.)</comment>
+  </data>
+  <data name="Nav_SessionsGroup.Content" xml:space="preserve">
+    <value>Sessions</value>
+    <comment>axan #38: Header for a group of menu items (Startup sessions, Sidebar). Acts as a divider introducing the session-related pages.</comment>
+  </data>
+  <data name="Nav_Sidebar.Content" xml:space="preserve">
+    <value>Sidebar</value>
+    <comment>axan #38: Header for the "sidebar" menu item. This navigates to a page with the settings for the session sidebar (the tree of sessions on the left of the window).</comment>
+  </data>
+  <data name="Globals_SidebarNeedsYouGroup.Header" xml:space="preserve">
+    <value>Show the hoisted group</value>
+    <comment>axan #34: Header for a toggle: list sessions in chosen states in a group at the top of the sidebar.</comment>
+  </data>
+  <data name="Globals_SidebarNeedsYouGroup.HelpText" xml:space="preserve">
+    <value>List sessions whose state is checked below in a group at the top of the sidebar, longest-waiting first. Also toggled from the sidebar's right-click menu.</value>
+    <comment>axan #34: A description for the "show the hoisted group" setting. Presented near "Globals_SidebarNeedsYouGroup.Header".</comment>
+  </data>
+  <data name="Sidebar_SessionStateHeader.Text" xml:space="preserve">
+    <value>Session state</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
+  </data>
+  <data name="Sidebar_HoistedGroupHeader.Text" xml:space="preserve">
+    <value>Hoisted group</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
+  </data>
+  <data name="Sidebar_IdleSessionsHeader.Text" xml:space="preserve">
+    <value>Idle sessions</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
+  </data>
+  <data name="Sidebar_TextAndIconsHeader.Text" xml:space="preserve">
+    <value>Text and icons</value>
+    <comment>axan: Section header on the Sessions &gt; Sidebar settings page. The sizes of a sidebar row's text and icons.</comment>
+  </data>
+  <data name="Globals_SidebarLabelFontSize.Header" xml:space="preserve">
+    <value>Session name size</value>
+    <comment>axan: Header for a number box: the font size of a sidebar row's title.</comment>
+  </data>
+  <data name="Globals_SidebarLabelFontSize.HelpText" xml:space="preserve">
+    <value>Font size of each session's name in the sidebar. An idle row drawn smaller takes 2 off. Default 14.</value>
+    <comment>axan: A description for the "session name size" setting. Presented near "Globals_SidebarLabelFontSize.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateLineFontSize.Header" xml:space="preserve">
+    <value>Status text size</value>
+    <comment>axan: Header for a number box: the font size of a sidebar row's second line and its state word.</comment>
+  </data>
+  <data name="Globals_SidebarStateLineFontSize.HelpText" xml:space="preserve">
+    <value>Font size of the line under a session's name (its status message and age) and of the state word beside the status glyph. Default 11.</value>
+    <comment>axan: A description for the "status text size" setting. Presented near "Globals_SidebarStateLineFontSize.Header".</comment>
+  </data>
+  <data name="Globals_SidebarIconSize.Header" xml:space="preserve">
+    <value>Session icon size</value>
+    <comment>axan: Header for a number box: the size of a sidebar row's icon.</comment>
+  </data>
+  <data name="Globals_SidebarIconSize.HelpText" xml:space="preserve">
+    <value>Size of each session's icon in the sidebar, in pixels. Default 16.</value>
+    <comment>axan: A description for the "session icon size" setting. Presented near "Globals_SidebarIconSize.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphSize.Header" xml:space="preserve">
+    <value>Status glyph size</value>
+    <comment>axan: Header for a number box: the size of the status glyph at a sidebar row's right edge.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphSize.HelpText" xml:space="preserve">
+    <value>Size of the status glyph at the right edge of a session's row. Default 12.</value>
+    <comment>axan: A description for the "status glyph size" setting. Presented near "Globals_SidebarStateGlyphSize.Header".</comment>
+  </data>
+  <data name="Globals_SidebarIconFontScale.Header" xml:space="preserve">
+    <value>Icon fonts</value>
+    <comment>axan: Header for a list of font families, each with a number box: how big each font's glyphs draw as sidebar icons.</comment>
+  </data>
+  <data name="Globals_SidebarIconFontScale.HelpText" xml:space="preserve">
+    <value>Fonts the sidebar's icons are drawn from. 1.00 is the icon size above; raise a family whose glyphs come in small.</value>
+    <comment>axan: A description for the "icon fonts" setting. Presented near "Globals_SidebarIconFontScale.Header".</comment>
+  </data>
+  <data name="Globals_SidebarIconFontScaleReset" xml:space="preserve">
+    <value>Reset</value>
+    <comment>axan: Button beside a font family's number box that puts the family's icon scale back to its default.</comment>
+  </data>
+  <data name="Globals_SidebarIconFontScaleResetName" xml:space="preserve">
+    <value>Reset {0}</value>
+    <comment>axan: Accessible name of the reset button for a font family's icon scale. {0} is the font family name, e.g. "Segoe UI Historic".</comment>
+  </data>
+  <data name="Sidebar_GlyphsHeader.Text" xml:space="preserve">
+    <value>Status glyphs</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page. The right-edge icons a sidebar row shows for its session's state.</comment>
+  </data>
+  <data name="Sidebar_StatusGlyphsInfo.[using:Windows.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>These glyphs show the state a program reports over OSC 7501 (the Program Status Protocol), with shell integration and the bell as fallbacks. Click to open the documentation.</value>
+    <comment>axan: Tooltip on the info button next to the "Status glyphs" header on the Sessions &gt; Sidebar settings page. "OSC 7501" is a terminal escape sequence name; do not translate.</comment>
+  </data>
+  <data name="Sidebar_StatusGlyphsInfo.[using:Windows.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>About status glyphs: open the OSC 7501 documentation</value>
+    <comment>axan: Screen reader name of the info button next to the "Status glyphs" header on the Sessions &gt; Sidebar settings page.</comment>
   </data>
   <data name="Nav_StartupSessions.Content" xml:space="preserve">
     <value>Startup sessions</value>

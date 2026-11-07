@@ -16,6 +16,43 @@
 # stale Dev-branding objects would otherwise mismatch the Release manifest's CLSIDs.
 param([switch]$Rebuild, [switch]$Launch)
 
+# Refuse to run from inside axan. The kill step below force-stops every axan.exe, and if
+# this script's own console is hosted by axan (a Claude Code session or a plain shell in an
+# axan tab), that kill takes the script down with it: the build never starts and the
+# driving session dies mid-turn. Happened 2026-09-17. Walk the parent chain and bail early.
+#
+# One Win32_Process query, then the walk runs over a PID map. A visited set and a 64-hop
+# cap bound it: ParentProcessId is never cleared when a parent exits, so PID reuse can
+# form a cycle. A "parent" created after its child is such a reused PID, not a real
+# ancestor, so the walk stops there instead of following an unrelated process.
+function Find-AxanAncestor([int]$StartPid) {
+  $procs = @{}
+  foreach ($p in Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, CreationDate) {
+    $procs[[int]$p.ProcessId] = $p
+  }
+  $visited = @{}
+  $id = $StartPid
+  $child = $null
+  for ($hop = 0; $hop -lt 64; $hop++) {
+    if (-not $id -or $visited.ContainsKey($id) -or -not $procs.ContainsKey($id)) { break }
+    $p = $procs[$id]
+    if ($child -and $p.CreationDate -and $child.CreationDate -and $p.CreationDate -gt $child.CreationDate) { break }
+    if ($p.Name -match '^axan(-cli)?\.exe$') { return $p }
+    $visited[$id] = $true
+    $child = $p
+    $id = [int]$p.ParentProcessId
+  }
+  return $null
+}
+
+$ancestor = Find-AxanAncestor $PID
+if ($ancestor) {
+  Write-Error (("refusing to deploy: this shell is hosted by {0} (pid {1}). Deploying kills every axan " +
+    "instance, including the one running this script. Run the deploy from stock Windows Terminal " +
+    "or another non-axan console.") -f $ancestor.Name, $ancestor.ProcessId)
+  exit 3
+}
+
 $root = Join-Path $PSScriptRoot 'windows'
 $wrap = Join-Path $PSScriptRoot '.deploy-cascadia.log'
 $mlog = Join-Path $PSScriptRoot '.deploy-msbuild.log'
@@ -35,10 +72,13 @@ try {
   #
   # Force-kill directly. A graceful CloseMainWindow() was tried and verified NOT to work:
   # axan ignores WM_CLOSE (blocked by its close-confirmation path), so it only added an 8s
-  # wait before the same force-kill. Force-killing axan was harmless in testing — no
-  # orphaned-shell crashes, and the driving terminal survived. The real protection against
-  # taking this session down is the DETACHED relaunch below (axan is never a child of the
-  # deploy console) plus running this whole script backgrounded.
+  # wait before the same force-kill. Force-killing axan is harmless to OTHER terminals (no
+  # orphaned-shell crashes in testing); the only way it takes the driving session down is
+  # if that session is itself inside axan, which the ancestry guard at the top refuses.
+  # Beyond that, the protection is the DETACHED relaunch below (axan is never a child of
+  # the deploy console) plus running this whole script backgrounded. Note that with axan as
+  # the daily driver, this step closes every open axan session, so the caller must have
+  # confirmed nothing live is in them.
   $running = Get-Process axan,axan-cli -ErrorAction SilentlyContinue
   if ($running) {
     Note ("stopping running axan instances: " + ($running.Id -join ', '))
@@ -106,11 +146,60 @@ try {
   # package's resources.pri mapped. Observed twice on 2026-07-02, and an immediate
   # manual rerun succeeded both times — so retry once after a short pause before
   # declaring failure.
+  # Issue #43 workaround. Registration of the SAME full package name can be refused with
+  # 0x80070020 (the package's activation store on the system side is stuck; only a reboot
+  # clears it), but a NEW full name registers fine. The full name includes the version, so
+  # bumping the 4th field in the LAYOUT manifest (never the source manifest) sidesteps it.
+  # Verified 2026-11-06: 0.1.2.0 refused, 0.1.2.1 registered on the first try, no reboot.
+  # The bump only matters on that fallback path: DeployAppRecipe UNREGISTERS the current
+  # package and recreates the layout from the recipe before registering (observed
+  # 2026-11-07: 0.1.2.1 registered, plain deploy of 0.1.2.0 went through on attempt 1 with
+  # no downgrade refusal), so there is no pre-bump before it — one would be overwritten
+  # anyway. The fallback's bump is a full four-part [version] compare: a registered build
+  # newer in Major/Minor/Build (deployed from another branch) is only beaten by taking ITS
+  # Major.Minor.Build, not by bumping the layout's own revision.
+  $layoutManifest = Join-Path $root 'src\cascadia\CascadiaPackage\bin\x64\Debug\AppX\AppxManifest.xml'
+  function Get-LayoutVersion { [version](([xml](Get-Content $layoutManifest -Raw)).Package.Identity.Version) }
+  # A version strictly greater than both inputs: the higher of the two, revision + 1.
+  # $Registered may be $null (nothing registered). AppX version fields are 16-bit.
+  function Get-FreshVersion([version]$Layout, [version]$Registered) {
+    $base = $Layout
+    if ($Registered -and $Registered -ge $Layout) { $base = $Registered }
+    $rev = [Math]::Max($base.Revision, 0) + 1
+    if ($rev -gt 65535) { throw "cannot raise version $base above itself: the revision field is already 65535" }
+    [version]('{0}.{1}.{2}.{3}' -f $base.Major, $base.Minor, $base.Build, $rev)
+  }
+  # Rewrite Version= inside the <Identity> element only (attribute order independent), then
+  # re-parse and confirm the manifest really carries the new version. Fails loudly instead
+  # of reporting a change that did not happen. Preserves a UTF-8 BOM if the file had one.
+  function Set-LayoutVersion([version]$New, [string]$Why) {
+    $bytes = [IO.File]::ReadAllBytes($layoutManifest)
+    $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    $raw = [IO.File]::ReadAllText($layoutManifest)
+    $idRx = [regex]'<Identity\b[^>]*>'
+    $ids = $idRx.Matches($raw)
+    if ($ids.Count -ne 1) { throw "layout manifest ${layoutManifest}: expected exactly one <Identity> element, found $($ids.Count); version NOT changed" }
+    $verRx = [regex]'(\sVersion\s*=\s*")[^"]*(")'
+    if (-not $verRx.IsMatch($ids[0].Value)) { throw "layout manifest ${layoutManifest}: <Identity> has no Version attribute; version NOT changed" }
+    $newId = $verRx.Replace($ids[0].Value, ('${1}' + $New.ToString() + '${2}'), 1)
+    $raw = $raw.Substring(0, $ids[0].Index) + $newId + $raw.Substring($ids[0].Index + $ids[0].Length)
+    [IO.File]::WriteAllText($layoutManifest, $raw, (New-Object Text.UTF8Encoding($hasBom)))
+    $actual = Get-LayoutVersion
+    if ($actual -ne $New) { throw "layout manifest ${layoutManifest}: wrote version $New but it reads back as $actual" }
+    Note "layout manifest version set to $New ($Why; the source manifest is untouched)"
+    $New
+  }
+  $registered = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
+  Note ("registered before deploy: " + $(if ($registered) { $registered.PackageFullName } else { '<none>' }))
+
   $dcode = 1
+  $deployOut = ''
   foreach ($attempt in 1..2) {
     Note "--- DeployAppRecipe.exe (register sh.axan.Axan) [attempt $attempt] ---"
-    & $deploy $recipe.FullName | Tee-Object -FilePath $wrap -Append
+    # Tee to the log and the console live; -Variable keeps a copy for the diagnostics below.
+    & $deploy $recipe.FullName | Tee-Object -FilePath $wrap -Append | Tee-Object -Variable out | Out-Host
     $dcode = $LASTEXITCODE
+    $deployOut += ($out | Out-String)
     Note ("=== deploy EXIT $dcode (attempt $attempt) ===")
     if ($dcode -eq 0) { break }
     if ($attempt -lt 2) { Start-Sleep -Seconds 5 }
@@ -119,7 +208,55 @@ try {
   # FAILED redeploy leaves the PREVIOUS registration in place, which used to make this
   # script report "PACKAGE DEPLOYED" over a stale build (seen live: layout copy failed
   # with ERROR_USER_MAPPED_FILE, exit 5, yet the old June package still answered).
-  if ($dcode -ne 0) { Note "RESULT: DEPLOY FAILED ($dcode) - the previously registered build is still active"; exit $dcode }
+  if ($dcode -ne 0) {
+    # Issue #43: DEP0700 0x80073CF6 with inner 0x80070020 (sharing violation while
+    # registering the activatableClass collector) is NOT a running instance. Nothing
+    # holds the layout; the package's activation store on the system side is stuck,
+    # the OLD registration is gone too, and only a reboot has cleared it (elevation
+    # does not). Say so instead of the generic "still active" line, which is wrong here.
+    # Only DeployAppRecipe's own output is inspected, never the whole log: this script's
+    # own notes mention "downgrade" and must not be mistaken for the deploy's error.
+    # Downgrade: 0x80073D06 ERROR_INSTALL_PACKAGE_DOWNGRADE ("a higher version ... is
+    # already installed"). 0x80073CFB ERROR_PACKAGE_ALREADY_EXISTS is a same-name refusal.
+    $downgradeRx = '0x80073D06|downgrade|higher version'
+    $nowReg = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
+    $nowRegText = if ($nowReg) { "registered now: $($nowReg.Version)" } else { 'NO axan build is registered now' }
+    if ($deployOut -match '0x80070020') {
+      $nowRegVersion = if ($nowReg) { [version]$nowReg.Version } else { $null }
+      $new = Set-LayoutVersion (Get-FreshVersion (Get-LayoutVersion) $nowRegVersion) '#43 workaround: fresh full name after 0x80070020'
+      Note "--- 0x80070020 (issue #43): Add-AppxPackage -Register under the fresh full name $new ---"
+      try {
+        Add-AppxPackage -Register $layoutManifest -ForceApplicationShutdown -ErrorAction Stop
+        $dcode = 0
+      } catch {
+        $msg = $_.Exception.Message -replace '\s+', ' '
+        $hr = '0x{0:X8}' -f $_.Exception.HResult
+        Note ("fallback register failed (HRESULT $hr): " + $msg)
+        $after = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
+        $afterText = if ($after) { "registered now: $($after.Version)" } else { 'the package is now UNREGISTERED' }
+        if ("$hr $msg" -match $downgradeRx) {
+          Note "RESULT: DEPLOY FAILED ($dcode) - the fallback registration of $new was refused as a DOWNGRADE ($afterText). A newer sh.axan.Axan is registered than this layout; deploy from that build's branch or remove it (Remove-AppxPackage) first."
+        } elseif ("$hr $msg" -match '0x80070020') {
+          Note "RESULT: DEPLOY FAILED ($dcode) - registration refused with 0x80070020 even under a fresh version (issue #43); $afterText. Reboot, then rerun this script. Before rebooting, from an elevated shell, 'handle.exe -a sh.axan.Axan' would identify the holder."
+        } else {
+          Note "RESULT: DEPLOY FAILED ($dcode) - the fallback registration of $new failed with $hr (see the message above, not 0x80070020); $afterText."
+        }
+        exit $dcode
+      }
+    } elseif ($deployOut -match $downgradeRx) {
+      Note "RESULT: DEPLOY FAILED ($dcode) - refused as a DOWNGRADE: layout $(Get-LayoutVersion) vs $nowRegText. The registered build is newer than this checkout's; deploy from that build's branch or remove it (Remove-AppxPackage) first."
+      exit $dcode
+    } elseif ($deployOut -match '0x80073CFB') {
+      Note "RESULT: DEPLOY FAILED ($dcode) - 0x80073CFB: a package with this exact full name ($(Get-LayoutVersion)) is already installed and reinstall was blocked; $nowRegText"
+      exit $dcode
+    } elseif ($nowReg) {
+      Note "RESULT: DEPLOY FAILED ($dcode) - the previously registered build is still active ($nowRegText)"
+      exit $dcode
+    } else {
+      Note "RESULT: DEPLOY FAILED ($dcode) - $nowRegText; see the DeployAppRecipe output above"
+      exit $dcode
+    }
+  }
 
   $pkg = Get-AppxPackage -Name 'sh.axan.Axan*'
   if ($pkg) {
