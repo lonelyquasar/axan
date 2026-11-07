@@ -154,5 +154,60 @@ namespace TerminalCoreUnitTests
             std::vector<Wire::Entry> entries{ e };
             VERIFY_ARE_EQUAL(Wire::kTomlVersion, Wire::TomlVersionFor(entries));
         }
+
+        TEST_METHOD(ProfileNameMatchesExactThenCaseInsensitive)
+        {
+            const std::vector<std::wstring> names{ L"PowerShell", L"Ubuntu", L"ubuntu", L"Command Prompt" };
+            Log::Comment(L"#44: a name alone resolves; exact wins over a case-insensitive match");
+            VERIFY_ARE_EQUAL(std::optional<size_t>{ 0 }, Wire::MatchProfileName(L"PowerShell", names));
+            VERIFY_ARE_EQUAL(std::optional<size_t>{ 2 }, Wire::MatchProfileName(L"ubuntu", names));
+            VERIFY_ARE_EQUAL(std::optional<size_t>{ 1 }, Wire::MatchProfileName(L"Ubuntu", names));
+            Log::Comment(L"Case-insensitive fallback takes the first in list order");
+            VERIFY_ARE_EQUAL(std::optional<size_t>{ 1 }, Wire::MatchProfileName(L"UBUNTU", names));
+            VERIFY_ARE_EQUAL(std::optional<size_t>{ 3 }, Wire::MatchProfileName(L"command prompt", names));
+            Log::Comment(L"An unknown or empty name does not match (the importer falls back to the default profile)");
+            VERIFY_IS_FALSE(Wire::MatchProfileName(L"Fish", names).has_value());
+            VERIFY_IS_FALSE(Wire::MatchProfileName(L"Power Shell", names).has_value());
+            VERIFY_IS_FALSE(Wire::MatchProfileName(L"", names).has_value());
+            VERIFY_IS_FALSE(Wire::MatchProfileName(L"Ubuntu", {}).has_value());
+        }
+
+        TEST_METHOD(ProfileNameAloneIsRead)
+        {
+            const auto doc = toml::parse("[[startup-sessions]]\nid = \"a\"\nprofile-name = \"Ubuntu\"\n");
+            const auto e = Wire::FromTomlTable(*doc["startup-sessions"][0].as_table());
+            VERIFY_ARE_EQUAL(std::string{}, e.profile);
+            VERIFY_ARE_EQUAL(std::string{ "Ubuntu" }, e.profileName);
+        }
+
+        TEST_METHOD(CheckTomlTableFlagsUnknownKeysAndWrongTypes)
+        {
+            Log::Comment(L"#44: a well-formed session and separator row have no issues");
+            {
+                const auto doc = toml::parse("[[startup-sessions]]\nid = \"a\"\nprofile-name = \"Ubuntu\"\nicon = \"U+131A3\"\n"
+                                             "color = \"#ff0000\"\nhoist = [\"error\"]\n"
+                                             "[[startup-sessions]]\nid = \"s\"\nkind = \"separator\"\nheight = 2\ncollapsed = true\n"
+                                             "[[startup-sessions]]\nid = \"t\"\nkind = \"separator\"\nheight = 0.5\nhoist = \"never\"\n");
+                for (size_t i = 0; i < 3; ++i)
+                {
+                    VERIFY_ARE_EQUAL(size_t{ 0 }, Wire::CheckTomlTable(*doc["startup-sessions"][i].as_table()).size());
+                }
+            }
+            Log::Comment(L"An unknown key and each wrongly typed value is one issue");
+            {
+                const auto doc = toml::parse("[[startup-sessions]]\nid = \"a\"\ncolour = \"red\"\nname = 3\nheight = \"2\"\n"
+                                             "collapsed = \"yes\"\nhoist = [\"error\", 3]\nicon = \"robot\"\n");
+                const auto issues = Wire::CheckTomlTable(*doc["startup-sessions"][0].as_table());
+                VERIFY_ARE_EQUAL(size_t{ 5 }, issues.size());
+                const auto has = [&](std::string_view key, std::string_view problem) {
+                    return std::any_of(issues.begin(), issues.end(), [&](const Wire::TomlKeyIssue& i) { return i.key == key && i.problem == problem; });
+                };
+                VERIFY_IS_TRUE(has("colour", "unknown key"));
+                VERIFY_IS_TRUE(has("name", "expected a string"));
+                VERIFY_IS_TRUE(has("height", "expected a number"));
+                VERIFY_IS_TRUE(has("collapsed", "expected a boolean"));
+                VERIFY_IS_TRUE(has("hoist", "expected a string or an array of strings"));
+            }
+        }
     };
 }

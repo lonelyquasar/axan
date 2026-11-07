@@ -78,10 +78,15 @@
 
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cwctype>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <AxanGlyphNames.h>
 #include <AxanIconRegistry.h>
@@ -454,6 +459,104 @@ namespace Axan::LaunchEntryWire
             e.height = NormalizeSeparatorHeight(e.height);
         }
         return e;
+    }
+
+    // One problem with a [[startup-sessions]] row's keys (#44): a key this build doesn't
+    // know (a typo such as "colour"), or a known key holding the wrong TOML type (FromTomlTable
+    // reads it as absent). Never fatal: the sparse contract keeps the row; the importer logs
+    // one warning per issue.
+    struct TomlKeyIssue
+    {
+        std::string key;
+        std::string problem; // "unknown key", or "expected <type>"
+    };
+
+    // Check a row's keys and value types against the schema above. Templated for the same
+    // reason as FromTomlTable. Expected types: height a number, collapsed a boolean, hoist
+    // a string or an array of strings, everything else a string.
+    template<typename TomlTable>
+    std::vector<TomlKeyIssue> CheckTomlTable(const TomlTable& t)
+    {
+        static constexpr std::array<std::string_view, 16> kKnownKeys{
+            TomlKey::Id, TomlKey::ParentId, TomlKey::Profile, TomlKey::ProfileName,
+            TomlKey::Name, TomlKey::Directory, TomlKey::Command, TomlKey::Icon,
+            TomlKey::Color, TomlKey::ColorTarget, TomlKey::Kind, TomlKey::Style,
+            TomlKey::Placement, TomlKey::Height, TomlKey::Collapsed, TomlKey::Hoist
+        };
+        std::vector<TomlKeyIssue> issues;
+        for (auto&& [k, v] : t)
+        {
+            const std::string_view key{ k.str() };
+            const auto known = std::find(kKnownKeys.begin(), kKnownKeys.end(), key) != kKnownKeys.end();
+            if (!known)
+            {
+                issues.push_back({ std::string{ key }, "unknown key" });
+            }
+            else if (key == TomlKey::Height)
+            {
+                if (!v.is_number())
+                {
+                    issues.push_back({ std::string{ key }, "expected a number" });
+                }
+            }
+            else if (key == TomlKey::Collapsed)
+            {
+                if (!v.is_boolean())
+                {
+                    issues.push_back({ std::string{ key }, "expected a boolean" });
+                }
+            }
+            else if (key == TomlKey::Hoist)
+            {
+                bool ok = v.is_string();
+                if (const auto arr = v.as_array())
+                {
+                    ok = true;
+                    for (const auto& el : *arr)
+                    {
+                        ok = ok && el.is_string();
+                    }
+                }
+                if (!ok)
+                {
+                    issues.push_back({ std::string{ key }, "expected a string or an array of strings" });
+                }
+            }
+            else if (!v.is_string())
+            {
+                issues.push_back({ std::string{ key }, "expected a string" });
+            }
+        }
+        return issues;
+    }
+
+    // #44: match a profile-name against the machine's profile names: an exact match first,
+    // then a case-insensitive one (first in list order). nullopt when nothing matches or
+    // the name is empty; the caller falls back to the default profile with a warning.
+    inline std::optional<size_t> MatchProfileName(std::wstring_view name, const std::vector<std::wstring>& profileNames)
+    {
+        if (name.empty())
+        {
+            return std::nullopt;
+        }
+        for (size_t i = 0; i < profileNames.size(); ++i)
+        {
+            if (profileNames[i] == name)
+            {
+                return i;
+            }
+        }
+        const auto fold = [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); };
+        for (size_t i = 0; i < profileNames.size(); ++i)
+        {
+            const auto& candidate = profileNames[i];
+            if (candidate.size() == name.size() &&
+                std::equal(candidate.begin(), candidate.end(), name.begin(), [&](wchar_t a, wchar_t b) { return fold(a) == fold(b); }))
+            {
+                return i;
+            }
+        }
+        return std::nullopt;
     }
 
     // Import-direction icon mapping (portable -> native M13), honoring the registry's

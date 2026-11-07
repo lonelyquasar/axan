@@ -538,50 +538,63 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     }
 
     // D19: resolve an imported entry's profile reference against the live profiles —
-    // GUID-first, then the portable profile-name fallback (so a hand-created profile
-    // re-matches on a machine where its GUID differs). Empty stays empty ("follow the
-    // global default profile"). An unresolvable reference is kept verbatim with a logged
-    // warning: spawn falls back to the default profile until that profile (re)appears.
-    hstring StartupSessionsViewModel::_resolveImportedProfile(const std::string& bareGuid, const std::string& name)
+    // GUID-first, then the portable profile-name (so a hand-created profile re-matches on a
+    // machine where its GUID differs). #44: profile-name is consulted whenever the GUID is
+    // missing, empty, malformed or unknown, so a cross-machine file can name a profile
+    // without knowing its GUID; the name matches exactly first, then case-insensitively
+    // (Wire::MatchProfileName). Both empty stays empty ("follow the global default
+    // profile"). An unresolvable reference logs a warning naming the row: a GUID is kept
+    // verbatim (spawn falls back to the default profile until that profile (re)appears), a
+    // name alone becomes the default profile.
+    hstring StartupSessionsViewModel::_resolveImportedProfile(const std::string& bareGuid, const std::string& name, const std::string& row)
     {
-        if (bareGuid.empty())
+        if (bareGuid.empty() && name.empty())
         {
             return {};
         }
-        const auto braced = bareGuid.front() == '{' ? bareGuid : "{" + bareGuid + "}";
-        const auto bracedHstr = winrt::to_hstring(braced);
+        std::string braced;
+        if (!bareGuid.empty())
+        {
+            braced = bareGuid.front() == '{' ? bareGuid : "{" + bareGuid + "}";
+        }
         if (_settings)
         {
-            try
+            if (!braced.empty())
             {
-                const auto g = ::Microsoft::Console::Utils::GuidFromString(std::wstring{ bracedHstr }.c_str());
-                if (const auto p = _settings.FindProfile(winrt::guid{ g }))
+                try
                 {
-                    return hstring{ ::Microsoft::Console::Utils::GuidToString(p.Guid()) };
+                    const auto g = ::Microsoft::Console::Utils::GuidFromString(std::wstring{ winrt::to_hstring(braced) }.c_str());
+                    if (const auto p = _settings.FindProfile(winrt::guid{ g }))
+                    {
+                        return hstring{ ::Microsoft::Console::Utils::GuidToString(p.Guid()) };
+                    }
                 }
-            }
-            catch (...)
-            {
-                // Malformed GUID string in the file; fall through to the name match.
+                catch (...)
+                {
+                    // Malformed GUID string in the file; fall through to the name match.
+                }
             }
             if (!name.empty())
             {
                 if (const auto profiles = _settings.ActiveProfiles())
                 {
-                    const auto nameHstr = winrt::to_hstring(name);
+                    std::vector<std::wstring> names;
+                    names.reserve(profiles.Size());
                     for (const auto& p : profiles)
                     {
-                        if (p.Name() == nameHstr)
-                        {
-                            Axan::Log::Info("StartupSessionsViewModel", "import: profile GUID not found; re-matched by name", { { "profile", braced }, { "name", name } });
-                            return hstring{ ::Microsoft::Console::Utils::GuidToString(p.Guid()) };
-                        }
+                        names.emplace_back(p.Name());
+                    }
+                    if (const auto i = Axan::LaunchEntryWire::MatchProfileName(std::wstring{ winrt::to_hstring(name) }, names))
+                    {
+                        const auto p = profiles.GetAt(static_cast<uint32_t>(*i));
+                        Axan::Log::Info("StartupSessionsViewModel", braced.empty() ? "import: profile matched by profile-name" : "import: profile GUID not found; re-matched by name", { { "row", row }, { "profile", braced }, { "name", name }, { "matched", winrt::to_string(p.Name()) } });
+                        return hstring{ ::Microsoft::Console::Utils::GuidToString(p.Guid()) };
                     }
                 }
             }
         }
-        Axan::Log::Warn("StartupSessionsViewModel", "import: entry references a profile this machine doesn't have; it will spawn under the default profile", { { "profile", braced }, { "name", name } });
-        return bracedHstr;
+        Axan::Log::Warn("StartupSessionsViewModel", "import: entry references a profile this machine doesn't have; it will spawn under the default profile", { { "row", row }, { "profile", braced }, { "name", name } });
+        return braced.empty() ? hstring{} : winrt::to_hstring(braced);
     }
 
     // Replace the tree with the startup sessions parsed from a portable startup-sessions
@@ -589,7 +602,9 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     // src/inc/AxanLaunchEntryWire.h; D18/D19). Canonical kebab keys; builtin:
     // icons map to the native Segoe glyph (an UNKNOWN builtin: name falls back to the
     // placeholder with a logged warning, per D18); each entry's `profile` GUID resolves
-    // with the `profile-name` fallback. Returns false — with the current list untouched —
+    // with the `profile-name` fallback, and profile-name alone resolves too (#44). Unknown
+    // keys and wrongly typed values are read as absent with one logged warning each (#44).
+    // Returns false — with the current list untouched —
     // on any read/parse/validation failure or when the file yields zero entries; every
     // failure path logs its reason to axan.log (the page surfaces the boolean as an
     // InfoBar, #435).
@@ -646,14 +661,30 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
         auto rows = winrt::single_threaded_observable_vector<Editor::LaunchEntryViewModel>();
         uint32_t separators = 0;
+        uint32_t warnings = 0;
+        size_t rowIndex = 0;
         for (const auto& el : *entries)
         {
+            const auto index = rowIndex++;
             const auto* t = el.as_table();
             if (!t)
             {
+                Axan::Log::Warn("StartupSessionsViewModel", "import: [[startup-sessions]] element is not a table; skipping it", { { "row", std::to_string(index) } });
+                ++warnings;
                 continue;
             }
             const auto e = Wire::FromTomlTable(*t);
+            // #44: "row" names the entry for the log: its zero-based position in the file,
+            // plus its id when it has one.
+            const auto row = e.id.empty() ? std::to_string(index) : std::to_string(index) + " (" + e.id + ")";
+
+            // #44: unknown keys and wrongly typed values are read as absent (sparse
+            // contract) but no longer silently: one warning per offending key.
+            for (const auto& issue : Wire::CheckTomlTable(*t))
+            {
+                Axan::Log::Warn("StartupSessionsViewModel", "import: ignoring a key in a [[startup-sessions]] row", { { "row", row }, { "key", issue.key }, { "problem", issue.problem } });
+                ++warnings;
+            }
 
             const auto idHstr = e.id.empty() ? _newEntryId() : winrt::to_hstring(e.id);
 
@@ -661,7 +692,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             // imported as a default-profile shell and lose its kind on save — skip it loudly.
             if (!e.kind.empty() && e.kind != Wire::KindSession && e.kind != Wire::KindSeparator)
             {
-                Axan::Log::Warn("StartupSessionsViewModel", "import: unrecognized row kind; skipping the entry", { { "kind", e.kind }, { "entry", e.id } });
+                Axan::Log::Warn("StartupSessionsViewModel", "import: unrecognized row kind; skipping the entry", { { "kind", e.kind }, { "row", row } });
+                ++warnings;
                 continue;
             }
 
@@ -691,13 +723,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             const auto nativeIcon = Wire::ImportIcon(std::wstring{ winrt::to_hstring(e.icon) }, unknownBuiltin);
             if (unknownBuiltin)
             {
-                Axan::Log::Warn("StartupSessionsViewModel", "import: unknown builtin: icon; using the default placeholder", { { "icon", e.icon }, { "entry", e.id } });
+                Axan::Log::Warn("StartupSessionsViewModel", "import: unknown builtin: icon; using the default placeholder", { { "icon", e.icon }, { "row", row } });
+                ++warnings;
             }
 
             Model::LaunchEntry m{};
             m.Id(idHstr);
             m.ParentId(winrt::to_hstring(e.parentId));
-            m.Profile(_resolveImportedProfile(e.profile, e.profileName));
+            m.Profile(_resolveImportedProfile(e.profile, e.profileName, row));
             m.Name(winrt::to_hstring(e.name));
             m.Directory(winrt::to_hstring(e.directory));
             m.Command(winrt::to_hstring(e.command));
@@ -710,7 +743,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 const auto hoist = Axan::HoistRule::Parse(std::wstring{ winrt::to_hstring(e.hoist) }, &unknown);
                 if (!unknown.empty())
                 {
-                    Axan::Log::Warn("StartupSessionsViewModel", "import: unknown hoist state name(s) ignored", { { "hoist", e.hoist }, { "entry", e.id } });
+                    Axan::Log::Warn("StartupSessionsViewModel", "import: unknown hoist state name(s) ignored", { { "hoist", e.hoist }, { "row", row } });
+                    ++warnings;
                 }
                 m.Hoist(hstring{ Axan::HoistRule::Format(hoist) });
             }
@@ -732,7 +766,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _commit();
         _NotifyChanges(L"Entries");
         _select(rows.GetAt(0)); // axan #38 (rows is non-empty here)
-        Axan::Log::Info("StartupSessionsViewModel", "import: replaced the startup tree from TOML", { { "path", pathU8 }, { "count", std::to_string(rows.Size()) }, { "separators", std::to_string(separators) } });
+        Axan::Log::Info("StartupSessionsViewModel", "import: replaced the startup tree from TOML", { { "path", pathU8 }, { "count", std::to_string(rows.Size()) }, { "separators", std::to_string(separators) }, { "warnings", std::to_string(warnings) } });
         return true;
     }
 

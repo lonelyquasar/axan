@@ -8,6 +8,10 @@
 
 #include <AxanGlyphNames.h> // axan #39: glyph names -> Segoe Fluent codepoints
 #include <AxanGlyphScale.h> // axan: per-font size multiplier (hieroglyphs, runes)
+#include <AxanLog.h> // axan #44: warn once per unknown glyph name
+
+#include <mutex>
+#include <set>
 
 #include <Shlobj.h>
 #include <Shlobj_core.h>
@@ -125,14 +129,37 @@ namespace winrt::Microsoft::Terminal::UI::implementation
     // - path: the unprocessed path to the icon.
     // Return Value:
     // - An IconElement with its IconSource set, if possible.
+    // axan #44: an icon string that reads as a glyph name but isn't one renders as the
+    // placeholder. Log it once per distinct string per process (renders repeat constantly,
+    // and this runs on every window's UI thread, hence the lock); the set is capped so a
+    // stream of distinct typos can't grow it without bound.
+    static void _warnUnknownGlyphNameOnce(const winrt::hstring& icon)
+    {
+        static std::mutex lock;
+        static std::set<std::wstring> seen;
+        {
+            const std::lock_guard guard{ lock };
+            if (seen.size() >= 256 || !seen.emplace(icon.c_str()).second)
+            {
+                return;
+            }
+        }
+        Axan::Log::Warn("IconPathConverter", "unknown glyph name; rendering the placeholder (see AxanSegoeFluentGlyphs.h for valid names)", { { "icon", winrt::to_string(icon) } });
+    }
+
     template<typename TIconSource>
     TIconSource _getIconSource(const winrt::hstring& rawIconPath, bool monochrome)
     {
         TIconSource iconSource{ nullptr };
 
         // axan #39: a Segoe Fluent glyph NAME ("robot", or a builtin alias like "git") renders
-        // as its glyph; everything else (paths, emoji, literal glyphs) passes through unchanged.
+        // as its glyph; #44: so does code-point text ("U+131A3"). Everything else (paths,
+        // emoji, literal glyphs) passes through unchanged.
         const winrt::hstring iconPath{ Axan::GlyphNames::ResolveIcon(rawIconPath) };
+        if (Axan::GlyphNames::IsUnresolvedName(rawIconPath))
+        {
+            _warnUnknownGlyphNameOnce(rawIconPath);
+        }
 
         if (iconPath.size() != 0)
         {

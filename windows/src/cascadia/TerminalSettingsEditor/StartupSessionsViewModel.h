@@ -86,7 +86,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         Editor::LaunchEntryViewModel _dragHead{ nullptr };
         std::optional<uint32_t> _dragStartIndex;
         int32_t _dragOldDepth{ 0 };
-        hstring _resolveImportedProfile(const std::string& bareGuid, const std::string& name);
+        hstring _resolveImportedProfile(const std::string& bareGuid, const std::string& name, const std::string& row);
     };
 }
 

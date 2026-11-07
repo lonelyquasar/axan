@@ -250,6 +250,47 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_EQUAL(S::ToUtf16(0x131A3), G::ResolveIcon(S::ToUtf16(0x131A3)));
         }
 
+        TEST_METHOD(CodepointTextResolvesAsAnIcon)
+        {
+            Log::Comment(L"#44: each picker-search form resolves to the character, as a direct pick stores it");
+            for (const auto* icon : { L"U+131A3", L"u+131a3", L"0x131A3", L"0X131a3", L"131A3", L" U+131A3 " })
+            {
+                Log::Comment(icon);
+                VERIFY_ARE_EQUAL(S::ToUtf16(0x131A3), G::ResolveIcon(icon));
+                VERIFY_IS_FALSE(G::IsUnresolvedName(icon));
+            }
+            Log::Comment(L"A BMP symbol code point gives the same single character a literal glyph does");
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE756 }), G::ResolveIcon(L"U+E756"));
+            VERIFY_ARE_EQUAL(std::wstring{ L"\u16A0" }, G::ResolveIcon(L"U+16A0"));
+            Log::Comment(L"Surrogates, non-characters and controls are rejected and pass through verbatim");
+            for (const auto* icon : { L"U+D800", L"U+DFFF", L"U+FFFE", L"U+FDD0", L"U+001F", L"U+110000" })
+            {
+                Log::Comment(icon);
+                VERIFY_ARE_EQUAL(std::wstring{ icon }, G::ResolveIcon(icon));
+            }
+            Log::Comment(L"A glyph name wins over a bare hex word of the same spelling; U+ forces the code point");
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xEC32 }), G::ResolveIcon(L"cafe"));
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xCAFE }), G::ResolveIcon(L"U+CAFE"));
+        }
+
+        TEST_METHOD(UnresolvedNamesAreDetected)
+        {
+            Log::Comment(L"#44: name-shaped strings that denote nothing are flagged for the converter's warning");
+            for (const auto* icon : { L"no-such-glyph-name", L"Robto", L"builtin:nope", L"Global Nav Buton" })
+            {
+                Log::Comment(icon);
+                VERIFY_IS_TRUE(G::IsUnresolvedName(icon));
+            }
+            Log::Comment(L"Real names, code points, paths, emoji, single characters and \"none\" are not");
+            for (const auto* icon : { L"", L"x", L"robot", L"git", L"builtin:git", L"U+131A3", L"none", L"None",
+                                      L"C:\\icons\\robot.png", L"robot.png", L"ms-appx:///ProfileIcons/robot.png",
+                                      L"%USERPROFILE%\\robot", L"\U0001F916", L"builtin:" })
+            {
+                Log::Comment(icon);
+                VERIFY_IS_FALSE(G::IsUnresolvedName(icon));
+            }
+        }
+
         TEST_METHOD(ExportMapsBuiltinGlyphNamesToPortableTokens)
         {
             namespace W = Axan::LaunchEntryWire;

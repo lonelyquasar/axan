@@ -72,88 +72,12 @@ namespace Axan::GlyphSets
 
     // ---- code points ----
 
-    // A scalar value worth offering as an icon: not a surrogate, not a non-character
-    // (U+FDD0..U+FDEF, U+xxFFFE/U+xxFFFF), not a C0/C1 control, at most U+10FFFF.
-    constexpr bool IsPickableScalar(char32_t cp) noexcept
-    {
-        if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
-        {
-            return false;
-        }
-        if ((cp >= 0xFDD0 && cp <= 0xFDEF) || (cp & 0xFFFE) == 0xFFFE)
-        {
-            return false;
-        }
-        return !(cp < 0x20 || (cp >= 0x7F && cp <= 0x9F));
-    }
-
-    // "U+131A3", "u+131a3", "0x131A3" or a bare "131A3" (blanks around it ignored): 4 to 6
-    // hex digits naming a pickable scalar value. Anything else is nullopt.
-    inline std::optional<char32_t> ParseCodepoint(std::wstring_view query) noexcept
-    {
-        const auto first = query.find_first_not_of(L" \t");
-        if (first == std::wstring_view::npos)
-        {
-            return std::nullopt;
-        }
-        query = query.substr(first, query.find_last_not_of(L" \t") - first + 1);
-        if (query.size() > 2 &&
-            (((query[0] == L'U' || query[0] == L'u') && query[1] == L'+') ||
-             (query[0] == L'0' && (query[1] == L'x' || query[1] == L'X'))))
-        {
-            query.remove_prefix(2);
-        }
-        if (query.size() < 4 || query.size() > 6)
-        {
-            return std::nullopt;
-        }
-        char32_t value = 0;
-        for (const auto ch : query)
-        {
-            unsigned digit;
-            if (ch >= L'0' && ch <= L'9')
-            {
-                digit = static_cast<unsigned>(ch - L'0');
-            }
-            else if (ch >= L'a' && ch <= L'f')
-            {
-                digit = static_cast<unsigned>(ch - L'a') + 10;
-            }
-            else if (ch >= L'A' && ch <= L'F')
-            {
-                digit = static_cast<unsigned>(ch - L'A') + 10;
-            }
-            else
-            {
-                return std::nullopt;
-            }
-            value = static_cast<char32_t>(value * 16 + digit);
-        }
-        return IsPickableScalar(value) ? std::optional<char32_t>{ value } : std::nullopt;
-    }
-
-    // The code point as UTF-16 (a surrogate pair above U+FFFF): the stored form.
-    inline std::wstring ToUtf16(char32_t cp)
-    {
-        if (cp < 0x10000)
-        {
-            return std::wstring(1, static_cast<wchar_t>(cp));
-        }
-        const auto v = cp - 0x10000;
-        return std::wstring{ static_cast<wchar_t>(0xD800 + (v >> 10)), static_cast<wchar_t>(0xDC00 + (v & 0x3FF)) };
-    }
-
-    // "U+131A3": uppercase hex, at least four digits.
-    inline std::wstring FormatCodepoint(char32_t cp)
-    {
-        constexpr wchar_t hex[] = L"0123456789ABCDEF";
-        std::wstring digits;
-        for (auto v = cp; v != 0 || digits.size() < 4; v >>= 4)
-        {
-            digits.insert(digits.begin(), hex[v & 0xF]);
-        }
-        return L"U+" + digits;
-    }
+    // Moved to AxanGlyphNames.h (#44) so the icon resolver accepts the same code-point
+    // grammar as the picker's search; re-exported here for the grid and the tests.
+    using GlyphNames::FormatCodepoint;
+    using GlyphNames::IsPickableScalar;
+    using GlyphNames::ParseCodepoint;
+    using GlyphNames::ToUtf16;
 
     // ---- the Segoe Fluent Icons set ----
 
