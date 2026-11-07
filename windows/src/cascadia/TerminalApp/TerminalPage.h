@@ -613,6 +613,8 @@ namespace winrt::TerminalApp::implementation
         // _AppendNeedsYouGroupToggle) and the re-derive they (and a settings reload) trigger.
         void _SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply);
         void _RecomputeAllNodeStates();
+        // axan #48 (UAT): push one shared icon column width to every node (see the .cpp).
+        void _RecomputeIconColumnWidth();
         // axan: hand sidebar.iconFontScale (and #48 sidebar.iconFontWeight) to IconPathConverter (process-wide) and rebuild
         // this window's node icons when its generation differs from what this page last applied.
         void _ApplyIconFontScales();

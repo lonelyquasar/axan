@@ -243,6 +243,17 @@ namespace winrt::TerminalApp::implementation
         return _largeIconsGrowRow ? std::numeric_limits<double>::quiet_NaN() : _iconSize;
     }
 
+    bool SessionNodeViewModel::SetIconColumnWidth(double width)
+    {
+        if (!(width == width) || width == _iconColumnWidth)
+        {
+            return false;
+        }
+        _iconColumnWidth = width;
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IconColumnWidth" });
+        return true;
+    }
+
     void SessionNodeViewModel::RefreshIcons()
     {
         for (const auto name : { L"Icon", L"StateGlyphIcon" })

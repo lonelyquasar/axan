@@ -36,6 +36,7 @@
 #include "AxanSessionState.h" // axan #30
 #include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs
 #include <AxanSidebarSizes.h> // axan: sidebar row size ranges and defaults
+#include <AxanGlyphScale.h> // axan #48 (UAT): icon -> font family -> scale for the shared icon column
 #include "SessionNodeViewModel.h"
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
@@ -964,6 +965,7 @@ namespace winrt::TerminalApp::implementation
             {
                 _startupNodesBySpawnIndex[spawnIndex] = winrt::make_weak(node);
             }
+            _RecomputeIconColumnWidth(); // axan #48 (UAT): the new node's icon may widen the column
         }
     }
 
@@ -1035,6 +1037,10 @@ namespace winrt::TerminalApp::implementation
         for (const auto& node : dead)
         {
             _RemoveNodeSelfHealing(node);
+        }
+        if (!dead.empty())
+        {
+            _RecomputeIconColumnWidth(); // axan #48 (UAT): the widest icon may have gone
         }
     }
 
@@ -2167,6 +2173,7 @@ namespace winrt::TerminalApp::implementation
         vm->ApplyAppearance(_resolveNodeIconPath(iconOverride, tab), iconColor, colorTarget);
 
         Axan::Log::Info("TerminalPage", "applied node appearance", { { "override", winrt::to_string(iconOverride) }, { "color", winrt::to_string(iconColor) }, { "target", winrt::to_string(colorTarget) } });
+        _RecomputeIconColumnWidth(); // axan #48 (UAT): the icon change may widen or narrow the column
 
         // Keep the minimized icon list in step if it's the surface currently showing.
         if (_sidebarState == SidebarState::Minimized)
@@ -3470,6 +3477,68 @@ namespace winrt::TerminalApp::implementation
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             _RecomputeNodeState(node);
         });
+        _RecomputeIconColumnWidth(); // axan #48 (UAT): iconSize / iconFontScale / growRow may have changed
+    }
+
+    // axan #48 (UAT): one icon column width for every row, so a row whose glyph grew its box
+    // (sidebar.largeIconsGrowRow) doesn't push its label right of its neighbours'. On: the
+    // icon size times the largest effective glyph scale among the session icons in use (the
+    // scale IconPathConverter draws each with: the font family the icon resolves to, with the
+    // live sidebar.iconFontScale over the built-in table; an image counts as 1). Off: the
+    // icon size, today's layout. Never below the icon size. Every node (tree, hoisted group and
+    // minimized list share the view models) gets the value; each raises only on a change.
+    // Called after a settings reload, a node is added or removed, or a node's icon changes.
+    void TerminalPage::_RecomputeIconColumnWidth()
+    {
+        if (!_settings || !SessionTree())
+        {
+            return;
+        }
+        namespace Sizes = Axan::SidebarSizes;
+        const auto globals = _settings.GlobalSettings();
+        const auto iconSize = Sizes::SanitizeSize(globals.SidebarIconSize(), Sizes::kIconSize);
+        const bool grow = globals.SidebarLargeIconsGrowRow();
+        double maxScale = 1.0;
+        size_t icons = 0;
+        if (grow)
+        {
+            const auto scales = globals.SidebarIconFontScale();
+            const auto lookup = [&](std::wstring_view font) -> std::optional<double> {
+                if (scales)
+                {
+                    for (const auto& kv : scales)
+                    {
+                        if (Axan::GlyphScale::SameFamily(kv.Key(), font))
+                        {
+                            return kv.Value();
+                        }
+                    }
+                }
+                return std::nullopt;
+            };
+            _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+                const auto vm = _nodeVM(node);
+                if (!vm || vm->IsSeparator())
+                {
+                    return;
+                }
+                ++icons;
+                const auto family = Axan::GlyphScale::FamilyForIcon(vm->IconPath());
+                if (!family.empty()) // "" = an image path, drawn at the icon size
+                {
+                    maxScale = std::max(maxScale, Axan::GlyphScale::FontScaleFor(family, lookup));
+                }
+            });
+        }
+        const auto width = iconSize * maxScale;
+        size_t changed = 0;
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            if (const auto vm = _nodeVM(node); vm && vm->SetIconColumnWidth(width))
+            {
+                ++changed;
+            }
+        });
+        Axan::Log::Debug("TerminalPage", "icon column width resolved", { { "width", std::to_string(width) }, { "iconSize", std::to_string(iconSize) }, { "maxScale", std::to_string(maxScale) }, { "largeIconsGrowRow", grow ? "true" : "false" }, { "icons", std::to_string(icons) }, { "changed", std::to_string(changed) } });
     }
 
     // axan: sidebar.iconFontScale. IconPathConverter keeps one process-wide copy (every

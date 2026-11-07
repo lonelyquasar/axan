@@ -133,6 +133,11 @@ namespace TerminalApp
         // while on, so the glyph's full size drives layout and the row grows to fit. The box
         // keeps MinWidth/MinHeight = IconSize either way.
         Double IconBoxSize { get; };
+        // axan #48 (UAT): the icon column's width, shared by every row so labels line up when
+        // a large glyph grows its own box. The page computes it (IconSize x the largest
+        // effective glyph scale among the session icons in use while largeIconsGrowRow is on,
+        // else IconSize) and pushes it to every node.
+        Double IconColumnWidth { get; };
         Double RowOpacity { get; };
         Double RowMinHeight { get; };
 

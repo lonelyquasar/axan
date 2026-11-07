@@ -122,15 +122,16 @@
                     </Canvas>
                     <!--  axan: sidebar.iconSize sizes the icon box; the state dot stays 9px in its corner  -->
                     <!--  axan #48: sidebar.largeIconsGrowRow makes IconBoxSize Auto (NaN), so a large glyph sizes the box and the row grows; off, the box is IconSize and clips  -->
+                    <!--  axan #48 (UAT): the width is the page-computed IconColumnWidth, shared by every row so labels line up; the glyph is centred in it  -->
                     <Grid Grid.Column="0"
-                          Width="{x:Bind ((local:SessionNodeViewModel)Content).IconBoxSize, Mode=OneWay}"
+                          Width="{x:Bind ((local:SessionNodeViewModel)Content).IconColumnWidth, Mode=OneWay}"
                           Height="{x:Bind ((local:SessionNodeViewModel)Content).IconBoxSize, Mode=OneWay}"
-                          MinWidth="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
                           MinHeight="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
                           Margin="0,0,8,0"
                           VerticalAlignment="Center">
                         <ContentPresenter Width="{x:Bind ((local:SessionNodeViewModel)Content).IconBoxSize, Mode=OneWay}"
                                           Height="{x:Bind ((local:SessionNodeViewModel)Content).IconBoxSize, Mode=OneWay}"
+                                          HorizontalAlignment="Center"
                                           HorizontalContentAlignment="Center"
                                           VerticalContentAlignment="Center"
                                           Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
@@ -610,15 +611,16 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <!--  axan #48: the icon box follows sidebar.iconSize (the Icon element already does) and sidebar.largeIconsGrowRow, like the tree's rows  -->
+                                    <!--  axan #48 (UAT): the shared IconColumnWidth keeps the hoisted labels aligned when one glyph grows its row  -->
                                     <Grid Grid.Column="0"
-                                          Width="{x:Bind IconBoxSize, Mode=OneWay}"
+                                          Width="{x:Bind IconColumnWidth, Mode=OneWay}"
                                           Height="{x:Bind IconBoxSize, Mode=OneWay}"
-                                          MinWidth="{x:Bind IconSize, Mode=OneWay}"
                                           MinHeight="{x:Bind IconSize, Mode=OneWay}"
                                           Margin="0,0,8,0"
                                           VerticalAlignment="Center">
                                         <ContentPresenter Width="{x:Bind IconBoxSize, Mode=OneWay}"
                                                           Height="{x:Bind IconBoxSize, Mode=OneWay}"
+                                                          HorizontalAlignment="Center"
                                                           HorizontalContentAlignment="Center"
                                                           VerticalContentAlignment="Center"
                                                           Content="{x:Bind Icon, Mode=OneWay}" />
@@ -839,9 +841,9 @@
                                             HorizontalAlignment="Center"
                                             Spacing="1">
                                     <!--  axan #48: sized like the tree's icon (sidebar.iconSize / largeIconsGrowRow); the Viewbox scales the cell  -->
-                                    <ContentPresenter Width="{x:Bind IconBoxSize, Mode=OneWay}"
+                                    <!--  axan #48 (UAT): the shared IconColumnWidth, so every cell's icon takes the same width  -->
+                                    <ContentPresenter Width="{x:Bind IconColumnWidth, Mode=OneWay}"
                                                       Height="{x:Bind IconBoxSize, Mode=OneWay}"
-                                                      MinWidth="{x:Bind IconSize, Mode=OneWay}"
                                                       MinHeight="{x:Bind IconSize, Mode=OneWay}"
                                                       HorizontalAlignment="Center"
                                                       HorizontalContentAlignment="Center"

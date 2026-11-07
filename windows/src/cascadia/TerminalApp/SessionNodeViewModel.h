@@ -271,6 +271,9 @@ namespace winrt::TerminalApp::implementation
         // Returns true if it changed.
         bool SetLargeIconsGrowRow(bool grow);
         double IconBoxSize() const noexcept;
+        // axan #48 (UAT): the shared icon column width (see the idl). Returns true if it changed.
+        double IconColumnWidth() const noexcept { return _iconColumnWidth; }
+        bool SetIconColumnWidth(double width);
         double RowOpacity() const noexcept { return _idleEffect(Axan::IdleEffects::kDim) ? 0.55 : 1.0; }
         double RowMinHeight() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? _idleRowHeight : _rowHeightPx; }
         // Returns true if the mask changed.
@@ -392,6 +395,7 @@ namespace winrt::TerminalApp::implementation
         double _stateLineFontSize{ 11.0 };
         double _iconSize{ 16.0 };
         bool _largeIconsGrowRow{ false }; // axan #48
+        double _iconColumnWidth{ 16.0 }; // axan #48 (UAT)
         double _stateGlyphSize{ 12.0 };
         double _idleLabelFontSize{ 12.0 }; // axan #47
         double _idleRowHeight{ 24.0 }; // axan #47
