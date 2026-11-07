@@ -77,6 +77,16 @@ All notable changes to axan are documented here.
   Startup sessions panel and the Sidebar page's state glyphs. A picked icon is
   stored by name (`"icon": "robot"`); glyph characters, emoji, image paths and
   `builtin:NAME` keep working. Windows only. (#39)
+- The Sidebar page has a "Text and icons" group that sizes the session name
+  (`sidebar.labelFontSize`, default 14), the status line and state word
+  (`sidebar.stateLineFontSize`, 11), the session icon (`sidebar.iconSize`, 16)
+  and the right-edge status glyph (`sidebar.stateGlyphSize`, 12). Windows only.
+- Egyptian hieroglyphs and runes used as icons are drawn larger, so they match
+  emoji and Segoe Fluent glyphs instead of looking undersized. Windows only.
+- A session's right-click menu has a "Preview state" submenu that shows the row
+  as if it were in any state (needs answer, done, error, ...), for checking how
+  sizes and glyphs look. It is purely visual, marked "Preview" in the tooltip,
+  and ends on "Clear preview" or the session's next real report. Windows only.
 
 ### Fixes
 
