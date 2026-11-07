@@ -4344,12 +4344,12 @@ namespace winrt::TerminalApp::implementation
         }
         if (wasRunning)
         {
+            // Back to the template's layout exactly: no explicit width / alignment / transform
+            // on the TextBlock, no clip on the host, the ellipsis restored.
             entry.text.ClearValue(FrameworkElement::WidthProperty());
+            entry.text.ClearValue(FrameworkElement::HorizontalAlignmentProperty());
+            entry.text.ClearValue(UIElement::RenderTransformProperty());
             entry.text.TextTrimming(TextTrimming::CharacterEllipsis);
-            if (const auto transform = entry.text.RenderTransform().try_as<WUX::Media::TranslateTransform>())
-            {
-                transform.X(0);
-            }
             entry.host.ClearValue(UIElement::ClipProperty());
             if (reason)
             {
@@ -4402,24 +4402,31 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         const double distance = full - available;
+        // The host's clip: x = 0 of the host, the host's own width and height (the TextBlock
+        // keeps the row's line height, so the host's height is the line's).
+        const auto setClip = [&]() {
+            WUX::Media::RectangleGeometry clip;
+            clip.Rect({ 0, 0, static_cast<float>(available), static_cast<float>(entry.host.ActualHeight()) });
+            entry.host.Clip(clip);
+        };
         if (entry.storyboard && std::abs(entry.distance - distance) < 0.5)
         {
-            return; // already scrolling this text over this width
+            setClip(); // already scrolling this text over this width; follow a height change
+            return;
         }
         _StopStateLineMarquee(entry, nullptr);
 
+        // axan #49 (UAT): Left, not the default Stretch: an element with an explicit Width
+        // wider than its cell is centred by Stretch, which put the text's start left of the
+        // clip ("iew: waiting for"). Left pins x = 0 of the text to x = 0 of the host.
+        entry.text.HorizontalAlignment(WUX::HorizontalAlignment::Left); // qualified: TerminalPage has a HorizontalAlignment() member
         entry.text.TextTrimming(TextTrimming::None);
         entry.text.Width(full);
-        auto transform = entry.text.RenderTransform().try_as<WUX::Media::TranslateTransform>();
-        if (!transform)
-        {
-            transform = WUX::Media::TranslateTransform{};
-            entry.text.RenderTransform(transform);
-        }
+        // A fresh transform at X = 0, so the first pause shows the text flush left.
+        WUX::Media::TranslateTransform transform;
         transform.X(0);
-        WUX::Media::RectangleGeometry clip;
-        clip.Rect({ 0, 0, static_cast<float>(available), static_cast<float>(std::max(entry.host.ActualHeight(), entry.text.ActualHeight())) });
-        entry.host.Clip(clip);
+        entry.text.RenderTransform(transform);
+        setClip();
 
         // 0 -> pause -> scroll left -> pause -> scroll back, forever.
         const double travel = distance / kSpeed;
