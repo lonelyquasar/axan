@@ -245,6 +245,8 @@ The PowerShell script takes the same flags (`tools/axan-status.ps1 blocked --kin
 
 ### The portable TOML
 
+To write a startup tree by hand, or have an agent write one, follow [docs/startup-sessions-toml.md](docs/startup-sessions-toml.md): every key, what Import does, and a validated example.
+
 Every file starts with a version block:
 
 ```toml
@@ -293,6 +295,8 @@ Known gap: the Linux profile export is still a flat `[profile]` table of gschema
 An entry's `name` is a template, expanded at render time (same vocabulary on both platforms): `$pwd $cwd $dir $~ $user $host $hostname $shell $cmd $title $branch $repo` and `${file:path}` (first line of a file). `$branch`/`$repo` are computed by walking up from the shell's live cwd to `.git` — including WSL cwds via `\\wsl.localhost\…` paths. Unknown variables render literally. Live cwd tracking comes from shell integration axan injects at spawn (OSC 9;9 / OSC 7 emit for pwsh, cmd, and WSL bash). Variable names are case-insensitive and `-`/`_` are interchangeable; `$branch` and `${file:…}` refresh on the shell's next OSC event (the prompt redraw after a `cd` or `git checkout`), not in real time.
 
 ### Icons
+
+For picking glyphs that Windows 11 can draw, with names, code points and TOML escapes, see [docs/startup-sessions-toml.md](docs/startup-sessions-toml.md#5-icons).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/builtin-icons-dark.png">
