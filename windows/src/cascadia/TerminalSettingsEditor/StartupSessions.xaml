@@ -441,7 +441,7 @@
                                         <TextBox x:Name="IconTextBox"
                                                  AutomationProperties.Name="Icon as text"
                                                  IsSpellCheckEnabled="False"
-                                                 PlaceholderText="An emoji, a builtin:NAME token, or an image path"
+                                                 PlaceholderText="A glyph name, an emoji, a builtin:NAME token, or an image path"
                                                  TextChanged="IconTextBox_TextChanged" />
                                     </StackPanel>
                                 </StackPanel>

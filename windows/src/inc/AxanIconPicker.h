@@ -10,11 +10,12 @@
 // src/inc (#38) next to AxanEntryIdentityEditor.h; it needs only the Windows.UI.Xaml
 // projection the including project's pch already provides.
 //
-// Layout: a glyph grid (optional leading cells, a "No icon" cell, then the 11
-// AxanIconRegistry builtins, so every pickable glyph round-trips to a portable builtin:NAME
-// token), a "Browse for an image" button, and a free-text row for an emoji, a builtin:NAME
-// token or any literal icon string (Enter applies).
+// Layout: a row of special cells (optional leading cells such as "Default", then "No
+// icon"), the searchable Segoe Fluent grid shared with the identity editor (AxanGlyphGrid.h,
+// #39: the whole font, a pick yields the glyph's name), a "Browse for an image" button, and a
+// free-text row for an emoji, a builtin:NAME token or any literal icon string (Enter applies).
 
+#include <AxanGlyphGrid.h>
 #include <AxanIconRegistry.h>
 
 #include <functional>
@@ -49,7 +50,7 @@ namespace Axan::Ui::IconPicker
 
         Controls::StackPanel root;
         root.Spacing(8);
-        root.MaxWidth(260);
+        root.Width(300);
 
         Controls::VariableSizedWrapGrid grid;
         grid.Orientation(Controls::Orientation::Horizontal);
@@ -87,17 +88,22 @@ namespace Axan::Ui::IconPicker
                 pick(winrt::hstring{});
             }
         });
-        for (const auto& builtin : Axan::IconRegistry::Builtins())
-        {
-            const winrt::hstring glyph{ std::wstring_view{ &builtin.glyph, 1 } };
-            addCell(glyph, winrt::hstring{ builtin.name }, [pick, glyph]() {
-                if (pick)
-                {
-                    pick(glyph);
-                }
-            });
-        }
         root.Children().Append(grid);
+
+        // The whole font, searchable. The picker object lives on through the grid's own
+        // handlers (it holds only weak references back), so nothing here needs to keep it.
+        Axan::Ui::GlyphGrid::Options glyphs;
+        bool mapped = false;
+        glyphs.initial = winrt::hstring{ Axan::IconRegistry::PortableToNative(options.currentText, mapped) };
+        glyphs.showNone = false; // "No icon" is in the row above, beside the leading cells
+        glyphs.height = 200;
+        glyphs.onPick = [pick](const winrt::hstring& name) {
+            if (pick)
+            {
+                pick(name);
+            }
+        };
+        root.Children().Append(Axan::Ui::GlyphGrid::Build(std::move(glyphs)).root);
 
         Controls::Button browse;
         browse.Content(winrt::box_value(L"Browse for an image…"));

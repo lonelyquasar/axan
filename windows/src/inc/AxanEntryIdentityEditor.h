@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 //
 // AxanEntryIdentityEditor — the shared "identity" section of a session editor (#38): the
-// name / label template field with its variables help, an icon preview, the icon grid +
-// "Browse to icon file…", the palette colour swatches, and the colour target radio
+// name / label template field with its variables help, an icon preview, the searchable
+// Segoe Fluent icon grid + "Browse to icon file…" (#39), the palette colour swatches, and the colour target radio
 // (icon / text / both).
 //
 // Two hosts build it: TerminalApp's live node editor (the sidebar's "Edit session node"
@@ -28,6 +28,8 @@
 
 #pragma once
 
+#include <AxanGlyphGrid.h>
+#include <AxanGlyphNames.h>
 #include <AxanIconRegistry.h>
 #include <AxanLog.h>
 #include <AxanSessionPalette.h>
@@ -44,7 +46,7 @@ namespace Axan::Ui::IdentityEditor
 {
     // The values the section edits. Stored forms, exactly as the hosts persist them:
     // name = the label template ("" = the default name); icon = a NATIVE icon string (a
-    // glyph, a file path, an emoji; "" = no override, the session's own icon); color = a
+    // glyph name, a literal glyph, a file path, an emoji; "" = no override, the session's own icon); color = a
     // palette name or "#hex" ("" = none); colorTarget = "icon" | "text" | "both".
     struct Fields
     {
@@ -63,7 +65,13 @@ namespace Axan::Ui::IdentityEditor
         winrt::hstring helpExample{ L"Example:  $dir — $shell  →  axan — pwsh" };
         winrt::hstring iconLabel{ L"Icon" };
         winrt::hstring noIconName{ L"No icon" };
-        winrt::hstring iconNamePrefix{ L"Icon: " }; // + the builtin's portable name
+        winrt::hstring iconNamePrefix{ L"Icon: " }; // + the glyph's display name
+        winrt::hstring currentPrefix{ L"Current: " }; // + the icon's display name or value
+        winrt::hstring clearText{ L"Clear" };
+        winrt::hstring clearName{ L"Clear icon" };
+        winrt::hstring searchPlaceholder{ L"Search icons by name" };
+        winrt::hstring searchName{ L"Search icons" };
+        winrt::hstring gridName{ L"Icons" };
         winrt::hstring browseText{ L"Browse to icon file…" };
         winrt::hstring browseName{ L"Browse to icon file" };
         winrt::hstring colorLabel{ L"Color" };
@@ -121,6 +129,7 @@ namespace Axan::Ui::IdentityEditor
         bool isDark{ true };
         Strings strings;
         bool showTemplateHelp{ true }; // the "?" variables flyout beside the name label
+        double iconGridHeight{ 176 }; // the glyph grid's fixed height (about three rows)
         winrt::Windows::UI::Xaml::Media::Brush accentBrush{ nullptr }; // null = DefaultAccentBrush()
         winrt::Windows::UI::Xaml::Media::Brush neutralBrush{ nullptr }; // null = DefaultNeutralBrush()
         // Renders the 40x40 preview box's content (sized to 24x24 here) from the current
@@ -143,8 +152,9 @@ namespace Axan::Ui::IdentityEditor
         winrt::Windows::UI::Xaml::Controls::TextBox NameBox() const { return _nameBox; }
         const Fields& Current() const noexcept { return _fields; }
 
-        // Sets the icon from outside the grid (a Browse result). Re-highlights the grid (no
-        // cell matches a file path), refreshes the preview and notifies onChanged.
+        // Sets the icon from outside the grid (a Browse result, Clear, a host text box).
+        // Re-highlights the grid (no cell matches a file path or an emoji), refreshes the
+        // caption and the preview, and notifies onChanged.
         void SetIcon(const winrt::hstring& icon)
         {
             if (icon == _fields.icon)
@@ -152,7 +162,11 @@ namespace Axan::Ui::IdentityEditor
                 return;
             }
             _fields.icon = icon;
-            _highlightIcon();
+            if (_glyphs)
+            {
+                _glyphs->Select(icon);
+            }
+            _refreshCurrentIcon();
             RefreshPreview();
             _notify();
         }
@@ -225,22 +239,6 @@ namespace Axan::Ui::IdentityEditor
         {
             el.BorderBrush(selected ? _options.accentBrush : _options.neutralBrush);
             el.BorderThickness(selected ? winrt::Windows::UI::Xaml::Thickness{ 2, 2, 2, 2 } : winrt::Windows::UI::Xaml::Thickness{ 1, 1, 1, 1 });
-        }
-
-        void _highlightIcon() const
-        {
-            for (const auto& [value, button] : _iconCells)
-            {
-                _setSelected(button, value == _fields.icon);
-            }
-        }
-
-        void _clearIconHighlight() const
-        {
-            for (const auto& cell : _iconCells)
-            {
-                _setSelected(cell.second, false);
-            }
         }
 
         void _highlightSwatch() const
@@ -372,60 +370,72 @@ namespace Axan::Ui::IdentityEditor
             return section;
         }
 
-        // The icon grid ("No icon" + AxanIconRegistry's 11 builtins, 6 per row, so every
-        // pickable glyph round-trips to a portable builtin:NAME token) beside the Browse button.
-        winrt::Windows::UI::Xaml::Controls::Grid _buildIconRow()
+        // The current icon's caption: a named glyph reads as its display name, an unnamed
+        // symbol as U+XXXX, anything else (emoji, image path) as the literal value.
+        winrt::hstring _currentIconText() const
+        {
+            const std::wstring_view icon{ _fields.icon };
+            std::wstring text{ _options.strings.currentPrefix };
+            if (icon.empty())
+            {
+                text += _options.strings.noIconName;
+            }
+            else if (const auto cp = Axan::GlyphNames::ResolveCodepoint(icon))
+            {
+                if (const auto g = Axan::GlyphNames::FindByCodepoint(*cp))
+                {
+                    text += g->displayName;
+                }
+                else
+                {
+                    wchar_t buf[8]{};
+                    swprintf_s(buf, L"U+%04X", static_cast<unsigned>(*cp));
+                    text += buf;
+                }
+            }
+            else
+            {
+                text += icon;
+            }
+            return winrt::hstring{ text };
+        }
+
+        void _refreshCurrentIcon() const
+        {
+            if (_currentIcon)
+            {
+                _currentIcon.Text(_currentIconText());
+            }
+            if (_clearIcon)
+            {
+                _clearIcon.IsEnabled(!_fields.icon.empty());
+            }
+        }
+
+        // The icon section (#39): [current icon | Clear | Browse] over the searchable,
+        // virtualized grid of the whole Segoe Fluent Icons font (AxanGlyphGrid.h). The grid
+        // has a fixed height so the live node card stays bounded; a pick stores the glyph's
+        // name ("robot"), which renders anywhere via AxanGlyphNames.h.
+        winrt::Windows::UI::Xaml::Controls::StackPanel _buildIconSection()
         {
             namespace WUX = winrt::Windows::UI::Xaml;
             namespace Controls = winrt::Windows::UI::Xaml::Controls;
-            const auto mdl2 = WUX::Media::FontFamily{ L"Segoe MDL2 Assets" };
+            const auto symbols = WUX::Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" };
 
-            Controls::VariableSizedWrapGrid grid;
-            grid.Orientation(Controls::Orientation::Horizontal);
-            grid.MaximumRowsOrColumns(6);
-            grid.ItemWidth(42);
-            grid.ItemHeight(42);
+            _currentIcon = Controls::TextBlock{};
+            _currentIcon.VerticalAlignment(WUX::VerticalAlignment::Center);
+            _currentIcon.TextTrimming(WUX::TextTrimming::CharacterEllipsis);
 
-            const auto addCell = [&](const winrt::hstring& glyph, const winrt::hstring& name, const winrt::hstring& storedValue) {
-                Controls::Button b;
-                b.Width(36);
-                b.Height(36);
-                b.Padding(WUX::Thickness{ 0, 0, 0, 0 });
-                _setSelected(b, storedValue == _fields.icon);
-                // axan #429/#436: icon-only buttons; the registry's name names them.
-                WUX::Automation::AutomationProperties::SetName(b, winrt::hstring{ std::wstring{ _options.strings.iconNamePrefix } + std::wstring{ name } });
-                Controls::ToolTipService::SetToolTip(b, winrt::box_value(name));
-                Controls::FontIcon fi;
-                fi.FontFamily(mdl2);
-                fi.Glyph(glyph);
-                b.Content(fi);
-                b.Click([weak = weak_from_this(), storedValue](auto&&, auto&&) {
-                    if (const auto self = weak.lock())
-                    {
-                        if (storedValue != self->_fields.icon)
-                        {
-                            self->_fields.icon = storedValue;
-                            self->_highlightIcon();
-                            self->RefreshPreview();
-                            self->_notify();
-                        }
-                        else
-                        {
-                            self->_highlightIcon(); // re-assert after a Browse cleared it
-                        }
-                    }
-                });
-                _iconCells.emplace_back(storedValue, b);
-                grid.Children().Append(b);
-            };
-            // "No icon" clears the override back to the session's own icon. The name stays
-            // "Icon: No icon" for Narrator, as the live editor always announced it.
-            addCell(winrt::hstring{ L"\xE711" } /* Cancel */, _options.strings.noIconName, winrt::hstring{});
-            for (const auto& builtin : Axan::IconRegistry::Builtins())
-            {
-                const winrt::hstring glyph{ std::wstring(1, builtin.glyph) };
-                addCell(glyph, winrt::hstring{ builtin.name }, glyph);
-            }
+            _clearIcon = Controls::Button{};
+            _clearIcon.Content(winrt::box_value(_options.strings.clearText));
+            WUX::Automation::AutomationProperties::SetName(_clearIcon, _options.strings.clearName);
+            _clearIcon.VerticalAlignment(WUX::VerticalAlignment::Center);
+            _clearIcon.Click([weak = weak_from_this()](auto&&, auto&&) {
+                if (const auto self = weak.lock())
+                {
+                    self->SetIcon(winrt::hstring{});
+                }
+            });
 
             Controls::Button browse;
             {
@@ -433,7 +443,7 @@ namespace Axan::Ui::IdentityEditor
                 bc.Orientation(Controls::Orientation::Horizontal);
                 bc.Spacing(7);
                 Controls::FontIcon fi;
-                fi.FontFamily(mdl2);
+                fi.FontFamily(symbols);
                 fi.Glyph(winrt::hstring{ L"\xE8B7" } /* OpenFolderHorizontal */);
                 fi.FontSize(14);
                 Controls::TextBlock t;
@@ -450,7 +460,10 @@ namespace Axan::Ui::IdentityEditor
                 {
                     // As before: the grid's highlight clears now; the icon only changes if
                     // the host's picker returns a file (SetIcon).
-                    self->_clearIconHighlight();
+                    if (self->_glyphs)
+                    {
+                        self->_glyphs->ClearSelection();
+                    }
                     if (self->_options.onBrowseIcon)
                     {
                         self->_options.onBrowseIcon();
@@ -458,19 +471,55 @@ namespace Axan::Ui::IdentityEditor
                 }
             });
 
-            Controls::Grid row;
-            Controls::ColumnDefinition c0;
-            c0.Width(WUX::GridLengthHelper::FromValueAndType(1, WUX::GridUnitType::Star));
-            Controls::ColumnDefinition c1;
-            c1.Width(WUX::GridLengthHelper::FromValueAndType(0, WUX::GridUnitType::Auto));
-            row.ColumnDefinitions().Append(c0);
-            row.ColumnDefinitions().Append(c1);
-            row.ColumnSpacing(8);
-            Controls::Grid::SetColumn(grid, 0);
-            Controls::Grid::SetColumn(browse, 1);
-            row.Children().Append(grid);
-            row.Children().Append(browse);
-            return row;
+            Controls::Grid top;
+            {
+                Controls::ColumnDefinition c0;
+                c0.Width(WUX::GridLengthHelper::FromValueAndType(1, WUX::GridUnitType::Star));
+                Controls::ColumnDefinition c1;
+                c1.Width(WUX::GridLengthHelper::FromValueAndType(0, WUX::GridUnitType::Auto));
+                Controls::ColumnDefinition c2;
+                c2.Width(WUX::GridLengthHelper::FromValueAndType(0, WUX::GridUnitType::Auto));
+                top.ColumnDefinitions().Append(c0);
+                top.ColumnDefinitions().Append(c1);
+                top.ColumnDefinitions().Append(c2);
+                top.ColumnSpacing(8);
+                Controls::Grid::SetColumn(_currentIcon, 0);
+                Controls::Grid::SetColumn(_clearIcon, 1);
+                Controls::Grid::SetColumn(browse, 2);
+                top.Children().Append(_currentIcon);
+                top.Children().Append(_clearIcon);
+                top.Children().Append(browse);
+            }
+            _refreshCurrentIcon();
+
+            Axan::Ui::GlyphGrid::Options grid;
+            grid.initial = _fields.icon;
+            grid.height = _options.iconGridHeight;
+            grid.strings.searchPlaceholder = _options.strings.searchPlaceholder;
+            grid.strings.searchName = _options.strings.searchName;
+            grid.strings.gridName = _options.strings.gridName;
+            grid.strings.noIconName = _options.strings.noIconName;
+            grid.strings.iconNamePrefix = _options.strings.iconNamePrefix;
+            grid.onPick = [weak = weak_from_this()](const winrt::hstring& value) {
+                if (const auto self = weak.lock())
+                {
+                    if (value != self->_fields.icon)
+                    {
+                        self->_fields.icon = value;
+                        self->_refreshCurrentIcon();
+                        self->RefreshPreview();
+                        self->_notify();
+                    }
+                }
+            };
+            auto built = Axan::Ui::GlyphGrid::Build(std::move(grid));
+            _glyphs = built.picker;
+
+            Controls::StackPanel section;
+            section.Spacing(6);
+            section.Children().Append(top);
+            section.Children().Append(built.root);
+            return section;
         }
 
         // "No color" + the six AxanSessionPalette names. A swatch stores the name and fills
@@ -592,7 +641,7 @@ namespace Axan::Ui::IdentityEditor
             _root.Spacing(2);
             _root.Children().Append(_buildNameSection());
             _root.Children().Append(_sectionLabel(_options.strings.iconLabel));
-            _root.Children().Append(_buildIconRow());
+            _root.Children().Append(_buildIconSection());
             _root.Children().Append(_sectionLabel(_options.strings.colorLabel));
             _root.Children().Append(_buildSwatchRow());
             _root.Children().Append(_buildColorTargetSection());
@@ -605,7 +654,9 @@ namespace Axan::Ui::IdentityEditor
         winrt::Windows::UI::Xaml::Controls::StackPanel _root{ nullptr };
         winrt::Windows::UI::Xaml::Controls::TextBox _nameBox{ nullptr };
         winrt::Windows::UI::Xaml::Controls::ContentPresenter _preview{ nullptr };
-        std::vector<std::pair<winrt::hstring, winrt::Windows::UI::Xaml::Controls::Button>> _iconCells;
+        winrt::Windows::UI::Xaml::Controls::TextBlock _currentIcon{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Button _clearIcon{ nullptr };
+        std::shared_ptr<Axan::Ui::GlyphGrid::Picker> _glyphs; // holds only weak XAML refs
         std::vector<std::pair<winrt::hstring, winrt::Windows::UI::Xaml::Controls::Border>> _swatches;
     };
 
