@@ -108,6 +108,10 @@ if [ -z "$(trap -p DEBUG)" ]; then
     __axan_preexec_armed=
     __axan_prompt_start() {
         local ec=$?
+        # Disarm first: an empty Enter / Ctrl+C runs PROMPT_COMMAND with the arm still set
+        # from the previous prompt, and the user's own entries that follow must not read as
+        # a command. The arm is re-set by __axan_arm_preexec at the very end.
+        __axan_preexec_armed=
         if [ -n "$__axan_cmd_ran" ]; then
             printf '\033]133;D;%s\033\\' "$ec"
             __axan_cmd_ran=
@@ -118,20 +122,43 @@ if [ -z "$(trap -p DEBUG)" ]; then
     __axan_arm_preexec() {
         __axan_preexec_armed=1
     }
+    # Is $1 (a BASH_COMMAND) an axan hook or one of the PROMPT_COMMAND entries? Same
+    # approach as bash-preexec's __bp_in_prompt_command: join every element (string or
+    # bash 5.1+ array form), split on ';' and newlines, trim, compare.
+    __axan_in_prompt_command() {
+        case "$1" in
+            __axan_prompt_start|__axan_arm_preexec|__axan_emit_osc99|__axan_preexec) return 0 ;;
+        esac
+        local IFS=$'\n;' entry trimmed
+        local -a entries
+        read -rd '' -a entries <<< "${PROMPT_COMMAND[*]-}"
+        for entry in "${entries[@]}"; do
+            trimmed="${entry#"${entry%%[![:space:]]*}"}"
+            trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+            [ -n "$trimmed" ] && [ "$trimmed" = "$1" ] && return 0
+        done
+        return 1
+    }
     __axan_preexec() {
         # Programmable completion runs commands at an idle prompt too (bash-preexec's guard).
         [ -n "${COMP_LINE-}" ] && return
-        if [ -n "$__axan_preexec_armed" ]; then
-            __axan_preexec_armed=
-            __axan_cmd_ran=1
-            printf '\033]133;C\033\\'
-        fi
+        [ -n "$__axan_preexec_armed" ] || return
+        # An empty Enter or Ctrl+C runs PROMPT_COMMAND with the arm still set; its entries
+        # are not a user command, so don't report C for them (bash-preexec's
+        # __bp_in_prompt_command guard). __axan_prompt_start then disarms.
+        __axan_in_prompt_command "$BASH_COMMAND" && return
+        __axan_preexec_armed=
+        __axan_cmd_ran=1
+        printf '\033]133;C\033\\'
     }
     # bash 5.1+ also runs PROMPT_COMMAND as an array, and distros use that form (Fedora's
     # /etc/bashrc title hook plus systemd's __systemd_osc_context_precmdline). A plain
     # string assignment only replaces element [0], so the other elements ran AFTER the arm
     # and the DEBUG trap reported them as a user command: a false "running" at every idle
-    # prompt (#30). Wrap the whole array instead, keeping the arm genuinely last.
+    # prompt (#30). Wrap the whole array instead, keeping the arm genuinely last. (The
+    # prompt-command guard above would also skip those elements, but only when the
+    # reconstructed BASH_COMMAND text matches the entry exactly, which quoted entries
+    # such as a printf title hook may not; ordering is the robust fix.)
     if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]] &&
         (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then
         PROMPT_COMMAND=(__axan_prompt_start "${PROMPT_COMMAND[@]}" __axan_arm_preexec)

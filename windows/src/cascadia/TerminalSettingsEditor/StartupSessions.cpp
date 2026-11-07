@@ -656,19 +656,19 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
 
     void StartupSessions::_buildHoistStateBoxes()
     {
-        const auto panel = HoistStatesPanel();
-        panel.Children().Clear();
-        for (const auto name : Axan::HoistRule::kDisplayOrder)
-        {
-            CheckBox box;
-            box.Tag(winrt::box_value(winrt::hstring{ name }));
-            box.Content(winrt::box_value(winrt::hstring{ Axan::HoistRule::DisplayName(name) }));
-            // Click, not Checked/Unchecked: it fires only for the user, never for _syncHoist.
-            box.Click({ get_weak(), &StartupSessions::_hoistStateBox_Click });
-            panel.Children().Append(box);
-        }
-        // Columns as wide as the longest label; the boxes wrap onto more rows as needed.
-        Axan::Ui::CheckBoxWrap::FitItemWidth(panel);
+        // The Tag carries the name for _syncHoistStates. The toggle runs on Click, not
+        // Checked/Unchecked: it fires only for the user, never for _syncHoist.
+        Axan::Ui::CheckBoxWrap::BuildNameBoxes(
+            HoistStatesPanel(),
+            Axan::HoistRule::kDisplayOrder,
+            [](std::wstring_view name) { return Axan::HoistRule::DisplayName(name); },
+            [](const CheckBox& box, std::wstring_view name) { box.Tag(winrt::box_value(winrt::hstring{ name })); },
+            [weakThis{ get_weak() }](const winrt::hstring& key, bool on) {
+                if (const auto self{ weakThis.get() })
+                {
+                    self->_hoistStateToggled(key, on);
+                }
+            });
     }
 
     // The boxes show the row's own list (none checked unless it is Custom); the card shows
@@ -738,20 +738,18 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _syncHoistStates(row, idx == static_cast<int32_t>(Mode::Custom));
     }
 
-    void StartupSessions::_hoistStateBox_Click(const IInspectable& sender, const RoutedEventArgs& /*args*/)
+    void StartupSessions::_hoistStateToggled(const winrt::hstring& key, bool on)
     {
         using namespace Axan::HoistRule;
-        const auto box = sender.try_as<CheckBox>();
         const auto row = _selected();
-        if (!box || !row || !row.IsSession())
+        if (!row || !row.IsSession())
         {
             return;
         }
-        const auto key = winrt::unbox_value_or<winrt::hstring>(box.Tag(), winrt::hstring{});
         const auto current = Parse(row.Hoist());
         const Mask cur = current.mode == Mode::Custom ? current.mask : 0;
         // An emptied custom list is written as "never" (FromMask); the combo stays on Custom.
-        const auto next = FromMask(With(cur, key, box.IsChecked() && box.IsChecked().Value()));
+        const auto next = FromMask(With(cur, key, on));
         if (!(next == current))
         {
             row.Hoist(winrt::hstring{ Format(next) });

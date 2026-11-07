@@ -418,6 +418,13 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         void _raiseShellCommandChangedIfPending();
         std::atomic<int64_t> _lastInputTicks{ 0 };
         std::atomic<int64_t> _lastOutputTicks{ 0 };
+        // axan #30: when this control last asked the connection to resize (winrt::clock
+        // ticks; 0 = never). Output inside _resizeEchoWindow after it is treated as the
+        // resize's repaint and does not advance _lastOutputTicks. _resizeEchoLogged keeps
+        // the suppression to one log line per resize.
+        std::atomic<int64_t> _resizeSentTicks{ 0 };
+        std::atomic<bool> _resizeEchoLogged{ true };
+        static constexpr winrt::clock::duration _resizeEchoWindow{ std::chrono::milliseconds{ 1000 } };
 
         // Font stuff.
         FontInfoDesired _desiredFont;

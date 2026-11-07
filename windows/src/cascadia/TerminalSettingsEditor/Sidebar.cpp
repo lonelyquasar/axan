@@ -134,25 +134,17 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         {
             return;
         }
-        panel.Children().Clear();
-        for (const auto name : Axan::IdleEffects::kNames)
-        {
-            CheckBox box;
-            const winrt::hstring key{ name };
-            const auto help = implementation::SidebarViewModel::IdleEffectHelp(name);
-            box.Content(winrt::box_value(implementation::SidebarViewModel::IdleEffectLabel(name)));
-            ToolTipService::SetToolTip(box, winrt::box_value(help));
-            Automation::AutomationProperties::SetHelpText(box, help);
-            box.IsChecked(vm.SidebarIdleEffectEnabled(key));
-            box.Click([vm, key](const IInspectable& s, const RoutedEventArgs&) {
-                if (const auto b = s.try_as<CheckBox>())
-                {
-                    vm.SetSidebarIdleEffectEnabled(key, b.IsChecked() && b.IsChecked().Value());
-                }
-            });
-            panel.Children().Append(box);
-        }
-        Axan::Ui::CheckBoxWrap::FitItemWidth(panel);
+        Axan::Ui::CheckBoxWrap::BuildNameBoxes(
+            panel,
+            Axan::IdleEffects::kNames,
+            [](std::wstring_view name) { return implementation::SidebarViewModel::IdleEffectLabel(name); },
+            [vm](const CheckBox& box, std::wstring_view name) {
+                const auto help = implementation::SidebarViewModel::IdleEffectHelp(name);
+                ToolTipService::SetToolTip(box, winrt::box_value(help));
+                Automation::AutomationProperties::SetHelpText(box, help);
+                box.IsChecked(vm.SidebarIdleEffectEnabled(winrt::hstring{ name }));
+            },
+            [vm](const winrt::hstring& key, bool on) { vm.SetSidebarIdleEffectEnabled(key, on); });
     }
 
     void Sidebar::IdleEffectsReset_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
@@ -174,23 +166,12 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         {
             return;
         }
-        panel.Children().Clear();
-        for (const auto name : Axan::HoistRule::kDisplayOrder)
-        {
-            CheckBox box;
-            const winrt::hstring key{ name };
-            box.Content(winrt::box_value(winrt::hstring{ Axan::HoistRule::DisplayName(name) }));
-            box.IsChecked(vm.SidebarHoistStateEnabled(key));
-            box.Click([vm, key](const IInspectable& s, const RoutedEventArgs&) {
-                if (const auto b = s.try_as<CheckBox>())
-                {
-                    vm.SetSidebarHoistStateEnabled(key, b.IsChecked() && b.IsChecked().Value());
-                }
-            });
-            panel.Children().Append(box);
-        }
-        // Columns as wide as the longest label; the boxes wrap onto more rows as needed.
-        Axan::Ui::CheckBoxWrap::FitItemWidth(panel);
+        Axan::Ui::CheckBoxWrap::BuildNameBoxes(
+            panel,
+            Axan::HoistRule::kDisplayOrder,
+            [](std::wstring_view name) { return Axan::HoistRule::DisplayName(name); },
+            [vm](const CheckBox& box, std::wstring_view name) { box.IsChecked(vm.SidebarHoistStateEnabled(winrt::hstring{ name })); },
+            [vm](const winrt::hstring& key, bool on) { vm.SetSidebarHoistStateEnabled(key, on); });
     }
 
     void Sidebar::HoistStatesReset_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)

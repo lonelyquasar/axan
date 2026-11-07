@@ -473,6 +473,12 @@ namespace Microsoft::Console::VirtualTerminal::ProgramStatus
             const auto eq = pair.find(L'=');
             if (eq == std::wstring_view::npos)
             {
+                // A bare `id` (value lost or truncated) is an invalid id, not a skippable
+                // pair: skipping it would address the root, as with `id=` below.
+                if (Trim(pair) == L"id")
+                {
+                    return Discard("bare-id");
+                }
                 ++skipped; // also covers empty segments, e.g. a trailing ':'
                 continue;
             }

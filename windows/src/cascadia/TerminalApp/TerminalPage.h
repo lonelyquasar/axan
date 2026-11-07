@@ -643,6 +643,13 @@ namespace winrt::TerminalApp::implementation
         // axan: sidebar.idleEffects resolved to a mask (unset = dim + smaller; unknown names
         // logged once) and the "collapse" effect's per-tick pass over the tree.
         uint8_t _ResolveIdleEffects() const;
+        // Cached _ResolveIdleEffects result; reset by _RecomputeAllNodeStates (settings
+        // reload / sidebar menu) so the 1s clock never re-resolves the settings list.
+        uint8_t _IdleEffectsMask();
+        std::optional<uint8_t> _idleEffectsMask;
+        // True while the last clock tick ran the collapse pass with the effect on; lets the
+        // tick skip the tree walk while the effect is off once it has been undone.
+        bool _idleCollapseApplied{ false };
         void _ApplyIdleCollapse(bool enabled);
         Windows::UI::Xaml::DispatcherTimer _sessionStateClock{ nullptr };
 

@@ -46,19 +46,11 @@ namespace winrt::TerminalApp::implementation
             if (state == real.state && kind == real.kind)
             {
                 real.message = message;
-                if (resting.reportKey != real.reportKey)
+                if (resting.reportKey != real.resting.reportKey)
                 {
-                    real.reportKey = resting.reportKey;
-                    real.reportSince = real.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
+                    real.reportSince = resting.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
                 }
-                real.retainedWhat = resting.retainedWhat;
-                real.retainedMessage = resting.retainedMessage;
-                real.slotKey = resting.slotKey;
-                real.slotGlyph = resting.slotGlyph;
-                real.slotWord = resting.slotWord;
-                real.slotExplanation = resting.slotExplanation;
-                real.showSlotWord = resting.showSlotWord;
-                real.agentName = resting.agentName;
+                real.resting = resting;
                 return false;
             }
             ClearPreview(now);
@@ -85,25 +77,14 @@ namespace winrt::TerminalApp::implementation
         }
         // axan: the done/error report the age counts from. A new identity restarts it; the same
         // one (e.g. done-unseen -> kept after being seen, or done -> done + msg) keeps it.
-        const bool reportChanged = resting.reportKey != _reportKey;
-        if (reportChanged)
+        if (resting.reportKey != _resting.reportKey)
         {
-            _reportKey = resting.reportKey;
-            _reportSince = _reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
+            _reportSince = resting.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
         }
-        const bool restingChanged = reportChanged || resting.retainedWhat != _retainedWhat || resting.retainedMessage != _retainedMessage ||
-                                    resting.slotKey != _slotKey || resting.slotGlyph != _slotGlyph || resting.slotWord != _slotWord ||
-                                    resting.slotExplanation != _slotExplanation || resting.showSlotWord != _showSlotWord || resting.agentName != _agentName;
+        const bool restingChanged = resting != _resting;
         if (restingChanged)
         {
-            _retainedWhat = resting.retainedWhat;
-            _retainedMessage = resting.retainedMessage;
-            _slotKey = resting.slotKey;
-            _slotGlyph = resting.slotGlyph;
-            _slotWord = resting.slotWord;
-            _slotExplanation = resting.slotExplanation;
-            _showSlotWord = resting.showSlotWord;
-            _agentName = resting.agentName;
+            _resting = resting;
         }
         if (transition || message != _subLabelMessage || restingChanged)
         {
@@ -128,7 +109,7 @@ namespace winrt::TerminalApp::implementation
 
     SessionNodeViewModel::StateFields SessionNodeViewModel::_captureState() const
     {
-        return StateFields{ _state, _stateKind, _stateMessage, _stateSince, _retainedWhat, _retainedMessage, _reportKey, _reportSince, _slotKey, _slotGlyph, _slotWord, _slotExplanation, _showSlotWord, _agentName };
+        return StateFields{ _state, _stateKind, _stateMessage, _stateSince, _reportSince, _resting };
     }
 
     void SessionNodeViewModel::_restoreState(const StateFields& f)
@@ -137,16 +118,8 @@ namespace winrt::TerminalApp::implementation
         _stateKind = f.kind;
         _stateMessage = f.message;
         _stateSince = f.since;
-        _retainedWhat = f.retainedWhat;
-        _retainedMessage = f.retainedMessage;
-        _reportKey = f.reportKey;
         _reportSince = f.reportSince;
-        _slotKey = f.slotKey;
-        _slotGlyph = f.slotGlyph;
-        _slotWord = f.slotWord;
-        _slotExplanation = f.slotExplanation;
-        _showSlotWord = f.showSlotWord;
-        _agentName = f.agentName;
+        _resting = f.resting;
     }
 
     // Everything a preview can change on screen: the state presentation, and the idle
@@ -176,8 +149,9 @@ namespace winrt::TerminalApp::implementation
         const auto reportSince = resting.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : since;
         // The agent name is the real one (sidebar.showAgentName already applied), so an idle /
         // running preview shows what the row would.
-        const auto agentName = _realWhilePreviewing->agentName;
-        _restoreState(StateFields{ state, kind, message, since, resting.retainedWhat, resting.retainedMessage, resting.reportKey, reportSince, resting.slotKey, resting.slotGlyph, resting.slotWord, resting.slotExplanation, resting.showSlotWord, agentName });
+        auto shown = resting;
+        shown.agentName = _realWhilePreviewing->resting.agentName;
+        _restoreState(StateFields{ state, kind, message, since, reportSince, std::move(shown) });
         _raisePreviewChange(now);
     }
 
@@ -304,7 +278,7 @@ namespace winrt::TerminalApp::implementation
     // blocked / done / error default to nothing: the attention dot on the icon carries them.
     hstring SessionNodeViewModel::StateGlyph() const noexcept
     {
-        return _isSeparator ? hstring{} : _slotGlyph;
+        return _isSeparator ? hstring{} : _resting.slotGlyph;
     }
 
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateWordVisibility() const noexcept
@@ -323,11 +297,11 @@ namespace winrt::TerminalApp::implementation
         {
             return hstring{ L"Separator" };
         }
-        if (_slotWord.empty())
+        if (_resting.slotWord.empty())
         {
             return _Label;
         }
-        return _Label + L", " + _slotWord;
+        return _Label + L", " + _resting.slotWord;
     }
 
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateGlyphVisibility() const noexcept
@@ -418,20 +392,20 @@ namespace winrt::TerminalApp::implementation
         if (_state == L"working")
         {
             // axan: a working agent that sends no message shows its name instead.
-            return { what.empty() && ShowsAgentName() ? _agentName : hstring{ what }, hstring{} };
+            return { what.empty() && ShowsAgentName() ? _resting.agentName : hstring{ what }, hstring{} };
         }
         if (!ShowsAge())
         {
             if (ShowsRetained())
             {
-                std::wstring kept{ _retainedMessage.empty() ? _retainedWhat : _retainedMessage };
+                std::wstring kept{ _resting.retainedMessage.empty() ? _resting.retainedWhat : _resting.retainedMessage };
                 return _withAge(std::move(kept), now, _reportSince != winrt::Windows::Foundation::DateTime{} ? _reportSince : _stateSince);
             }
             // axan: sidebar.showAgentName, lowest priority: an agent (idle, or running beside
             // a shell command) shows its name.
             if (ShowsAgentName())
             {
-                return { _agentName, hstring{} };
+                return { _resting.agentName, hstring{} };
             }
             return {};
         }
@@ -566,7 +540,7 @@ namespace winrt::TerminalApp::implementation
     // A preview follows the same rule: its "Preview - " prefix alone is not worth a line.
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateToolTipVisibility() const noexcept
     {
-        return _isSeparator || (_state == L"idle" && !ShowsRetained() && _slotExplanation.empty()) ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+        return _isSeparator || (_state == L"idle" && !ShowsRetained() && _resting.slotExplanation.empty()) ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
     }
 
     static void _appendSince(std::wstring& tip, winrt::Windows::Foundation::DateTime since)
@@ -598,9 +572,9 @@ namespace winrt::TerminalApp::implementation
         std::wstring tip{ _realWhilePreviewing ? L"Preview \u2014 " : L"" };
         const auto prefixLength = tip.size();
         // axan: the slot state's one-sentence explanation leads the state detail.
-        if (!_slotExplanation.empty())
+        if (!_resting.slotExplanation.empty())
         {
-            tip += _slotExplanation;
+            tip += _resting.slotExplanation;
         }
         if (_state != L"idle")
         {
@@ -628,13 +602,13 @@ namespace winrt::TerminalApp::implementation
             {
                 tip += L"\n";
             }
-            tip += _retainedWhat;
+            tip += _resting.retainedWhat;
             tip += L" (seen)";
             _appendSince(tip, _reportSince != winrt::Windows::Foundation::DateTime{} ? _reportSince : _stateSince);
-            if (!_retainedMessage.empty())
+            if (!_resting.retainedMessage.empty())
             {
                 tip += L"\n";
-                tip += _retainedMessage;
+                tip += _resting.retainedMessage;
             }
         }
         return hstring{ tip };

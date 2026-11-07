@@ -7,8 +7,9 @@
 // set, so a row of state checkboxes led by a short label ("idle") clipped every longer one
 // to a stub ("needs permission" -> "nee"). FitItemWidth sizes the cells to the widest label
 // instead: the boxes then sit in equal columns and wrap onto as many rows as the width
-// needs. Used by the hoist-state checkboxes on the Settings Sidebar page and the Startup
-// sessions page's Hoisted group; the sidebar's node card can use it too.
+// needs. BuildNameBoxes builds such a row from a name vocabulary: used by the Settings Sidebar
+// page (hoist states, idle effects) and the Startup sessions page's Hoisted group; the
+// sidebar's node card uses FitItemWidth directly.
 //
 // Code-built UI only: needs the Windows.UI.Xaml projection (Controls, Media) the including
 // project's pch provides.
@@ -58,5 +59,44 @@ namespace Axan::Ui::CheckBoxWrap
         {
             panel.ItemWidth(std::ceil(widest + kBoxAndPadding + kColumnGap));
         }
+    }
+
+    // Fills `panel` (cleared first) with one CheckBox per name, in the order of `names`, then
+    // runs FitItemWidth. Per name:
+    //   label(name)          the box's text (anything winrt::hstring is constructible from);
+    //   setup(box, name)     the site's extras before the box is appended: initial
+    //                        IsChecked, tooltip, automation help, Tag, ... (may do nothing);
+    //   onToggle(key, on)    on Click, i.e. for the user only, never for a programmatic
+    //                        IsChecked; key is the name as an hstring, on the new state.
+    // onToggle is copied into every box's handler, so capture weak references in it.
+    template<typename Names, typename Label, typename Setup, typename OnToggle>
+    void BuildNameBoxes(const winrt::Windows::UI::Xaml::Controls::VariableSizedWrapGrid& panel,
+                        const Names& names,
+                        Label&& label,
+                        Setup&& setup,
+                        const OnToggle& onToggle)
+    {
+        namespace Controls = winrt::Windows::UI::Xaml::Controls;
+        if (!panel)
+        {
+            return;
+        }
+        panel.Children().Clear();
+        for (const auto& name : names)
+        {
+            Controls::CheckBox box;
+            const winrt::hstring key{ name };
+            box.Content(winrt::box_value(winrt::hstring{ label(name) }));
+            setup(box, name);
+            box.Click([onToggle, key](const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs&) {
+                if (const auto b = sender.try_as<Controls::CheckBox>())
+                {
+                    onToggle(key, b.IsChecked() && b.IsChecked().Value());
+                }
+            });
+            panel.Children().Append(box);
+        }
+        // Columns as wide as the longest label; the boxes wrap onto more rows as needed.
+        FitItemWidth(panel);
     }
 }

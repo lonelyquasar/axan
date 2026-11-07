@@ -68,11 +68,11 @@ axan is strict about the parts that address and bound a report, and lenient abou
 - a lowercase key is longer than 16 bytes;
 - `app` is longer than 32 bytes;
 - `state` is missing or not one of the six names;
-- any `id` pair is invalid, even if a later `id` pair is valid. This includes an `id` value with a character outside the value alphabet, and it applies to `state=clear` too, so a malformed id can never fall back to "clear everything";
+- any `id` pair is invalid, even if a later `id` pair is valid. This includes an `id` value with a character outside the value alphabet and a bare `id` segment with no `=`, and it applies to `state=clear` too, so a malformed id can never fall back to "clear everything";
 - `msg` or `title` is over its limit, is not valid base64, is not valid UTF-8, or decodes to a control character.
 
 **Only the pair is skipped,** and the rest still applies, when:
-- it has no `=`, including an empty segment from a doubled or trailing `:`;
+- it has no `=` and is not a bare `id`, including an empty segment from a doubled or trailing `:`;
 - its key is empty or contains anything but `a-z`;
 - its value (other than `id`'s) contains a character outside the value alphabet.
 
@@ -261,7 +261,7 @@ The log is `%LOCALAPPDATA%\Packages\sh.axan.Axan_<publisher-id>\LocalState\logs\
 | Symptom | Look for |
 |---|---|
 | Nothing happens at all | No `ProgramStatus` line at your report's time means the sequence never reached axan's terminal. Check that you are writing to the terminal and not to a pipe, and that the pane is an axan pane |
-| A report is ignored | `report discarded` with a `reason`: `sequence-too-long`, `key-too-long`, `invalid-id`, `missing-state`, `unknown-state`, `app-too-long`, `text-too-long`, `bad-base64`, `bad-utf8`, `control-char` |
+| A report is ignored | `report discarded` with a `reason`: `sequence-too-long`, `key-too-long`, `invalid-id`, `bare-id`, `missing-state`, `unknown-state`, `app-too-long`, `text-too-long`, `bad-base64`, `bad-utf8`, `control-char` |
 | A key seems to be ignored | `report accepted` with `skippedPairs` above 0: a pair was malformed (section 2) |
 | The handshake gets no reply | `query answered` should appear. If it does, check that your program reads its input. The other outcome, `query not answered: feature off`, needs the feature switched off, which no setting in this build does |
 | A working or blocked row goes idle by itself | `live records dropped` with `reason` `prompt-start` (the shell drew a prompt), `connection-closed` or `output-after-close` |

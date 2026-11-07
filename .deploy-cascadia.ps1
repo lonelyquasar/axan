@@ -151,29 +151,61 @@ try {
   # clears it), but a NEW full name registers fine. The full name includes the version, so
   # bumping the 4th field in the LAYOUT manifest (never the source manifest) sidesteps it.
   # Verified 2026-11-06: 0.1.2.0 refused, 0.1.2.1 registered on the first try, no reboot.
-  # Keep the layout version >= whatever is registered, or a later plain deploy would be a
-  # downgrade against the bumped registration.
+  # Keep the layout version strictly above whatever is registered, or a later plain deploy
+  # would be a downgrade against the bumped registration. The comparison is the full
+  # four-part [version] compare: a registered build newer in Major/Minor/Build (deployed
+  # from another branch) is only beaten by taking ITS Major.Minor.Build, not by bumping
+  # the layout's own revision.
   $layoutManifest = Join-Path $root 'src\cascadia\CascadiaPackage\bin\x64\Debug\AppX\AppxManifest.xml'
   function Get-LayoutVersion { [version](([xml](Get-Content $layoutManifest -Raw)).Package.Identity.Version) }
-  function Set-LayoutRevision([int]$rev) {
-    $v = Get-LayoutVersion
-    $new = '{0}.{1}.{2}.{3}' -f $v.Major, $v.Minor, $v.Build, $rev
-    $raw = Get-Content $layoutManifest -Raw
-    $raw = $raw -replace ('Version="' + [regex]::Escape($v.ToString()) + '" ProcessorArchitecture'), ('Version="' + $new + '" ProcessorArchitecture')
-    [IO.File]::WriteAllText($layoutManifest, $raw, (New-Object Text.UTF8Encoding($false)))
-    Note "layout manifest version set to $new (#43 workaround; the source manifest is untouched)"
-    $new
+  # A version strictly greater than both inputs: the higher of the two, revision + 1.
+  # $Registered may be $null (nothing registered). AppX version fields are 16-bit.
+  function Get-FreshVersion([version]$Layout, [version]$Registered) {
+    $base = $Layout
+    if ($Registered -and $Registered -ge $Layout) { $base = $Registered }
+    $rev = [Math]::Max($base.Revision, 0) + 1
+    if ($rev -gt 65535) { throw "cannot raise version $base above itself: the revision field is already 65535" }
+    [version]('{0}.{1}.{2}.{3}' -f $base.Major, $base.Minor, $base.Build, $rev)
   }
+  # Rewrite Version= inside the <Identity> element only (attribute order independent), then
+  # re-parse and confirm the manifest really carries the new version. Fails loudly instead
+  # of reporting a change that did not happen. Preserves a UTF-8 BOM if the file had one.
+  function Set-LayoutVersion([version]$New, [string]$Why) {
+    $bytes = [IO.File]::ReadAllBytes($layoutManifest)
+    $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    $raw = [IO.File]::ReadAllText($layoutManifest)
+    $idRx = [regex]'<Identity\b[^>]*>'
+    $ids = $idRx.Matches($raw)
+    if ($ids.Count -ne 1) { throw "layout manifest ${layoutManifest}: expected exactly one <Identity> element, found $($ids.Count); version NOT changed" }
+    $verRx = [regex]'(\sVersion\s*=\s*")[^"]*(")'
+    if (-not $verRx.IsMatch($ids[0].Value)) { throw "layout manifest ${layoutManifest}: <Identity> has no Version attribute; version NOT changed" }
+    $newId = $verRx.Replace($ids[0].Value, ('${1}' + $New.ToString() + '${2}'), 1)
+    $raw = $raw.Substring(0, $ids[0].Index) + $newId + $raw.Substring($ids[0].Index + $ids[0].Length)
+    [IO.File]::WriteAllText($layoutManifest, $raw, (New-Object Text.UTF8Encoding($hasBom)))
+    $actual = Get-LayoutVersion
+    if ($actual -ne $New) { throw "layout manifest ${layoutManifest}: wrote version $New but it reads back as $actual" }
+    Note "layout manifest version set to $New ($Why; the source manifest is untouched)"
+    $New
+  }
+  $layoutVersion = Get-LayoutVersion
   $registered = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
-  if ($registered -and ([version]$registered.Version -gt (Get-LayoutVersion))) {
-    Set-LayoutRevision (([version]$registered.Version).Revision + 1) | Out-Null
+  $registeredVersion = if ($registered) { [version]$registered.Version } else { $null }
+  # Equal versions are NOT bumped here: re-registering the same version is the normal F5
+  # path, and bumping on equality would creep the revision on every deploy. The equal-name
+  # refusal of #43 is handled by the 0x80070020 fallback below.
+  if ($registeredVersion -and $registeredVersion -gt $layoutVersion) {
+    Set-LayoutVersion (Get-FreshVersion $layoutVersion $registeredVersion) `
+      "raised above the registered build $registeredVersion, which is newer than this layout's $layoutVersion; deploying $layoutVersion would be refused as a downgrade" | Out-Null
   }
 
   $dcode = 1
+  $deployOut = ''
   foreach ($attempt in 1..2) {
     Note "--- DeployAppRecipe.exe (register sh.axan.Axan) [attempt $attempt] ---"
-    & $deploy $recipe.FullName | Tee-Object -FilePath $wrap -Append
+    # Tee to the log and the console live; -Variable keeps a copy for the diagnostics below.
+    & $deploy $recipe.FullName | Tee-Object -FilePath $wrap -Append | Tee-Object -Variable out | Out-Host
     $dcode = $LASTEXITCODE
+    $deployOut += ($out | Out-String)
     Note ("=== deploy EXIT $dcode (attempt $attempt) ===")
     if ($dcode -eq 0) { break }
     if ($attempt -lt 2) { Start-Sleep -Seconds 5 }
@@ -188,23 +220,46 @@ try {
     # holds the layout; the package's activation store on the system side is stuck,
     # the OLD registration is gone too, and only a reboot has cleared it (elevation
     # does not). Say so instead of the generic "still active" line, which is wrong here.
-    $tail = Get-Content -Path $wrap -Raw -ErrorAction SilentlyContinue
-    if ($tail -match '0x80070020') {
-      $rev = (Get-LayoutVersion).Revision + 1
-      $reg = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
-      if ($reg) { $rev = [Math]::Max($rev, ([version]$reg.Version).Revision + 1) }
-      $new = Set-LayoutRevision $rev
+    # Only DeployAppRecipe's own output is inspected, never the whole log: this script's
+    # own notes mention "downgrade" and must not be mistaken for the deploy's error.
+    # Downgrade: 0x80073D06 ERROR_INSTALL_PACKAGE_DOWNGRADE ("a higher version ... is
+    # already installed"). 0x80073CFB ERROR_PACKAGE_ALREADY_EXISTS is a same-name refusal.
+    $downgradeRx = '0x80073D06|downgrade|higher version'
+    $nowReg = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
+    $nowRegText = if ($nowReg) { "registered now: $($nowReg.Version)" } else { 'NO axan build is registered now' }
+    if ($deployOut -match '0x80070020') {
+      $nowRegVersion = if ($nowReg) { [version]$nowReg.Version } else { $null }
+      $new = Set-LayoutVersion (Get-FreshVersion (Get-LayoutVersion) $nowRegVersion) '#43 workaround: fresh full name after 0x80070020'
       Note "--- 0x80070020 (issue #43): Add-AppxPackage -Register under the fresh full name $new ---"
       try {
         Add-AppxPackage -Register $layoutManifest -ForceApplicationShutdown -ErrorAction Stop
         $dcode = 0
       } catch {
-        Note ("fallback register failed: " + ($_.Exception.Message -replace '\s+', ' '))
-        Note "RESULT: DEPLOY FAILED ($dcode) - registration refused with 0x80070020 even under a fresh version (issue #43); the package is now UNREGISTERED. Reboot, then rerun this script. Before rebooting, from an elevated shell, 'handle.exe -a sh.axan.Axan' would identify the holder."
+        $msg = $_.Exception.Message -replace '\s+', ' '
+        $hr = '0x{0:X8}' -f $_.Exception.HResult
+        Note ("fallback register failed (HRESULT $hr): " + $msg)
+        $after = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
+        $afterText = if ($after) { "registered now: $($after.Version)" } else { 'the package is now UNREGISTERED' }
+        if ("$hr $msg" -match $downgradeRx) {
+          Note "RESULT: DEPLOY FAILED ($dcode) - the fallback registration of $new was refused as a DOWNGRADE ($afterText). A newer sh.axan.Axan is registered than this layout; deploy from that build's branch or remove it (Remove-AppxPackage) first."
+        } elseif ("$hr $msg" -match '0x80070020') {
+          Note "RESULT: DEPLOY FAILED ($dcode) - registration refused with 0x80070020 even under a fresh version (issue #43); $afterText. Reboot, then rerun this script. Before rebooting, from an elevated shell, 'handle.exe -a sh.axan.Axan' would identify the holder."
+        } else {
+          Note "RESULT: DEPLOY FAILED ($dcode) - the fallback registration of $new failed with $hr (see the message above, not 0x80070020); $afterText."
+        }
         exit $dcode
       }
+    } elseif ($deployOut -match $downgradeRx) {
+      Note "RESULT: DEPLOY FAILED ($dcode) - refused as a DOWNGRADE: layout $(Get-LayoutVersion) vs $nowRegText. The registered build is newer than this checkout's; deploy from that build's branch or remove it (Remove-AppxPackage) first."
+      exit $dcode
+    } elseif ($deployOut -match '0x80073CFB') {
+      Note "RESULT: DEPLOY FAILED ($dcode) - 0x80073CFB: a package with this exact full name ($(Get-LayoutVersion)) is already installed and reinstall was blocked; $nowRegText"
+      exit $dcode
+    } elseif ($nowReg) {
+      Note "RESULT: DEPLOY FAILED ($dcode) - the previously registered build is still active ($nowRegText)"
+      exit $dcode
     } else {
-      Note "RESULT: DEPLOY FAILED ($dcode) - the previously registered build is still active"
+      Note "RESULT: DEPLOY FAILED ($dcode) - $nowRegText; see the DeployAppRecipe output above"
       exit $dcode
     }
   }

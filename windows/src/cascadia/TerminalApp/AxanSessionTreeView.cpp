@@ -1308,19 +1308,15 @@ namespace winrt::TerminalApp::implementation
             const auto flat = _sessionTreeList.Items();
             flatCount = flat ? flat.Size() : 0;
             duplicates = 0;
-            std::vector<void*> seen;
+            std::unordered_set<void*> seen;
             seen.reserve(flatCount);
             for (uint32_t i = 0; i < flatCount; ++i)
             {
                 const auto item = flat.GetAt(i);
                 void* const key = item ? winrt::get_abi(item) : nullptr;
-                if (std::find(seen.begin(), seen.end(), key) != seen.end())
+                if (!seen.insert(key).second)
                 {
                     ++duplicates;
-                }
-                else
-                {
-                    seen.push_back(key);
                 }
             }
         };
@@ -2399,32 +2395,25 @@ namespace winrt::TerminalApp::implementation
         WUX::Controls::VariableSizedWrapGrid boxes{};
         boxes.Orientation(Orientation::Horizontal);
         boxes.Margin(WUX::Thickness{ 0, 6, 0, 0 });
+        // One box per name in display order (checks[i] is kDisplayOrder[i], for sync below),
+        // in columns as wide as the longest label, so "needs permission" etc. wrap instead of
+        // clipping.
         std::vector<CheckBox> checks;
-        for (const auto name : kDisplayOrder)
-        {
-            CheckBox box{};
-            box.MinWidth(0);
-            box.Margin(WUX::Thickness{ 0, 0, 14, 0 });
-            box.Content(winrt::box_value(winrt::hstring{ DisplayName(name) }));
-            const winrt::hstring key{ name };
-            box.Click([weakThis{ get_weak() }, key](const winrt::Windows::Foundation::IInspectable& s, auto&&) {
+        Axan::Ui::CheckBoxWrap::BuildNameBoxes(
+            boxes,
+            kDisplayOrder,
+            [](std::wstring_view name) { return DisplayName(name); },
+            [&checks](const CheckBox& box, std::wstring_view) { checks.push_back(box); },
+            [weakThis{ get_weak() }](const winrt::hstring& key, bool on) {
                 if (auto p{ weakThis.get() })
                 {
-                    if (const auto b = s.try_as<CheckBox>())
-                    {
-                        const auto o = Parse(p->_nodeEditHoist);
-                        const Mask cur = o.mode == Mode::Custom ? o.mask : 0;
-                        const auto next = With(cur, key, b.IsChecked() && b.IsChecked().Value());
-                        // An emptied custom list stays Custom in the card (Save writes "never").
-                        p->_nodeEditHoist = next == 0 ? winrt::hstring{ kNever } : winrt::hstring{ Format(FromMask(next)) };
-                    }
+                    const auto o = Parse(p->_nodeEditHoist);
+                    const Mask cur = o.mode == Mode::Custom ? o.mask : 0;
+                    const auto next = With(cur, key, on);
+                    // An emptied custom list stays Custom in the card (Save writes "never").
+                    p->_nodeEditHoist = next == 0 ? winrt::hstring{ kNever } : winrt::hstring{ Format(FromMask(next)) };
                 }
             });
-            boxes.Children().Append(box);
-            checks.push_back(box);
-        }
-        // Columns as wide as the longest label, so "needs permission" etc. wrap instead of clipping.
-        Axan::Ui::CheckBoxWrap::FitItemWidth(boxes);
         const auto sync = [checks, boxes](const winrt::hstring& hoist, bool custom) {
             const auto o = Parse(hoist);
             for (size_t i = 0; i < checks.size(); ++i)
@@ -3213,6 +3202,9 @@ namespace winrt::TerminalApp::implementation
                          Sizes::SanitizeSize(globals.SidebarIconSize(), Sizes::kIconSize),
                          Sizes::SanitizeSize(globals.SidebarStateGlyphSize(), Sizes::kStateGlyphSize));
         }
+        // axan: sidebar.idleEffects, resolved once per settings change (_IdleEffectsMask); a
+        // no-op unless it changed. Covers new nodes and the post-reload re-derive.
+        vm->SetIdleEffects(static_cast<Axan::IdleEffects::Mask>(_IdleEffectsMask()));
         const auto tabImpl = winrt::get_self<Tab>(tab);
         const auto controls = tabImpl->AxanTerminalControls();
         const bool focused = _activated && tab == _GetFocusedTab();
@@ -3287,6 +3279,11 @@ namespace winrt::TerminalApp::implementation
             Axan::Log::Debug("TerminalPage", "state preview cleared: new report", { { "label", winrt::to_string(vm->Label()) } });
         }
         const bool wasPreviewing = vm->IsPreviewing();
+        // axan #34: hoist membership is matched on the slot state + kind, and the slot can
+        // change while the state doesn't (an agent at rest -> state=clear, still idle), so
+        // compare those around the update rather than relying on the transition alone.
+        const auto hoistSlotBefore = vm->SlotKey();
+        const auto hoistKindBefore = vm->StateKind();
         const bool transition = vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now, resting);
         if (wasPreviewing && !vm->IsPreviewing())
         {
@@ -3302,6 +3299,15 @@ namespace winrt::TerminalApp::implementation
                               { "kind", winrt::to_string(result.kind) },
                               { "source", std::string{ result.source } },
                               { "panes", std::to_string(panes.size()) } });
+        }
+        else if (vm->SlotKey() != hoistSlotBefore || vm->StateKind() != hoistKindBefore)
+        {
+            _RecomputeSections(); // axan #34: refreshes the hoisted group too
+            Axan::Log::Debug("SessionState",
+                             "node slot changed without a state transition",
+                             { { "label", winrt::to_string(vm->Label()) },
+                               { "from", winrt::to_string(hoistSlotBefore) },
+                               { "to", winrt::to_string(vm->SlotKey()) } });
         }
     }
 
@@ -3397,6 +3403,15 @@ namespace winrt::TerminalApp::implementation
         {
             return;
         }
+        // axan #30: a background window isn't being looked at, so nothing in it is seen yet
+        // (same rule as the implicit acknowledge in _RecomputeNodeState). WindowActivated
+        // acknowledges the focused node when the user comes back.
+        if (!_activated)
+        {
+            Axan::Log::Debug("SessionState", "node acknowledge skipped", { { "label", winrt::to_string(vm->Label()) }, { "reason", reason }, { "skipped", "window inactive" } });
+            _RecomputeNodeState(node);
+            return;
+        }
         bool advanced = false;
         for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
         {
@@ -3419,6 +3434,7 @@ namespace winrt::TerminalApp::implementation
     // (settings reload or the sidebar menu).
     void TerminalPage::_RecomputeAllNodeStates()
     {
+        _idleEffectsMask.reset(); // axan: re-resolve sidebar.idleEffects (each node picks it up below)
         if (!SessionTree())
         {
             return;
@@ -3496,7 +3512,7 @@ namespace winrt::TerminalApp::implementation
         const auto now = winrt::clock::now();
         const auto idleAfterMinutes = _settings ? _settings.GlobalSettings().SidebarIdleAfterMinutes() : 0; // axan #31
         const auto focusedTab = _GetFocusedTab(); // axan #31: the row being looked at is never de-emphasised
-        const auto idleEffects = static_cast<Axan::IdleEffects::Mask>(_ResolveIdleEffects()); // axan: sidebar.idleEffects
+        const auto idleEffects = static_cast<Axan::IdleEffects::Mask>(_IdleEffectsMask()); // axan: sidebar.idleEffects (cached)
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             const auto vm = _nodeVM(node);
             const auto tab = _nodeTab(node);
@@ -3511,13 +3527,38 @@ namespace winrt::TerminalApp::implementation
             }
             vm->SetLastActivity(latest);
             vm->RefreshAge(now); // axan #32: only rows showing an age ever change
-            vm->SetIdleEffects(idleEffects); // no-op unless the setting changed
             if (vm->UpdateDeEmphasis(now, tab == focusedTab ? 0 : idleAfterMinutes)) // axan #31
             {
                 Axan::Log::Debug("SessionState", vm->IsDeEmphasised() ? "row de-emphasised: idle" : "row promoted", { { "label", winrt::to_string(vm->Label()) }, { "idleAfterMinutes", std::to_string(idleAfterMinutes) } });
             }
         });
-        _ApplyIdleCollapse((idleEffects & Axan::IdleEffects::kCollapse) != 0);
+        // axan: the collapse pass walks the whole tree, so skip it while the effect is off,
+        // except for the one pass after it was turned off that re-expands what it collapsed
+        // (after that pass no node has AutoCollapsed set).
+        const bool collapse = (idleEffects & Axan::IdleEffects::kCollapse) != 0;
+        if (collapse || _idleCollapseApplied)
+        {
+            _ApplyIdleCollapse(collapse);
+            _idleCollapseApplied = collapse;
+        }
+    }
+
+    // axan: sidebar.idleEffects as a mask, resolved on first use and again after
+    // _RecomputeAllNodeStates drops the cache (settings reload, sidebar menu). Not cached
+    // before settings exist, so an early call can't pin the default.
+    uint8_t TerminalPage::_IdleEffectsMask()
+    {
+        if (!_idleEffectsMask)
+        {
+            const auto mask = _ResolveIdleEffects();
+            if (!_settings)
+            {
+                return mask;
+            }
+            _idleEffectsMask = mask;
+            Axan::Log::Debug("SessionState", "idle effects resolved", { { "mask", std::to_string(mask) } });
+        }
+        return *_idleEffectsMask;
     }
 
     // axan: sidebar.idleEffects -> mask. Unset = dim + smaller (the original #31 look); an

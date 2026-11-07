@@ -4319,6 +4319,11 @@ public:
         ExpectDiscard(L"state=clear:id=bad!:id=build", "invalid-id");
         ExpectDiscard(L"id=bad!:state=clear", "invalid-id");
 
+        Log::Comment(L"A bare id segment (no '=') is an invalid id too, not a skipped pair");
+        ExpectDiscard(L"state=clear:id", "bare-id");
+        ExpectDiscard(L"state=clear: id :id=build", "bare-id");
+        ExpectDiscard(L"id:state=idle", "bare-id");
+
         Log::Comment(L"base64 that does not decode");
         ExpectDiscard(L"state=idle:msg=abcde", "bad-base64");
         ExpectDiscard(L"state=idle:msg=QQ=", "bad-base64");

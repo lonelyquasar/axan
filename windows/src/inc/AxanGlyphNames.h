@@ -366,32 +366,39 @@ namespace Axan::GlyphNames
         return Resolve(icon).kind == IconResolution::UnknownName;
     }
 
+    // A search query split into its words: separated by space, tab, '_' or '-' (empty words
+    // dropped), ASCII-lowercased. Shared with the picker's set search (AxanGlyphSets.h
+    // SearchTable), so both read a query the same way.
+    inline std::vector<std::wstring> SplitQueryWords(std::wstring_view query)
+    {
+        std::vector<std::wstring> words;
+        std::wstring word;
+        for (const auto ch : query)
+        {
+            if (ch == L' ' || ch == L'_' || ch == L'-' || ch == L'\t')
+            {
+                if (!word.empty())
+                {
+                    words.push_back(std::move(word));
+                    word.clear();
+                }
+                continue;
+            }
+            word.push_back((ch >= L'A' && ch <= L'Z') ? static_cast<wchar_t>(ch - L'A' + L'a') : ch);
+        }
+        if (!word.empty())
+        {
+            words.push_back(std::move(word));
+        }
+        return words;
+    }
+
     // Indices into All() whose key contains the normalized query, or whose builtin alias
     // does (so "git" finds the branch glyph). Every word of a multi-word query must appear,
     // in any order ("button nav" finds "global-nav-button"). An empty query matches all.
     inline std::vector<size_t> Search(std::wstring_view query)
     {
-        std::vector<std::wstring> words;
-        {
-            std::wstring word;
-            for (const auto ch : query)
-            {
-                if (ch == L' ' || ch == L'_' || ch == L'-' || ch == L'\t')
-                {
-                    if (!word.empty())
-                    {
-                        words.push_back(std::move(word));
-                        word.clear();
-                    }
-                    continue;
-                }
-                word.push_back((ch >= L'A' && ch <= L'Z') ? static_cast<wchar_t>(ch - L'A' + L'a') : ch);
-            }
-            if (!word.empty())
-            {
-                words.push_back(std::move(word));
-            }
-        }
+        const auto words = SplitQueryWords(query);
 
         std::vector<size_t> hits;
         const auto& all = All();

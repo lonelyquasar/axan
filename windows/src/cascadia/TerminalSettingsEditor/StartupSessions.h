@@ -109,7 +109,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         void _buildHoistStateBoxes();
         void _syncHoist();
         void _syncHoistStates(const Editor::LaunchEntryViewModel& row, bool custom);
-        void _hoistStateBox_Click(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::RoutedEventArgs& args);
+        void _hoistStateToggled(const winrt::hstring& key, bool on);
         safe_void_coroutine _PickIconImage(Editor::LaunchEntryViewModel vm);
 
         Windows::UI::Xaml::Data::INotifyPropertyChanged::PropertyChanged_revoker _vmChangedRevoker;

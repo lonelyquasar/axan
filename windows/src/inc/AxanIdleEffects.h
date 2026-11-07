@@ -24,6 +24,8 @@
 // Header-only in the shared src/inc and pure (no WinRT), so TerminalApp, the settings
 // editor and UnitTests_TerminalCore share one definition.
 
+#include <AxanNameMask.h> // the name list <-> bit mask parsing, shared with AxanHoistRule.h
+
 #include <array>
 #include <cstdint>
 #include <string>
@@ -40,72 +42,29 @@ namespace Axan::IdleEffects
 
     constexpr Mask Bit(std::wstring_view name) noexcept
     {
-        for (size_t i = 0; i < kNames.size(); ++i)
-        {
-            if (kNames[i] == name)
-            {
-                return static_cast<Mask>(1u << i);
-            }
-        }
-        return 0;
+        return NameMask::Bit<Mask>(kNames, name);
     }
 
     inline constexpr Mask kDim = Bit(L"dim");
     inline constexpr Mask kSmaller = Bit(L"smaller");
     inline constexpr Mask kGray = Bit(L"gray");
     inline constexpr Mask kCollapse = Bit(L"collapse");
-    inline constexpr Mask kAll = static_cast<Mask>((1u << kNames.size()) - 1);
+    inline constexpr Mask kAll = NameMask::All<Mask>(kNames);
     inline constexpr Mask kDefault = static_cast<Mask>(kDim | kSmaller);
 
-    inline std::wstring_view Trim(std::wstring_view s) noexcept
-    {
-        constexpr std::wstring_view ws{ L" \t\r\n" };
-        const auto first = s.find_first_not_of(ws);
-        if (first == std::wstring_view::npos)
-        {
-            return {};
-        }
-        return s.substr(first, s.find_last_not_of(ws) - first + 1);
-    }
+    using NameMask::Trim;
 
     // A list of names -> mask. Names are trimmed; unknown ones are appended to `unknown`
     // (when given) and otherwise ignored. An empty list is an empty mask (no effects).
     template<typename Range>
     Mask MaskFromNames(const Range& names, std::vector<std::wstring>* unknown = nullptr)
     {
-        Mask m = 0;
-        for (const auto& raw : names)
-        {
-            const auto name = Trim(std::wstring_view{ raw });
-            if (name.empty())
-            {
-                continue;
-            }
-            const auto b = Bit(name);
-            if (b == 0)
-            {
-                if (unknown)
-                {
-                    unknown->emplace_back(name);
-                }
-                continue;
-            }
-            m = static_cast<Mask>(m | b);
-        }
-        return m;
+        return NameMask::MaskFromNames<Mask>(kNames, names, unknown);
     }
 
     // mask -> names, in canonical order.
     inline std::vector<std::wstring_view> NamesFromMask(Mask m)
     {
-        std::vector<std::wstring_view> out;
-        for (size_t i = 0; i < kNames.size(); ++i)
-        {
-            if (m & (1u << i))
-            {
-                out.push_back(kNames[i]);
-            }
-        }
-        return out;
+        return NameMask::NamesFromMask(kNames, m);
     }
 }

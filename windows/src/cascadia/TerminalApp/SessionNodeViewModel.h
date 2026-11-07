@@ -38,6 +38,8 @@ namespace winrt::TerminalApp::implementation
     // and its one-sentence explanation; showSlotWord = sidebar.stateLabels (the word stays in
     // the accessible name and tooltips either way). agentName is the resting agent's session
     // name for the second line ("" = none, or sidebar.showAgentName off).
+    // The view model stores this struct whole (_resting) and compares / copies it as one
+    // value, so adding a resting field means adding it here and nowhere else in the VM.
     struct SessionRestingState
     {
         hstring retainedWhat;
@@ -49,6 +51,8 @@ namespace winrt::TerminalApp::implementation
         hstring slotExplanation;
         bool showSlotWord{ true };
         hstring agentName;
+
+        bool operator==(const SessionRestingState&) const = default;
     };
 
     struct SessionNodeViewModel : SessionNodeViewModelT<SessionNodeViewModel, winrt::Windows::Foundation::IStringable>
@@ -183,7 +187,7 @@ namespace winrt::TerminalApp::implementation
         hstring StateKind() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->kind : _stateKind; }
         // axan #34: the right-edge slot's state (AxanSessionState.h SlotKey; "" = none), the
         // key the hoisted group matches on.
-        hstring SlotKey() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->slotKey : _slotKey; }
+        hstring SlotKey() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->resting.slotKey : _resting.slotKey; }
         winrt::Windows::Foundation::DateTime LastActivity() const noexcept { return _lastActivity; }
         bool SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting = {});
         void SetLastActivity(winrt::Windows::Foundation::DateTime value);
@@ -218,21 +222,21 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Xaml::Visibility SubLabelVisibility() const noexcept;
         // axan: a kept (seen) report renders more muted than a live one.
         double SubLabelOpacity() const noexcept { return ShowsRetained() || ShowsAgentName() ? 0.45 : 0.7; }
-        bool ShowsRetained() const noexcept { return !_isSeparator && !_retainedWhat.empty(); }
+        bool ShowsRetained() const noexcept { return !_isSeparator && !_resting.retainedWhat.empty(); }
         // axan: an agent with nothing else on its second line shows its name there: below
         // the attention states (which always own the line), a kept report and a working
         // message; so idle, running and a message-less working all show it.
         bool ShowsAgentName() const noexcept
         {
-            return !_isSeparator && !_agentName.empty() && !ShowsRetained() &&
+            return !_isSeparator && !_resting.agentName.empty() && !ShowsRetained() &&
                    (_state == L"idle" || _state == L"running" || (_state == L"working" && _stateMessage.empty()));
         }
         // axan: the slot's state word (sidebar.stateLabels) and the slot tooltip.
-        hstring StateWord() const noexcept { return _isSeparator || !_showSlotWord ? hstring{} : _slotWord; }
+        hstring StateWord() const noexcept { return _isSeparator || !_resting.showSlotWord ? hstring{} : _resting.slotWord; }
         winrt::Windows::UI::Xaml::Visibility StateWordVisibility() const noexcept;
         winrt::Windows::UI::Xaml::Visibility SlotVisibility() const noexcept;
         // A preview's tooltips start "Preview — " (see SetPreview).
-        hstring SlotToolTip() const { return _realWhilePreviewing ? hstring{ std::wstring{ L"Preview — " } + std::wstring{ _slotExplanation } } : _slotExplanation; }
+        hstring SlotToolTip() const { return _realWhilePreviewing ? hstring{ std::wstring{ L"Preview — " } + std::wstring{ _resting.slotExplanation } } : _resting.slotExplanation; }
         hstring StateToolTip() const;
         winrt::Windows::UI::Xaml::Visibility StateToolTipVisibility() const noexcept;
         // Recompute SubLabelAge (and SubLabel). Called by the sidebar's 1s clock; a no-op (no
@@ -334,20 +338,13 @@ namespace winrt::TerminalApp::implementation
         hstring _subLabel;
         hstring _subLabelAge; // " · 4m", or "" for a line with no age
         hstring _subLabelMessage;
-        // axan: statusAfterSeen = keep (see SessionRestingState). _reportSince
-        // is when the report named by _reportKey first appeared; it survives acknowledgement,
-        // so a kept "done" shows how long ago it finished, not how long ago it was opened.
-        hstring _retainedWhat;
-        hstring _retainedMessage;
-        hstring _reportKey;
+        // axan: the resting details (kept report, glyph slot, agent name; see
+        // SessionRestingState). _reportSince is when the report named by _resting.reportKey
+        // first appeared; it survives acknowledgement, so a kept "done" shows how long ago it
+        // finished, not how long ago it was opened. It is derived here, not pushed, so it
+        // lives outside the struct.
+        SessionRestingState _resting;
         winrt::Windows::Foundation::DateTime _reportSince{};
-        // axan: the glyph slot (see SessionRestingState).
-        hstring _slotKey;
-        hstring _slotGlyph;
-        hstring _slotWord;
-        hstring _slotExplanation;
-        bool _showSlotWord{ true };
-        hstring _agentName;
         // axan #31
         bool _deEmphasised{ false };
         Axan::IdleEffects::Mask _idleEffects{ Axan::IdleEffects::kDefault };
@@ -379,16 +376,8 @@ namespace winrt::TerminalApp::implementation
             hstring kind;
             hstring message;
             winrt::Windows::Foundation::DateTime since{};
-            hstring retainedWhat;
-            hstring retainedMessage;
-            hstring reportKey;
             winrt::Windows::Foundation::DateTime reportSince{};
-            hstring slotKey;
-            hstring slotGlyph;
-            hstring slotWord;
-            hstring slotExplanation;
-            bool showSlotWord{ true };
-            hstring agentName;
+            SessionRestingState resting;
         };
         std::optional<StateFields> _realWhilePreviewing;
         hstring _previewId;

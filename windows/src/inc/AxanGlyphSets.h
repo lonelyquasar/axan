@@ -134,27 +134,7 @@ namespace Axan::GlyphSets
         const auto lower = [](wchar_t ch) noexcept {
             return (ch >= L'A' && ch <= L'Z') ? static_cast<wchar_t>(ch - L'A' + L'a') : ch;
         };
-        std::vector<std::wstring> words;
-        {
-            std::wstring word;
-            for (const auto ch : query)
-            {
-                if (ch == L' ' || ch == L'_' || ch == L'-' || ch == L'\t')
-                {
-                    if (!word.empty())
-                    {
-                        words.push_back(std::move(word));
-                        word.clear();
-                    }
-                    continue;
-                }
-                word.push_back(lower(ch));
-            }
-            if (!word.empty())
-            {
-                words.push_back(std::move(word));
-            }
-        }
+        const auto words = GlyphNames::SplitQueryWords(query);
 
         std::vector<size_t> hits;
         for (size_t i = 0; i < count; ++i)

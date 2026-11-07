@@ -19,6 +19,7 @@
 #include "../../renderer/base/renderer.hpp"
 #include "../../renderer/uia/UiaRenderer.hpp"
 #include "../../types/inc/CodepointWidthDetector.hpp"
+#include "../../inc/AxanLog.h"
 
 #include "ControlCore.g.cpp"
 #include "SelectionColor.g.cpp"
@@ -1255,6 +1256,10 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         if (_connection)
         {
+            // axan #30: arm the resize-echo window before the resize goes out, so the
+            // repaint it provokes can't land ahead of the stamp.
+            _resizeSentTicks.store(winrt::clock::now().time_since_epoch().count(), std::memory_order_relaxed);
+            _resizeEchoLogged.store(false, std::memory_order_relaxed);
             _connection.Resize(vp.Height(), vp.Width());
         }
 
@@ -2245,7 +2250,28 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     {
         try
         {
-            _lastOutputTicks.store(winrt::clock::now().time_since_epoch().count(), std::memory_order_relaxed); // axan #30
+            // axan #30: stamp output as session activity, except the repaint a resize
+            // provokes. ConPTY's viewport redraw and an app's own redraw on the size
+            // change both arrive here as ordinary output, with nothing in the stream
+            // or the Terminal that marks them, so the only available signal is timing:
+            // output within _resizeEchoWindow of our last Resize is not activity.
+            // Tradeoff: genuine output in that window is not stamped either. A busy
+            // program keeps writing past the window and gets stamped then; only a
+            // program whose last chunk lands inside the window is under-counted, and
+            // only for idle-dimming purposes.
+            const auto nowTicks = winrt::clock::now().time_since_epoch().count();
+            const auto sinceResize = nowTicks - _resizeSentTicks.load(std::memory_order_relaxed);
+            if (sinceResize >= 0 && sinceResize < _resizeEchoWindow.count())
+            {
+                if (!_resizeEchoLogged.exchange(true, std::memory_order_relaxed))
+                {
+                    Axan::Log::Debug("SessionState", "output not stamped as activity: resize echo", { { "msSinceResize", std::to_string(sinceResize / 10'000) } });
+                }
+            }
+            else
+            {
+                _lastOutputTicks.store(nowTicks, std::memory_order_relaxed);
+            }
             {
                 const auto lock = _terminal->LockForWriting();
                 _terminal->Write(hstr);
