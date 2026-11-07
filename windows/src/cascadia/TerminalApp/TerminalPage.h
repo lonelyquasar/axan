@@ -654,6 +654,9 @@ namespace winrt::TerminalApp::implementation
         // axan M13/#429: the menu itself, shared by both routes. `position` is item-relative
         // when the gesture reported one (pointer), else the flyout anchors to the row (keyboard).
         void _ShowSessionNodeContextMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const Microsoft::UI::Xaml::Controls::TreeViewItem& item, const std::optional<Windows::Foundation::Point>& position);
+        // axan: the node menu's "Preview state" submenu. id = a kStatePreviews id, "" = clear.
+        void _AppendStatePreviewSubMenu(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout, const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        void _PreviewNodeState(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, std::wstring_view id);
         // axan #429: the currently-open per-node menu — only consulted so a gesture that
         // raises both RightTapped and ContextRequested can't open the menu twice.
         Windows::UI::Xaml::Controls::MenuFlyout _sessionNodeMenu{ nullptr };

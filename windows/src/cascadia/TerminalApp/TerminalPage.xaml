@@ -87,13 +87,14 @@
                                        Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateToolTipVisibility, Mode=OneWay}" />
                         </StackPanel>
                     </ToolTipService.ToolTip>
+                    <!--  axan: sidebar.iconSize sizes the icon box; the state dot stays 9px in its corner  -->
                     <Grid Grid.Column="0"
-                          Width="16"
-                          Height="16"
+                          Width="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
+                          Height="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
                           Margin="0,0,8,0"
                           VerticalAlignment="Center">
-                        <ContentPresenter Width="16"
-                                          Height="16"
+                        <ContentPresenter Width="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
+                                          Height="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
                                           Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
                         <Ellipse Width="9"
                                  Height="9"
@@ -126,13 +127,13 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0"
-                                       FontSize="11"
+                                       FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
                                        Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
                                        Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabel, Mode=OneWay}"
                                        TextTrimming="CharacterEllipsis"
                                        TextWrapping="NoWrap" />
                             <TextBlock Grid.Column="1"
-                                       FontSize="11"
+                                       FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
                                        Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
                                        Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabelAge, Mode=OneWay}"
                                        TextWrapping="NoWrap" />
@@ -162,7 +163,7 @@
                                           Content="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphIcon, Mode=OneWay}"
                                           Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateGlyphVisibility, Mode=OneWay}" />
                         <TextBlock VerticalAlignment="Center"
-                                   FontSize="11"
+                                   FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
                                    Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
                                    Text="{x:Bind ((local:SessionNodeViewModel)Content).StateWord, Mode=OneWay}"
                                    TextTrimming="CharacterEllipsis"

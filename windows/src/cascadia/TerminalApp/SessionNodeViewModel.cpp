@@ -38,6 +38,31 @@ namespace winrt::TerminalApp::implementation
     // axan #30: see the header. StateSince restarts only on a state/kind transition.
     bool SessionNodeViewModel::SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting)
     {
+        // axan: while a preview is shown, keep the real state current underneath it. A real
+        // state change ends the preview (restoring the real fields), then applies as usual.
+        if (_realWhilePreviewing)
+        {
+            auto& real = *_realWhilePreviewing;
+            if (state == real.state && kind == real.kind)
+            {
+                real.message = message;
+                if (resting.reportKey != real.reportKey)
+                {
+                    real.reportKey = resting.reportKey;
+                    real.reportSince = real.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : now;
+                }
+                real.retainedWhat = resting.retainedWhat;
+                real.retainedMessage = resting.retainedMessage;
+                real.slotKey = resting.slotKey;
+                real.slotGlyph = resting.slotGlyph;
+                real.slotWord = resting.slotWord;
+                real.slotExplanation = resting.slotExplanation;
+                real.showSlotWord = resting.showSlotWord;
+                real.agentName = resting.agentName;
+                return false;
+            }
+            ClearPreview(now);
+        }
         const bool transition = state != _state || kind != _stateKind;
         if (transition)
         {
@@ -97,6 +122,127 @@ namespace winrt::TerminalApp::implementation
         {
             PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
         }
+    }
+
+    // ----- axan: state preview -----------------------------------------------------------
+
+    SessionNodeViewModel::StateFields SessionNodeViewModel::_captureState() const
+    {
+        return StateFields{ _state, _stateKind, _stateMessage, _stateSince, _retainedWhat, _retainedMessage, _reportKey, _reportSince, _slotKey, _slotGlyph, _slotWord, _slotExplanation, _showSlotWord, _agentName };
+    }
+
+    void SessionNodeViewModel::_restoreState(const StateFields& f)
+    {
+        _state = f.state;
+        _stateKind = f.kind;
+        _stateMessage = f.message;
+        _stateSince = f.since;
+        _retainedWhat = f.retainedWhat;
+        _retainedMessage = f.retainedMessage;
+        _reportKey = f.reportKey;
+        _reportSince = f.reportSince;
+        _slotKey = f.slotKey;
+        _slotGlyph = f.slotGlyph;
+        _slotWord = f.slotWord;
+        _slotExplanation = f.slotExplanation;
+        _showSlotWord = f.showSlotWord;
+        _agentName = f.agentName;
+    }
+
+    // Everything a preview can change on screen: the state presentation, and the idle
+    // effects (a non-idle preview is never de-emphasised).
+    void SessionNodeViewModel::_raisePreviewChange(winrt::Windows::Foundation::DateTime now)
+    {
+        _subLabelMessage = _stateMessage;
+        std::tie(_subLabel, _subLabelAge) = _computeSubLabel(now);
+        _raiseStatePresentation();
+        for (const auto name : { L"LabelFontSize", L"RowOpacity", L"RowMinHeight", L"Icon", L"LabelBrush" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
+    void SessionNodeViewModel::SetPreview(const hstring& id, const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime since, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting)
+    {
+        if (_isSeparator)
+        {
+            return;
+        }
+        if (!_realWhilePreviewing)
+        {
+            _realWhilePreviewing = _captureState();
+        }
+        _previewId = id;
+        const auto reportSince = resting.reportKey.empty() ? winrt::Windows::Foundation::DateTime{} : since;
+        // The agent name is the real one (sidebar.showAgentName already applied), so an idle /
+        // running preview shows what the row would.
+        const auto agentName = _realWhilePreviewing->agentName;
+        _restoreState(StateFields{ state, kind, message, since, resting.retainedWhat, resting.retainedMessage, resting.reportKey, reportSince, resting.slotKey, resting.slotGlyph, resting.slotWord, resting.slotExplanation, resting.showSlotWord, agentName });
+        _raisePreviewChange(now);
+    }
+
+    bool SessionNodeViewModel::ClearPreview(winrt::Windows::Foundation::DateTime now)
+    {
+        if (!_realWhilePreviewing)
+        {
+            return false;
+        }
+        _restoreState(*_realWhilePreviewing);
+        _realWhilePreviewing.reset();
+        _previewId = {};
+        _raisePreviewChange(now);
+        return true;
+    }
+
+    // ----- axan: sizes ---------------------------------------------------------------------
+
+    bool SessionNodeViewModel::SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize)
+    {
+        bool changed = false;
+        const auto raise = [this](const wchar_t* name) {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        };
+        if (labelFontSize != _labelFontSize)
+        {
+            _labelFontSize = labelFontSize;
+            raise(L"LabelFontSize");
+            changed = true;
+        }
+        if (stateLineFontSize != _stateLineFontSize)
+        {
+            _stateLineFontSize = stateLineFontSize;
+            raise(L"StateLineFontSize");
+            changed = true;
+        }
+        if (iconSize != _iconSize)
+        {
+            _iconSize = iconSize;
+            raise(L"IconSize");
+            raise(L"Icon");
+            changed = true;
+        }
+        if (stateGlyphSize != _stateGlyphSize)
+        {
+            _stateGlyphSize = stateGlyphSize;
+            raise(L"StateGlyphIcon");
+            changed = true;
+        }
+        return changed;
+    }
+
+    // Multiply a glyph icon's font size (an IconWUX IconSourceElement over a FontIconSource,
+    // whose size already carries the AxanGlyphScale per-font factor). False for an image.
+    static bool _scaleGlyphIcon(const winrt::Windows::UI::Xaml::Controls::IconElement& icon, double factor)
+    {
+        if (const auto ise = icon.try_as<winrt::Windows::UI::Xaml::Controls::IconSourceElement>())
+        {
+            if (const auto fis = ise.IconSource().try_as<winrt::Windows::UI::Xaml::Controls::FontIconSource>())
+            {
+                fis.FontSize(fis.FontSize() * factor);
+                return true;
+            }
+        }
+        return false;
     }
 
     bool SessionNodeViewModel::ShowsAge() const noexcept
@@ -181,9 +327,10 @@ namespace winrt::TerminalApp::implementation
         return StateGlyph().empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
     }
 
-    // 12px like the old TextBlock glyph. IconWUX gives a glyph / emoji a 12pt FontIconSource
-    // (Segoe Fluent for the PUA range, Segoe UI otherwise), tinted here with the label brush;
-    // an image (bitmap / exe / dll icon) has no intrinsic small size, so it is boxed to 12x12.
+    // sidebar.stateGlyphSize, default 12px like the old TextBlock glyph. IconWUX gives a glyph
+    // / emoji a 12pt FontIconSource (Segoe Fluent for the PUA range, Segoe UI otherwise; times
+    // the AxanGlyphScale factor), rescaled here to the setting and tinted with the label
+    // brush; an image (bitmap / exe / dll icon) has no intrinsic small size, so it is boxed.
     winrt::Windows::UI::Xaml::Controls::IconElement SessionNodeViewModel::StateGlyphIcon()
     {
         const auto glyph = StateGlyph();
@@ -204,13 +351,14 @@ namespace winrt::TerminalApp::implementation
         }
         if (font)
         {
+            font.FontSize(font.FontSize() * (_stateGlyphSize / 12.0));
             font.Foreground(brush);
             icon.Foreground(brush);
         }
         else
         {
-            icon.Width(12);
-            icon.Height(12);
+            icon.Width(_stateGlyphSize);
+            icon.Height(_stateGlyphSize);
         }
         return icon;
     }
@@ -370,9 +518,9 @@ namespace winrt::TerminalApp::implementation
     bool SessionNodeViewModel::UpdateDeEmphasis(winrt::Windows::Foundation::DateTime now, int32_t idleAfterMinutes)
     {
         bool want = false;
-        if (!_isSeparator && idleAfterMinutes > 0 && _state == L"idle")
+        if (!_isSeparator && idleAfterMinutes > 0 && State() == L"idle") // axan: the real state, never a preview
         {
-            const auto since = std::max(_lastActivity, _stateSince);
+            const auto since = std::max(_lastActivity, StateSince());
             want = since != winrt::Windows::Foundation::DateTime{} && now - since >= std::chrono::minutes{ idleAfterMinutes };
         }
         const bool flipped = want != _deEmphasised;
@@ -409,6 +557,10 @@ namespace winrt::TerminalApp::implementation
     // Shown under the label in the row tooltip; Collapsed when idle.
     winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::StateToolTipVisibility() const noexcept
     {
+        if (_realWhilePreviewing && !_isSeparator)
+        {
+            return winrt::Windows::UI::Xaml::Visibility::Visible; // it starts "Preview - "
+        }
         return _isSeparator || (_state == L"idle" && !ShowsRetained() && _slotExplanation.empty()) ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
     }
 
@@ -437,15 +589,17 @@ namespace winrt::TerminalApp::implementation
         {
             return {};
         }
-        std::wstring tip;
+        // axan: a preview says so first, so it is never mistaken for a real report.
+        std::wstring tip{ _realWhilePreviewing ? L"Preview \u2014 " : L"" };
+        const auto prefixLength = tip.size();
         // axan: the slot state's one-sentence explanation leads the state detail.
         if (!_slotExplanation.empty())
         {
-            tip = _slotExplanation;
+            tip += _slotExplanation;
         }
         if (_state != L"idle")
         {
-            if (!tip.empty())
+            if (tip.size() > prefixLength)
             {
                 tip += L"\n";
             }
@@ -465,7 +619,7 @@ namespace winrt::TerminalApp::implementation
         }
         if (ShowsRetained())
         {
-            if (!tip.empty())
+            if (tip.size() > prefixLength)
             {
                 tip += L"\n";
             }
@@ -616,8 +770,11 @@ namespace winrt::TerminalApp::implementation
         const auto icon{ BuildIcon(_iconPath, iconColor, _isDarkTheme) };
         if (icon)
         {
-            icon.Width(16);
-            icon.Height(16);
+            // axan: sidebar.iconSize. A glyph's 12pt font size is 3/4 of the 16px default box,
+            // so it scales with the box.
+            icon.Width(_iconSize);
+            icon.Height(_iconSize);
+            _scaleGlyphIcon(icon, _iconSize / 16.0);
         }
         return icon;
     }

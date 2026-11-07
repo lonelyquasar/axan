@@ -66,6 +66,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarNeedsYouGroup); // axan #34
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateLabels);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarShowAgentName);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarLabelFontSize);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateLineFontSize);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarIconSize);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateGlyphSize);
 
     private:
         Model::GlobalAppSettings _GlobalSettings;

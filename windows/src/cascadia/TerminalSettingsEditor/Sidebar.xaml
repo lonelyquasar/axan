@@ -38,6 +38,50 @@
                           Style="{StaticResource ToggleSwitchInExpanderStyle}" />
         </local:SettingContainer>
 
+        <!--
+            axan: sidebar row sizes. Inline spin buttons (the Compact hover popout is not
+            wanted). Text 8-32, icons 8-48. A non-Segoe-Fluent glyph (hieroglyph, rune) also
+            gets its per-font scale (src/inc/AxanGlyphScale.h) on top of the icon size.
+        -->
+        <TextBlock x:Uid="Sidebar_TextAndIconsHeader"
+                   Style="{StaticResource TextBlockSubHeaderStyle}" />
+        <local:SettingContainer x:Uid="Globals_SidebarLabelFontSize">
+            <muxc:NumberBox LargeChange="2"
+                            Maximum="32"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarLabelFontSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <local:SettingContainer x:Uid="Globals_SidebarStateLineFontSize">
+            <muxc:NumberBox LargeChange="2"
+                            Maximum="32"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarStateLineFontSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <local:SettingContainer x:Uid="Globals_SidebarIconSize">
+            <muxc:NumberBox LargeChange="4"
+                            Maximum="48"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarIconSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <local:SettingContainer x:Uid="Globals_SidebarStateGlyphSize">
+            <muxc:NumberBox LargeChange="4"
+                            Maximum="48"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarStateGlyphSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+
         <TextBlock x:Uid="Sidebar_SessionStateHeader"
                    Style="{StaticResource TextBlockSubHeaderStyle}" />
         <!--

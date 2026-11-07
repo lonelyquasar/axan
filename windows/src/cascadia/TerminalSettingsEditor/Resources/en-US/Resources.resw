@@ -892,6 +892,42 @@
     <value>Idle sessions</value>
     <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
   </data>
+  <data name="Sidebar_TextAndIconsHeader.Text" xml:space="preserve">
+    <value>Text and icons</value>
+    <comment>axan: Section header on the Sessions &gt; Sidebar settings page. The sizes of a sidebar row's text and icons.</comment>
+  </data>
+  <data name="Globals_SidebarLabelFontSize.Header" xml:space="preserve">
+    <value>Session name size</value>
+    <comment>axan: Header for a number box: the font size of a sidebar row's title.</comment>
+  </data>
+  <data name="Globals_SidebarLabelFontSize.HelpText" xml:space="preserve">
+    <value>Font size of each session's name in the sidebar. An idle row drawn smaller takes 2 off. Default 14.</value>
+    <comment>axan: A description for the "session name size" setting. Presented near "Globals_SidebarLabelFontSize.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateLineFontSize.Header" xml:space="preserve">
+    <value>Status text size</value>
+    <comment>axan: Header for a number box: the font size of a sidebar row's second line and its state word.</comment>
+  </data>
+  <data name="Globals_SidebarStateLineFontSize.HelpText" xml:space="preserve">
+    <value>Font size of the line under a session's name (its status message and age) and of the state word beside the status glyph. Default 11.</value>
+    <comment>axan: A description for the "status text size" setting. Presented near "Globals_SidebarStateLineFontSize.Header".</comment>
+  </data>
+  <data name="Globals_SidebarIconSize.Header" xml:space="preserve">
+    <value>Session icon size</value>
+    <comment>axan: Header for a number box: the size of a sidebar row's icon.</comment>
+  </data>
+  <data name="Globals_SidebarIconSize.HelpText" xml:space="preserve">
+    <value>Size of each session's icon in the sidebar, in pixels. Default 16.</value>
+    <comment>axan: A description for the "session icon size" setting. Presented near "Globals_SidebarIconSize.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphSize.Header" xml:space="preserve">
+    <value>Status glyph size</value>
+    <comment>axan: Header for a number box: the size of the status glyph at a sidebar row's right edge.</comment>
+  </data>
+  <data name="Globals_SidebarStateGlyphSize.HelpText" xml:space="preserve">
+    <value>Size of the status glyph at the right edge of a session's row. Default 12.</value>
+    <comment>axan: A description for the "status glyph size" setting. Presented near "Globals_SidebarStateGlyphSize.Header".</comment>
+  </data>
   <data name="Sidebar_GlyphsHeader.Text" xml:space="preserve">
     <value>Status glyphs</value>
     <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page. The right-edge icons a sidebar row shows for its session's state.</comment>

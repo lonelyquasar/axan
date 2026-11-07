@@ -7,6 +7,7 @@
 
 #include <atomic> // axan #430: LabelGeneration
 #include <functional> // axan #427: type-erased recompute unsubscribers
+#include <optional> // axan: state preview
 #include <utility> // axan #32: _computeSubLabel {message, age}
 #include <unordered_map> // axan #30: SeenRevisions
 #include <AxanIdleEffects.h> // axan: sidebar.idleEffects
@@ -174,16 +175,34 @@ namespace winrt::TerminalApp::implementation
         // called by TerminalPage on the UI thread; it raises PropertyChanged only for what
         // changed and restarts StateSince only when the state or kind changes (a message
         // update keeps the age). Returns true when the state or kind changed.
-        hstring State() const noexcept { return _state; }
-        winrt::Windows::Foundation::DateTime StateSince() const noexcept { return _stateSince; }
-        hstring StateMessage() const noexcept { return _stateMessage; }
-        hstring StateKind() const noexcept { return _stateKind; }
+        // axan: these read the REAL state even while a preview is shown (see SetPreview), so
+        // hoisting, the needs-you group, sections and idle collapse never see a preview.
+        hstring State() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->state : _state; }
+        winrt::Windows::Foundation::DateTime StateSince() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->since : _stateSince; }
+        hstring StateMessage() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->message : _stateMessage; }
+        hstring StateKind() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->kind : _stateKind; }
         // axan #34: the right-edge slot's state (AxanSessionState.h SlotKey; "" = none), the
         // key the hoisted group matches on.
-        hstring SlotKey() const noexcept { return _slotKey; }
+        hstring SlotKey() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->slotKey : _slotKey; }
         winrt::Windows::Foundation::DateTime LastActivity() const noexcept { return _lastActivity; }
         bool SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting = {});
         void SetLastActivity(winrt::Windows::Foundation::DateTime value);
+
+        // axan: state preview (the sidebar's "Preview state" menu, for debugging and for
+        // trying out sizes and glyphs). SetPreview makes the row render exactly as if a report
+        // with this state / kind / message had arrived at `since`; it is purely visual: the
+        // real state keeps updating underneath (State(), SlotKey() etc. return it), so nothing
+        // that hoists, groups, collapses or acknowledges ever sees the preview. A real state
+        // change (SetSessionState with a different state or kind) clears it, as does
+        // ClearPreview; the page also clears it when a new OSC 7501 report arrives. Never
+        // persisted. PreviewId is the menu item's id ("" = no preview).
+        void SetPreview(const hstring& id, const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime since, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting);
+        bool ClearPreview(winrt::Windows::Foundation::DateTime now); // true if one was shown
+        bool IsPreviewing() const noexcept { return _realWhilePreviewing.has_value(); }
+        hstring PreviewId() const noexcept { return _previewId; }
+        // The sum over the tab's panes of their newest OSC 7501 record revision when the
+        // preview was set; a larger sum later means a real report arrived.
+        uint64_t PreviewBaselineRevision{ 0 };
 
         // axan #32: row presentation of the state (see the idl).
         winrt::Windows::UI::Xaml::Visibility StateDotVisibility() const noexcept;
@@ -212,7 +231,8 @@ namespace winrt::TerminalApp::implementation
         hstring StateWord() const noexcept { return _isSeparator || !_showSlotWord ? hstring{} : _slotWord; }
         winrt::Windows::UI::Xaml::Visibility StateWordVisibility() const noexcept;
         winrt::Windows::UI::Xaml::Visibility SlotVisibility() const noexcept;
-        hstring SlotToolTip() const noexcept { return _slotExplanation; }
+        // A preview's tooltips start "Preview — " (see SetPreview).
+        hstring SlotToolTip() const { return _realWhilePreviewing ? hstring{ std::wstring{ L"Preview — " } + std::wstring{ _slotExplanation } } : _slotExplanation; }
         hstring StateToolTip() const;
         winrt::Windows::UI::Xaml::Visibility StateToolTipVisibility() const noexcept;
         // Recompute SubLabelAge (and SubLabel). Called by the sidebar's 1s clock; a no-op (no
@@ -227,7 +247,13 @@ namespace winrt::TerminalApp::implementation
         bool IsDeEmphasised() const noexcept { return _deEmphasised; }
         // Which of the effects apply is sidebar.idleEffects (src/inc/AxanIdleEffects.h), pushed
         // by the page on every clock tick (SetIdleEffects is a no-op when unchanged).
-        double LabelFontSize() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? 12.0 : 14.0; }
+        // axan: sizes from sidebar.labelFontSize / stateLineFontSize / iconSize /
+        // stateGlyphSize, pushed by the page (SetSizes). "smaller" takes 2 off the title.
+        double LabelFontSize() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? std::max(8.0, _labelFontSize - 2.0) : _labelFontSize; }
+        double StateLineFontSize() const noexcept { return _stateLineFontSize; }
+        double IconSize() const noexcept { return _iconSize; }
+        // Returns true if any size changed (and raised what depends on it).
+        bool SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize);
         double RowOpacity() const noexcept { return _idleEffect(Axan::IdleEffects::kDim) ? 0.55 : 1.0; }
         double RowMinHeight() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? std::round(_rowHeightPx * 0.75) : _rowHeightPx; }
         // Returns true if the mask changed.
@@ -323,7 +349,8 @@ namespace winrt::TerminalApp::implementation
         // axan #31
         bool _deEmphasised{ false };
         Axan::IdleEffects::Mask _idleEffects{ Axan::IdleEffects::kDefault };
-        bool _idleEffect(Axan::IdleEffects::Mask effect) const noexcept { return _deEmphasised && (_idleEffects & effect) != 0; }
+        // A preview of a non-idle state shows the row as that state would: never de-emphasised.
+        bool _idleEffect(Axan::IdleEffects::Mask effect) const noexcept { return _deEmphasised && (_idleEffects & effect) != 0 && !(_realWhilePreviewing && _state != L"idle"); }
         // The recolor token actually painted: the node's colour, or a neutral gray while the
         // "gray" idle effect applies to a coloured node.
         winrt::hstring _effectiveColorToken() const;
@@ -337,6 +364,35 @@ namespace winrt::TerminalApp::implementation
         winrt::Windows::UI::Color _textColor() const;
         std::pair<hstring, hstring> _computeSubLabel(winrt::Windows::Foundation::DateTime now) const; // {message, age}
         void _raiseStatePresentation();
+        // axan: sizes (see SetSizes).
+        double _labelFontSize{ 14.0 };
+        double _stateLineFontSize{ 11.0 };
+        double _iconSize{ 16.0 };
+        double _stateGlyphSize{ 12.0 };
+        // axan: state preview. While previewing, the state members above hold the preview and
+        // _realWhilePreviewing the real state, kept current by SetSessionState.
+        struct StateFields
+        {
+            hstring state;
+            hstring kind;
+            hstring message;
+            winrt::Windows::Foundation::DateTime since{};
+            hstring retainedWhat;
+            hstring retainedMessage;
+            hstring reportKey;
+            winrt::Windows::Foundation::DateTime reportSince{};
+            hstring slotKey;
+            hstring slotGlyph;
+            hstring slotWord;
+            hstring slotExplanation;
+            bool showSlotWord{ true };
+            hstring agentName;
+        };
+        std::optional<StateFields> _realWhilePreviewing;
+        hstring _previewId;
+        StateFields _captureState() const;
+        void _restoreState(const StateFields& fields);
+        void _raisePreviewChange(winrt::Windows::Foundation::DateTime now);
     };
 }
 

@@ -1804,6 +1804,9 @@ namespace winrt::TerminalApp::implementation
             mi.Click([node, weakThis{ get_weak() }](auto&&, auto&&) { if (auto p{ weakThis.get() }) p->_CloseNodeSession(node); });
             flyout.Items().Append(mi);
         }
+        // axan: debugging / preview aid, last so it stays out of the way.
+        flyout.Items().Append(MenuFlyoutSeparator{});
+        _AppendStatePreviewSubMenu(flyout, node);
 
         _sessionNodeMenu = flyout;
         // axan #3: a Ctrl/Alt release while the menu has focus never reaches Root()'s key
@@ -3132,6 +3135,58 @@ namespace winrt::TerminalApp::implementation
         return {};
     }
 
+    // axan: the right-edge slot of a SessionRestingState for a slot state + blocked kind: the
+    // sidebar.stateGlyphs glyph (a missing key keeps the default; "" shows nothing) and the
+    // state word + explanation (sidebar.stateLabels hides only the visible word; the
+    // accessible name and tooltips keep it). Shared by the real derive and the state preview.
+    static void _fillSlot(SessionRestingState& resting, const CascadiaSettings& settings, std::wstring_view slotKey, std::wstring_view kind)
+    {
+        resting.slotKey = winrt::hstring{ slotKey };
+        winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring> map{ nullptr };
+        if (settings)
+        {
+            map = settings.GlobalSettings().SidebarStateGlyphs();
+        }
+        resting.slotGlyph = winrt::hstring{ Axan::StateGlyphs::GlyphFor(slotKey, kind, [&](std::wstring_view key) -> std::optional<std::wstring> {
+            const winrt::hstring k{ key };
+            if (map && map.HasKey(k))
+            {
+                return std::wstring{ map.Lookup(k) };
+            }
+            return std::nullopt;
+        }) };
+        const auto [word, explanation] = _slotWordAndExplanation(Axan::StateGlyphs::WordToken(slotKey, kind));
+        resting.slotWord = word;
+        resting.slotExplanation = explanation;
+        resting.showSlotWord = !settings || settings.GlobalSettings().SidebarStateLabels();
+    }
+
+    // axan: the "Preview state" submenu's entries: what each one makes the row look like. The
+    // message is what an OSC 7501 msg would carry; "Done, already seen" is the kept report
+    // that sidebar.statusAfterSeen = keep leaves on an idle row.
+    struct StatePreviewSpec
+    {
+        std::wstring_view id;
+        const wchar_t* label; // resource key (USES_RESOURCE)
+        std::wstring_view state;
+        std::wstring_view kind;
+        std::wstring_view slot;
+        std::wstring_view message;
+        std::wstring_view retainedWhat;
+    };
+    static const std::array<StatePreviewSpec, 10> kStatePreviews{ {
+        { L"idle", USES_RESOURCE(L"AxanPreviewStateIdle"), L"idle", L"", L"idle", L"", L"" },
+        { L"working", USES_RESOURCE(L"AxanPreviewStateWorking"), L"working", L"", L"working", L"Preview: editing files", L"" },
+        { L"running", USES_RESOURCE(L"AxanPreviewStateRunning"), L"running", L"", L"running", L"", L"" },
+        { L"needs-permission", USES_RESOURCE(L"AxanPreviewStateNeedsPermission"), L"needs-you", L"permission", L"blocked", L"Preview: allow a tool to run?", L"" },
+        { L"needs-answer", USES_RESOURCE(L"AxanPreviewStateNeedsAnswer"), L"needs-you", L"question", L"blocked", L"Preview: waiting for your input", L"" },
+        { L"needs-login", USES_RESOURCE(L"AxanPreviewStateNeedsLogin"), L"needs-you", L"auth", L"blocked", L"Preview: sign-in required", L"" },
+        { L"needs-you", USES_RESOURCE(L"AxanPreviewStateNeedsYou"), L"needs-you", L"", L"blocked", L"Preview: waiting for you", L"" },
+        { L"done", USES_RESOURCE(L"AxanPreviewStateDone"), L"done-unseen", L"", L"done", L"Preview: task finished", L"" },
+        { L"error", USES_RESOURCE(L"AxanPreviewStateError"), L"error", L"", L"error", L"Preview: build failed", L"" },
+        { L"done-seen", USES_RESOURCE(L"AxanPreviewStateDoneSeen"), L"idle", L"", L"idle", L"", L"done" },
+    } };
+
     void TerminalPage::_RecomputeNodeState(const MUX::Controls::TreeViewNode& node)
     {
         const auto vm = _nodeVM(node);
@@ -3139,6 +3194,16 @@ namespace winrt::TerminalApp::implementation
         if (!vm || !tab || vm->IsSeparator())
         {
             return;
+        }
+        // axan: the row sizes (sidebar.labelFontSize etc.), clamped to the settings page's
+        // ranges. A no-op unless one changed; this runs on node creation and settings reload.
+        if (_settings)
+        {
+            const auto globals = _settings.GlobalSettings();
+            vm->SetSizes(std::clamp(globals.SidebarLabelFontSize(), 8.0, 32.0),
+                         std::clamp(globals.SidebarStateLineFontSize(), 8.0, 32.0),
+                         std::clamp(globals.SidebarIconSize(), 8.0, 48.0),
+                         std::clamp(globals.SidebarStateGlyphSize(), 8.0, 48.0));
         }
         const auto tabImpl = winrt::get_self<Tab>(tab);
         const auto controls = tabImpl->AxanTerminalControls();
@@ -3154,19 +3219,21 @@ namespace winrt::TerminalApp::implementation
         // addresses while the inputs are built.
         std::deque<winrt::hstring> texts;
         std::vector<Axan::SessionState::PaneInput> panes;
+        uint64_t reportRevisionSum = 0; // axan: a new report ends a state preview
         for (const auto& control : controls)
         {
             // One snapshot per control (each call takes the terminal read lock and
             // allocates); it feeds both the focused-tab acknowledge and the inputs.
             const auto records = control.ProgramStatusRecords();
             const auto contentId = control.ContentId();
+            uint64_t maxRevision = 0;
+            for (const auto& r : records)
+            {
+                maxRevision = std::max(maxRevision, r.Revision);
+            }
+            reportRevisionSum += maxRevision;
             if (focused)
             {
-                uint64_t maxRevision = 0;
-                for (const auto& r : records)
-                {
-                    maxRevision = std::max(maxRevision, r.Revision);
-                }
                 auto& seen = vm->SeenRevisions[contentId];
                 seen = std::max(seen, maxRevision);
             }
@@ -3203,38 +3270,25 @@ namespace winrt::TerminalApp::implementation
             resting.retainedMessage = winrt::hstring{ result.retained.message };
         }
         resting.reportKey = winrt::hstring{ result.reportKey };
-        // axan: the right-edge slot: the sidebar.stateGlyphs glyph for the slot state (a
-        // missing key keeps the default; "" shows nothing).
-        resting.slotKey = winrt::hstring{ Axan::SessionState::SlotKey(result.slot) };
+        _fillSlot(resting, _settings, Axan::SessionState::SlotKey(result.slot), result.kind);
+        // axan: the resting agent name.
+        if (!_settings || _settings.GlobalSettings().SidebarShowAgentName())
         {
-            winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring> map{ nullptr };
-            if (_settings)
-            {
-                map = _settings.GlobalSettings().SidebarStateGlyphs();
-            }
-            resting.slotGlyph = winrt::hstring{ Axan::StateGlyphs::GlyphFor(resting.slotKey, result.kind, [&](std::wstring_view key) -> std::optional<std::wstring> {
-                const winrt::hstring k{ key };
-                if (map && map.HasKey(k))
-                {
-                    return std::wstring{ map.Lookup(k) };
-                }
-                return std::nullopt;
-            }) };
+            resting.agentName = winrt::hstring{ result.agentName };
         }
-        // axan: the state word + explanation (sidebar.stateLabels hides only the visible word;
-        // the accessible name and tooltips keep it) and the resting agent name.
+        // axan: a new OSC 7501 report ends a state preview, so a preview is never mistaken for
+        // what the program said. (SetSessionState also ends it on a real state change.)
+        if (vm->IsPreviewing() && reportRevisionSum > vm->PreviewBaselineRevision && vm->ClearPreview(now))
         {
-            const auto token = Axan::StateGlyphs::WordToken(resting.slotKey, result.kind);
-            const auto [word, explanation] = _slotWordAndExplanation(token);
-            resting.slotWord = word;
-            resting.slotExplanation = explanation;
-            resting.showSlotWord = !_settings || _settings.GlobalSettings().SidebarStateLabels();
-            if (!_settings || _settings.GlobalSettings().SidebarShowAgentName())
-            {
-                resting.agentName = winrt::hstring{ result.agentName };
-            }
+            Axan::Log::Debug("TerminalPage", "state preview cleared: new report", { { "label", winrt::to_string(vm->Label()) } });
         }
-        if (vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now, resting))
+        const bool wasPreviewing = vm->IsPreviewing();
+        const bool transition = vm->SetSessionState(winrt::hstring{ Axan::SessionState::Name(result.state) }, winrt::hstring{ result.message }, winrt::hstring{ result.kind }, now, resting);
+        if (wasPreviewing && !vm->IsPreviewing())
+        {
+            Axan::Log::Debug("TerminalPage", "state preview cleared: state changed", { { "label", winrt::to_string(vm->Label()) } });
+        }
+        if (transition)
         {
             _RecomputeSections(); // axan #33: a collapsed header's badge summarises hidden states
             Axan::Log::Info("SessionState",
@@ -3245,6 +3299,93 @@ namespace winrt::TerminalApp::implementation
                               { "source", std::string{ result.source } },
                               { "panes", std::to_string(panes.size()) } });
         }
+    }
+
+    // axan: the node menu's "Preview state" submenu: one check item per kStatePreviews entry
+    // (the one being previewed is checked) and "Clear preview".
+    void TerminalPage::_AppendStatePreviewSubMenu(const MenuFlyout& flyout, const MUX::Controls::TreeViewNode& node)
+    {
+        const auto vm = _nodeVM(node);
+        if (!vm || vm->IsSeparator())
+        {
+            return;
+        }
+        const auto current = vm->PreviewId();
+        MenuFlyoutSubItem sub{};
+        sub.Text(RS_(L"AxanMenuPreviewState"));
+        FontIcon fi{};
+        fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
+        fi.Glyph(L"\xE7B3"); // RedEye: a look at how it would appear
+        sub.Icon(fi);
+        for (const auto& spec : kStatePreviews)
+        {
+            ToggleMenuFlyoutItem item{};
+            item.Text(GetLibraryResourceString(spec.label));
+            item.IsChecked(std::wstring_view{ current } == spec.id);
+            item.Click([node, id = std::wstring{ spec.id }, weakThis{ get_weak() }](auto&&, auto&&) {
+                if (const auto p{ weakThis.get() })
+                {
+                    p->_PreviewNodeState(node, id);
+                }
+            });
+            sub.Items().Append(item);
+        }
+        sub.Items().Append(MenuFlyoutSeparator{});
+        MenuFlyoutItem clear{};
+        clear.Text(RS_(L"AxanMenuPreviewClear"));
+        clear.IsEnabled(vm->IsPreviewing());
+        clear.Click([node, weakThis{ get_weak() }](auto&&, auto&&) {
+            if (const auto p{ weakThis.get() })
+            {
+                p->_PreviewNodeState(node, {});
+            }
+        });
+        sub.Items().Append(clear);
+        flyout.Items().Append(sub);
+    }
+
+    // axan: show a node as if it were in a previewed state (id = a kStatePreviews id), or go
+    // back to its real state (id = ""). Purely visual; see SessionNodeViewModel::SetPreview.
+    // The age counts from two minutes ago so the second line shows one.
+    void TerminalPage::_PreviewNodeState(const MUX::Controls::TreeViewNode& node, std::wstring_view id)
+    {
+        const auto vm = _nodeVM(node);
+        const auto tab = _nodeTab(node);
+        if (!vm || !tab || vm->IsSeparator())
+        {
+            return;
+        }
+        const auto now = winrt::clock::now();
+        const auto spec = std::find_if(kStatePreviews.begin(), kStatePreviews.end(), [&](const auto& s) { return s.id == id; });
+        if (id.empty() || spec == kStatePreviews.end())
+        {
+            if (vm->ClearPreview(now))
+            {
+                Axan::Log::Debug("TerminalPage", "state preview cleared: menu", { { "label", winrt::to_string(vm->Label()) } });
+            }
+            return;
+        }
+        uint64_t revisionSum = 0;
+        for (const auto& control : winrt::get_self<Tab>(tab)->AxanTerminalControls())
+        {
+            uint64_t maxRevision = 0;
+            for (const auto& r : control.ProgramStatusRecords())
+            {
+                maxRevision = std::max(maxRevision, r.Revision);
+            }
+            revisionSum += maxRevision;
+        }
+        SessionRestingState resting;
+        _fillSlot(resting, _settings, spec->slot, spec->kind);
+        if (!spec->retainedWhat.empty())
+        {
+            resting.retainedWhat = winrt::hstring{ spec->retainedWhat };
+            resting.retainedMessage = winrt::hstring{ L"Preview: task finished" };
+            resting.reportKey = winrt::hstring{ L"preview" };
+        }
+        vm->PreviewBaselineRevision = revisionSum;
+        vm->SetPreview(winrt::hstring{ spec->id }, winrt::hstring{ spec->state }, winrt::hstring{ spec->message }, winrt::hstring{ spec->kind }, now - std::chrono::minutes{ 2 }, now, resting);
+        Axan::Log::Debug("TerminalPage", "state preview set", { { "label", winrt::to_string(vm->Label()) }, { "preview", winrt::to_string(spec->id) }, { "state", winrt::to_string(spec->state) }, { "kind", winrt::to_string(spec->kind) } });
     }
 
     // Mark everything the node currently shows as seen, then recompute. One-shot: called on

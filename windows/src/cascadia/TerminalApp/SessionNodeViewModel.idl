@@ -122,6 +122,10 @@ namespace TerminalApp
         // state promotes the row back on the next update. No animation.
         Boolean IsDeEmphasised { get; };
         Double LabelFontSize { get; };
+        // axan: sidebar.stateLineFontSize (the second line and the slot's state word) and
+        // sidebar.iconSize (the node icon's box). LabelFontSize follows sidebar.labelFontSize.
+        Double StateLineFontSize { get; };
+        Double IconSize { get; };
         Double RowOpacity { get; };
         Double RowMinHeight { get; };
 

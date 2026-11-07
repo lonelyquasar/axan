@@ -55,6 +55,10 @@ using IAxanStringMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstr
     X(IAxanStringMap, SidebarStateGlyphs, "sidebar.stateGlyphs", nullptr)                                                                                                                            \
     X(bool, SidebarStateLabels, "sidebar.stateLabels", true)                                                                                                                                         \
     X(bool, SidebarShowAgentName, "sidebar.showAgentName", true)                                                                                                                                     \
+    X(double, SidebarLabelFontSize, "sidebar.labelFontSize", 14.0)                                                                                                                                  \
+    X(double, SidebarStateLineFontSize, "sidebar.stateLineFontSize", 11.0)                                                                                                                          \
+    X(double, SidebarIconSize, "sidebar.iconSize", 16.0)                                                                                                                                            \
+    X(double, SidebarStateGlyphSize, "sidebar.stateGlyphSize", 12.0)                                                                                                                                \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \

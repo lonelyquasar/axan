@@ -66,5 +66,11 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarNeedsYouGroup); // axan #34
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarStateLabels);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarShowAgentName);
+        // axan: the "Text and icons" sizes (sidebar.labelFontSize / stateLineFontSize /
+        // iconSize / stateGlyphSize).
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarLabelFontSize);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarStateLineFontSize);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarIconSize);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarStateGlyphSize);
     }
 }

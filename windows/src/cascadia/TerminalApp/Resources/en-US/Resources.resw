@@ -1044,6 +1044,44 @@
   <data name="AxanMenuCloseSession" xml:space="preserve">
     <value>Close session</value>
   </data>
+  <data name="AxanMenuPreviewState" xml:space="preserve">
+    <value>Preview state</value>
+    <comment>axan: a session row's context submenu that shows the row as if its session were in a given state, for debugging and for trying out the sidebar's sizes and glyphs. Purely visual.</comment>
+  </data>
+  <data name="AxanMenuPreviewClear" xml:space="preserve">
+    <value>Clear preview</value>
+    <comment>axan: the last item of the "Preview state" submenu: go back to the session's real state.</comment>
+  </data>
+  <data name="AxanPreviewStateIdle" xml:space="preserve">
+    <value>Idle (agent at rest)</value>
+  </data>
+  <data name="AxanPreviewStateWorking" xml:space="preserve">
+    <value>Working</value>
+  </data>
+  <data name="AxanPreviewStateRunning" xml:space="preserve">
+    <value>Running a command</value>
+  </data>
+  <data name="AxanPreviewStateNeedsPermission" xml:space="preserve">
+    <value>Needs permission</value>
+  </data>
+  <data name="AxanPreviewStateNeedsAnswer" xml:space="preserve">
+    <value>Needs answer</value>
+  </data>
+  <data name="AxanPreviewStateNeedsLogin" xml:space="preserve">
+    <value>Needs login</value>
+  </data>
+  <data name="AxanPreviewStateNeedsYou" xml:space="preserve">
+    <value>Needs you</value>
+  </data>
+  <data name="AxanPreviewStateDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="AxanPreviewStateError" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="AxanPreviewStateDoneSeen" xml:space="preserve">
+    <value>Done, already seen</value>
+  </data>
   <data name="AxanMenuToggleSidebar" xml:space="preserve">
     <value>Toggle sidebar</value>
   </data>

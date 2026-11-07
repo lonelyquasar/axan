@@ -103,6 +103,13 @@ namespace Microsoft.Terminal.Settings.Model
         // axan: an agent shows its session name (record title, else the terminal
         // title) as the row's muted second line. Default true.
         INHERITABLE_SETTING(Boolean, SidebarShowAgentName);
+        // axan: sidebar row sizes. The row title (14; the idle "smaller" effect takes 2 off),
+        // the second line and the state word (11), the node icon box (16; its glyph is drawn
+        // at 3/4 of that) and the right-edge state glyph (12).
+        INHERITABLE_SETTING(Double, SidebarLabelFontSize);
+        INHERITABLE_SETTING(Double, SidebarStateLineFontSize);
+        INHERITABLE_SETTING(Double, SidebarIconSize);
+        INHERITABLE_SETTING(Double, SidebarStateGlyphSize);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);
