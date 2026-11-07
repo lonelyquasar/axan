@@ -135,119 +135,17 @@ The curated startup tree — which shells to spawn, in what hierarchy — is a l
 - **Windows** — a single global `startupSessions` array on the root of WT's `settings.json` (camelCase keys: `id`, `parent`, `profile`, `name`, `directory`, `command`, `icon`, `color`, `colorTarget`). Each entry additionally carries `profile` — the GUID of the WT profile it spawns under (which shell: cmd/pwsh/WSL distro), empty = the default profile. One workstation tree, mixed shells, edited on the global **Startup sessions** settings page. WT's profiles keep owning appearance and the shell commandline; axan entries reference them.
 - **Linux** — a per-profile `default-launch-entries` GSettings key (an `a(ssssssss)` tuple array). GNOME Terminal has one shell per profile, so there is no per-entry profile reference; entries run under the owning profile. The Preferences → Startup tab is the GUI editor; **⌖ Capture current window** snapshots the live sidebar tree (cwd + name + hierarchy, not commands) into the edited profile's entries, and **⌖ Capture as new profile…** does the same into a fresh profile cloned from the current one.
 
-**The Startup sessions page (Windows)** is in the Settings **Sessions** group, next to the Sidebar page. The left side lists the rows in tree order (nesting, icon, colour and name; a separator shows as a header row), with **Add session**, **Add separator**, **Import from TOML…** and **Save current as startup** above it. The toolbar under the list acts on the selected row: Move up / Move down (among its siblings, with its children), Outdent, Indent, Duplicate and Delete. With the list focused, the same actions are Alt+Up / Alt+Down, Alt+Left / Alt+Right, Ctrl+D and Delete. You can also drag a row to a new place; its children move with it, and it never lands nested under a separator. The right side edits the selected row. A session has **Identity** (the same name, icon and colour editor as the sidebar's Edit node card, plus an **Icon as text** box for an emoji, a `builtin:NAME` token or an image path), **Launch** (profile, directory with Browse, command) and **Hoisted group** (see below). A separator has its label, **Start collapsed**, style, height and placement. On a narrow window the editor moves under the list.
+**The Startup sessions page (Windows)** is in the Settings **Sessions** group, next to the Sidebar page. The left side lists the rows in tree order (nesting, icon, colour and name; a separator shows as a header row), with **Add session**, **Add separator**, **Import from TOML…** and **Save current as startup** above it. The toolbar under the list acts on the selected row: Move up / Move down (among its siblings, with its children), Outdent, Indent, Duplicate and Delete. With the list focused, the same actions are Alt+Up / Alt+Down, Alt+Left / Alt+Right, Ctrl+D and Delete. You can also drag a row to a new place; its children move with it, and it never lands nested under a separator. The right side edits the selected row. A session has **Identity** (the same name, icon and colour editor as the sidebar's Edit node card, plus an **Icon as text** box for an emoji, a `builtin:NAME` token or an image path), **Launch** (profile, directory with Browse, command) and **Hoisted group** (see [what the row shows](docs/program-status-osc-7501.md#5-what-the-row-shows)). A separator has its label, **Start collapsed**, style, height and placement. On a narrow window the editor moves under the list.
 
 ### Session state in the sidebar
 
-Windows only for now (the Linux/VTE build doesn't implement it yet). Each row in the session tree shows what its session is doing, so you can leave a long-running build or a coding agent alone and glance at the sidebar to see who needs you. A row can show a dot on its icon, a second line under the label, and a glyph at the right edge; a tab with several panes shows its strongest pane.
+Windows only for now. Each sidebar row shows what its session is doing, so you can leave a long build or a coding agent alone and glance at the sidebar to see who needs you: a dot on the icon for a session waiting on you, finished or failed, a second line with the message and its age, and a glyph and short word at the right edge (`working`, `running`, `needs answer`, `idle`).
 
-**Where the state comes from**, in priority order (a pane uses the first source that has something to say):
+The state comes from three places. Programs report it themselves with **OSC 7501, the Program Status Protocol**, which Claude Code already speaks. A plain shell shows *running* while a command executes, from the OSC 133 marks axan's shell integration emits for PowerShell and WSL. And a bell in an idle tab marks it as done until you look at it.
 
-1. **OSC 7501, the Program Status Protocol.** A program reports its own state (idle, working, done, blocked, error). If a pane has any 7501 records they are authoritative for that pane: Claude Code sitting at its own prompt reports `idle` while the shell around it is technically still running `claude`, and idle is the truth.
-2. **OSC 133 command lifecycle** (shell integration): a command executing is *running*, otherwise idle. A non-zero exit is deliberately not an error state; a failed `ls` isn't worth flagging.
-3. **The bell.** If the tab is otherwise idle and its bell indicator is up, the row shows as done-unseen with the message `bell`. Windows Terminal already clears the indicator when the tab gains focus, so `make; printf '\a'` works as a "finished" signal in a plain shell.
-4. **Ambient idle.** Nothing to report and no input or output for `sidebar.idleAfterMinutes`: the row is de-emphasised, by default dimmed and smaller (`sidebar.idleEffects`, see the settings below).
+The `sidebar.*` settings on the **Sidebar** page in the Settings **Sessions** group control idle dimming, the hoisted "Needs you" group, the glyphs and words, and the sizes. To test without an agent, run `tools/axan-status.sh` or `tools/axan-status.ps1` in a pane (`tools/axan-status.sh --demo`), or right-click a row and use **Preview state**.
 
-**Handshake.** A program that wants to report should first ask whether the terminal understands the protocol, so it never sends reports into a terminal that would print them. It sends `ESC ] 7501 ; ? ESC \`, and axan answers on the program's input with
-
-```
-ESC ] 7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth ESC \
-```
-
-(`ESC` is byte `0x1B`; if the program has switched on 8-bit controls the reply uses `0x9D` and `0x9C` instead of `ESC ]` and `ESC \`.) No reply means no support.
-
-**Reports.** `ESC ] 7501 ; key=value : key=value ... ESC \` (a BEL terminator also works). Pairs are separated by `:`; values may only contain `A-Z a-z 0-9 _ . , + / = -`, which is why free text is base64.
-
-| Key | Meaning |
-|---|---|
-| `state` | Required: `idle`, `working`, `done`, `blocked`, `error`, or `clear` (removes records, below) |
-| `id` | Which record this report is about. Absent = the root record. A path of up to 8 segments separated by `/`, each 1-32 characters of `A-Z a-z 0-9 _ . + -`, at most 128 bytes in all (`build`, `agent/sub1`) |
-| `app` | Name of the reporting program, up to 32 bytes of `A-Z a-z 0-9 _ . + -`; a child inherits from its nearest ancestor. Parsed but not shown |
-| `kind` | Only meaningful with `blocked`: `permission`, `question` or `auth` |
-| `progress` | Integer 0-100, only with `working` or `blocked`. Parsed but not shown |
-| `msg` | Base64 (standard alphabet) of UTF-8 text, up to 2048 bytes decoded (2732 encoded) |
-| `title` | Base64 of UTF-8 text, up to 192 bytes decoded (256 encoded). Shown only as a fallback when there is no `msg` |
-
-A report replaces its record entirely: a key you leave out is cleared, not kept from the previous report. `state=clear` removes the record named by `id` and everything under it (`id=a` covers `a` and `a/b` but not `a-b`), or every record when there is no `id`. Records live until they are cleared, replaced, or the terminal is reset (RIS); `working` and `blocked` records are also dropped when the shell draws a new prompt (OSC 133;A) or the connection closes, so a crashed program can't leave a row stuck. `done`, `error` and `idle` survive that. At most 256 records per terminal; past that the least recently updated one is evicted.
-
-Receivers are strict about the parts that identify and bound a report, and forgiving about the rest. The **whole report is discarded** (nothing applied, and it is logged) when: the whole sequence is over 4096 bytes; a key is over 16 bytes; `app` is over 32 bytes; `state` is missing or unknown; `id` is invalid in any pair (this includes `state=clear`, so a malformed id can never wipe everything); `msg` or `title` is over its limit, isn't valid base64, isn't valid UTF-8, or contains a control character. A **malformed pair is skipped** and the rest still applies: no `=`, an empty or non-lowercase-letter key, or a value with a disallowed byte. Unknown keys are ignored, a repeated key takes its last value, an `app` with illegal characters is treated as absent, and an invalid `kind` or `progress` is treated as absent. Bidirectional-control characters are stripped from `msg` and `title`.
-
-**What a row shows:**
-
-| State | How it looks |
-|---|---|
-| `blocked` (needs you) | Bright dot with a ring on the icon's corner; second line `kind · age` (`permission · 3m`), or `message · age` when there is a `msg` or `title`; `needs you` if it has neither |
-| `done`, not yet seen | Half-strength dot; second line `message · age` (`done · age` with no message) |
-| `done`, after you've opened it | No dot. With `sidebar.statusAfterSeen` = `keep` (the default) the report stays as a muted second line with its age until it is replaced or cleared; with `clear` the row returns to plain |
-| `error`, not yet seen | Red dot; second line `message · age` (`error · age` with no message); after it's seen it follows the same keep/clear rule as `done` |
-| `working` | Lightning-bolt glyph in the right-edge slot; the second line is the message, with no age |
-| `idle` | Robot glyph in the right-edge slot whenever a status-reporting program is present and at rest, including a done or error report you've already seen; no glyph when no program has reported. When nothing else owns the second line, it shows the agent's session name, muted (`sidebar.showAgentName`). The row is de-emphasised (`sidebar.idleEffects`) after `sidebar.idleAfterMinutes` |
-| running (shell, OSC 133) | Play glyph in the right-edge slot. Only for a pane with no 7501 records |
-| `clear` | Removes the records, so the row falls back to the next source |
-
-The right-edge slot always shows the node's current state. `blocked`, `done` and `error` show no slot glyph by default; the attention dot on the icon carries them. The glyphs are customizable with `sidebar.stateGlyphs`, an object with the keys `idle`, `working`, `blocked`, `done`, `error` and `running`, each using the same icon vocabulary as node icons (`builtin:NAME`, a literal glyph or emoji, or an image path); `""` means no glyph, and a missing key keeps its default. The Sidebar settings page has a picker for each. For example, `"sidebar.stateGlyphs": { "idle": "", "blocked": "✋", "running": "builtin:build" }` hides the robot, marks blocked rows with a hand and shows a wrench while a command runs. Three more optional keys, `permission`, `question` and `auth`, override `blocked` for a blocked report of that kind (an unset kind falls back to `blocked`), so a session waiting on a multiple-choice answer can look different from one waiting for a tool approval.
-
-Next to the glyph the slot shows a small state word (`sidebar.stateLabels`, on by default): `idle`, `working`, `running`, `needs permission`, `needs answer`, `needs login` (or `needs you` for a blocked report with no kind), `done` or `error`. A done or error report you've already seen reads `idle`; the kept second line still says `done · age`. Hovering the glyph or word shows a one-sentence explanation of the state, and the row tooltip starts with the same sentence. The word is also part of the row's accessible name ("exile-survival, needs answer"), whether or not it is shown.
-
-**Agent name.** When a status-reporting program is present and nothing else owns the row's second line (needs-you, unseen done/error, a kept report and a working message all come first), the second line shows the agent's session name, muted: the root record's `title` if it sent one, else the pane's terminal title with any leading spinner or status symbol removed. Claude Code doesn't send `title`, but it sets the terminal title from its session name (`claude --name`), so the row shows the name other agents address it by. This applies whether the agent is idle, working without a message (Claude Code sends none while it works) or sharing the tab with a running shell command. Plain shells stay one line.
-
-A long message on the second line is trimmed to fit the sidebar's width, but the age after it never is; the row tooltip has the full message, the state and kind, and the local time it began. Ages read `<1m`, `5m`, `2h`, `3d`. Nothing in the sidebar animates.
-
-When a tab has several records or panes, the strongest state wins: blocked, then error, then done-unseen, then working, then running, then idle. On a tie the root record beats a child and then the most recently written wins, so a parent `id` hierarchy (`agent`, `agent/sub1`) collapses into one row showing the most urgent thing happening.
-
-**"Seen".** Only `done` and `error` can be unread; a `blocked` row stays lit for as long as the program reports `blocked`. A done or error report counts as seen when you select the tab or one of its panes gains focus, and also when the window is activated while that tab is the focused one. A report that arrives while the tab is already focused in an active window is seen immediately, so it never shows the unread dot. To see the unread dot in a test, report from a tab you aren't looking at, for example `sleep 5; tools/axan-status.sh done --msg Finished` and then switch to another tab before it fires.
-
-**Settings** (in `settings.json`, at the root next to `startupSessions`; `sidebar.needsYouGroup` and `sidebar.statusAfterSeen` are also in the right-click menu of empty sidebar space, which also opens Settings; all of them are on the **Sidebar** page in the Settings **Sessions** group):
-
-| Key | Default | Meaning |
-|---|---|---|
-| `sidebar.idleAfterMinutes` | `15` | Minutes of no input or output, while idle, before a row is de-emphasised. `0` turns it off. The focused row is never de-emphasised |
-| `sidebar.idleEffects` | `["dim", "smaller"]` | How an idle row is de-emphasised, any of: `dim` (faded), `smaller` (smaller name, shorter row), `gray` (a session with a colour shows its icon and name in gray; uncoloured sessions are unaffected), `collapse` (a session with child sessions folds them away once it and all of them are idle, and opens again when any becomes active; one holding the focused pane never collapses, and one you collapsed yourself is left alone). `[]` = no visible effect; unknown names are ignored |
-| `sidebar.needsYouGroup` | `false` | Show the hoisted group above the session tree: every session in one of the `sidebar.hoistStates` states, longest-waiting first |
-| `sidebar.hoistStates` | `["blocked", "error", "done"]` | Which states put a session in that group (see below) |
-| `sidebar.statusAfterSeen` | `"keep"` | `"keep"` or `"clear"`: what a row does with a done/error report once you've seen it. Either way it stops counting as needing you |
-| `sidebar.stateGlyphs` | robot / bolt / play for `idle` / `working` / `running`, none for the rest | Per-state right-edge glyphs, as described above. Optional `permission` / `question` / `auth` override `blocked` (default: same as `blocked`) |
-| `sidebar.stateLabels` | `true` | Show the small state word next to the right-edge glyph |
-| `sidebar.showAgentName` | `true` | An agent shows its session name as the muted second line when nothing else is there |
-| `sidebar.labelFontSize` | `14` | Font size of a row's session name (8-32). The `smaller` idle effect takes 2 off |
-| `sidebar.stateLineFontSize` | `11` | Font size of the second line and the state word beside the right-edge glyph (8-32) |
-| `sidebar.iconSize` | `16` | Size of a row's icon in pixels (8-48); a glyph icon is drawn at three quarters of it |
-| `sidebar.stateGlyphSize` | `12` | Size of the right-edge state glyph (8-48) |
-
-**Preview state.** To see how a row looks in each state without a program reporting it, right-click the session and pick a state under **Preview state**: needs permission, needs answer, done, error and the rest. The row then renders as if that report had arrived two minutes ago, with the dot, second line, glyph, word and a tooltip that starts "Preview —", and the menu shows a check mark on the previewed state. It is purely visual: the hoisted group, sections and idle handling keep using the real state. **Clear preview**, a new report from the session or a real state change ends it, and it is never saved.
-
-**The hoisted group.** With `sidebar.needsYouGroup` on, a small list above the tree repeats the sessions you'd want to see from anywhere in it; clicking one selects it. `sidebar.hoistStates` is a list of state names: `idle`, `working`, `blocked`, `done`, `error`, `running`, and the blocked kinds `permission`, `question`, `auth`. `blocked` matches a blocked session of any kind, while a kind name matches only that kind; `done` means a done report you haven't seen yet; `idle` means a status-reporting program at rest (a plain shell at its prompt has no state to match); unknown names are ignored. The group is titled "Needs you" while the list holds only `blocked`, the three kinds, `error` and `done`, and "Hoisted" otherwise. Hoisting `running` is the case for watching a long build from anywhere in the tree:
-
-```json
-"sidebar.needsYouGroup": true,
-"sidebar.hoistStates": ["blocked", "error", "done", "running"]
-```
-
-A startup entry can override the list with `"hoist": "never"` (never listed, for a session whose prompts you don't care about) or its own list (`"hoist": ["running", "error"]` hoists that build session while it runs or fails, and nothing else). The Sidebar settings page has a checkbox per state. The per-session override is the **Hoisted group** choice (Default / Never / Custom, where Custom shows the same checkboxes): on the Startup sessions page for the selected session, or in the sidebar's **Edit node** card for a running one, which saves it to the session's startup entry. **Save current as startup** keeps each session's override.
-
-Section headers on separators (label, collapse, the summary badge) are covered under the launch-entry tree above; a collapsed header's badge summarises the states of the rows it hides.
-
-**Trying it without an agent.** `tools/axan-status.sh` (bash; Git Bash and WSL) and `tools/axan-status.ps1` (PowerShell) emit one report to the terminal they run in. Both take the same flags; run them inside an axan pane.
-
-```
-axan-status.sh <state> [--kind permission|question|auth] [--msg "text"] [--title "text"]
-               [--progress N] [--id a/b] [--app name]
-axan-status.sh --query     # send the feature-detection query (the reply goes to the shell's input)
-axan-status.sh --demo      # working, then blocked (question), then done, 3 seconds apart
-```
-
-`<state>` is one of `idle working done blocked error clear`. Examples:
-
-```
-tools/axan-status.sh working --msg "Compiling"
-tools/axan-status.sh blocked --kind permission --msg "Run rm -rf build?"
-tools/axan-status.sh error --msg "Tests failed"
-tools/axan-status.sh working --id agent/sub1 --msg "Sub-task"   # a child record
-tools/axan-status.sh clear --id agent                            # removes agent and agent/sub1
-tools/axan-status.sh clear                                       # removes every record on this terminal
-```
-
-The PowerShell script takes the same flags (`tools/axan-status.ps1 blocked --kind question --msg "Which branch?"`; `-Kind`-style spelling works too). Each script writes only the escape sequence to stdout, so `axan-status.sh done > file` captures exactly what a terminal would receive.
+**The full reference is [docs/program-status-osc-7501.md](docs/program-status-osc-7501.md)**: the escape sequence and what axan rejects, how each state looks in a row, when a report counts as seen, every setting, emitter examples for bash, PowerShell and cmd, and what to look for in the log.
 
 ### The portable TOML
 
