@@ -154,6 +154,33 @@ namespace winrt::TerminalApp::implementation
         return nullptr;
     }
 
+    // axan #30: the terminal title only reaches session state as the agent name, and only
+    // after CleanTerminalTitle strips the leading spinner/status mark. Claude Code rewrites
+    // its title several times a second just to animate that spinner, so the Title handler
+    // re-derives the node only when the cleaned titles of the tab's panes actually change.
+    // Returns true (and records the new value) on a change.
+    static bool _cleanedTitlesChanged(const MUX::Controls::TreeViewNode& node)
+    {
+        const auto vm = _nodeVM(node);
+        const auto tab = _nodeTab(node);
+        if (!vm || !tab)
+        {
+            return false;
+        }
+        std::wstring key;
+        for (const auto& control : winrt::get_self<winrt::TerminalApp::implementation::Tab>(tab)->AxanTerminalControls())
+        {
+            key += Axan::SessionState::CleanTerminalTitle(control.Title());
+            key += L'';
+        }
+        if (key == vm->LastCleanedTitles)
+        {
+            return false;
+        }
+        vm->LastCleanedTitles = std::move(key);
+        return true;
+    }
+
     // axan #3: is this node a separator row (a VM with IsSeparator, no session behind it)?
     // Every node-level path that assumes a Tab checks this (or _nodeTab's null) first.
     static bool _nodeIsSeparator(const MUX::Controls::TreeViewNode& node)
@@ -734,10 +761,11 @@ namespace winrt::TerminalApp::implementation
                 if (e.PropertyName() == L"Title")
                 {
                     recompute();
-                    // axan: sidebar.showAgentName reads the terminal title.
+                    // axan: sidebar.showAgentName reads the terminal title; re-derive only
+                    // when its cleaned form changed (spinner frames don't count).
                     if (const auto page{ weakThis.get() })
                     {
-                        if (const auto n = weakNode.get())
+                        if (const auto n = weakNode.get(); n && _cleanedTitlesChanged(n))
                         {
                             page->_RecomputeNodeState(n);
                         }
@@ -3087,33 +3115,41 @@ namespace winrt::TerminalApp::implementation
             return;
         }
         const auto tabImpl = winrt::get_self<Tab>(tab);
+        const auto controls = tabImpl->AxanTerminalControls();
+        const bool focused = _activated && tab == _GetFocusedTab();
 
-        if (_activated && tab == _GetFocusedTab())
-        {
-            for (const auto& control : tabImpl->AxanTerminalControls())
-            {
-                uint64_t maxRevision = 0;
-                for (const auto& r : control.ProgramStatusRecords())
-                {
-                    maxRevision = std::max(maxRevision, r.Revision);
-                }
-                auto& seen = vm->SeenRevisions[control.ContentId()];
-                seen = std::max(seen, maxRevision);
-            }
-        }
+        // Drop "seen" bookkeeping for panes that have closed (keyed by ContentId, which a
+        // new pane never reuses), so a long-lived tab's map doesn't grow with every split.
+        std::erase_if(vm->SeenRevisions, [&](const auto& entry) {
+            return std::none_of(controls.begin(), controls.end(), [&](const auto& control) { return control.ContentId() == entry.first; });
+        });
 
         // RecordInput holds string views; a deque keeps the owning hstrings at stable
         // addresses while the inputs are built.
         std::deque<winrt::hstring> texts;
         std::vector<Axan::SessionState::PaneInput> panes;
-        for (const auto& control : tabImpl->AxanTerminalControls())
+        for (const auto& control : controls)
         {
+            // One snapshot per control (each call takes the terminal read lock and
+            // allocates); it feeds both the focused-tab acknowledge and the inputs.
+            const auto records = control.ProgramStatusRecords();
+            const auto contentId = control.ContentId();
+            if (focused)
+            {
+                uint64_t maxRevision = 0;
+                for (const auto& r : records)
+                {
+                    maxRevision = std::max(maxRevision, r.Revision);
+                }
+                auto& seen = vm->SeenRevisions[contentId];
+                seen = std::max(seen, maxRevision);
+            }
+
             auto& pane = panes.emplace_back();
             pane.commandRunning = control.ShellCommandRunning();
-            pane.paneId = control.ContentId();
+            pane.paneId = contentId;
             pane.terminalTitle = texts.emplace_back(control.Title()); // axan: agent name source
-            const auto records = control.ProgramStatusRecords();
-            const auto seenIt = vm->SeenRevisions.find(control.ContentId());
+            const auto seenIt = vm->SeenRevisions.find(contentId);
             const uint64_t seenRevision = seenIt == vm->SeenRevisions.end() ? 0 : seenIt->second;
             pane.records.reserve(records.Size());
             for (const auto& r : records)

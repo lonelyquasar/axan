@@ -251,10 +251,14 @@ namespace winrt::TerminalApp::implementation
         // Invoked by ActivateSectionBadge; the page sets it on header VMs (expand + select).
         std::function<void()> OnSectionBadgeActivated;
         // axan #30: "seen" bookkeeping. Per TermControl (keyed by its ContentId), the highest
-        // OSC 7501 record Revision the user has been shown. A done/error record with a
+        // OSC 7501 record Revision the user has been shown. Entries for closed panes are
+        // pruned on each _RecomputeNodeState. A done/error record with a
         // revision at or below this is seen. Written only by TerminalPage's acknowledge
         // path (node selected / pane focused / window activated), never per keystroke.
         std::unordered_map<uint64_t, uint64_t> SeenRevisions;
+        // axan #30: the tab's panes' cleaned terminal titles at the last Title-driven
+        // re-derive (see _cleanedTitlesChanged in AxanSessionTreeView.cpp).
+        std::wstring LastCleanedTitles;
         // axan #430 item 1: generation stamp for the async label recompute. Bumped on the UI
         // thread when a recompute is dispatched; the background expansion's result is applied
         // only if its generation is still current, so a stale (slower) expansion can never

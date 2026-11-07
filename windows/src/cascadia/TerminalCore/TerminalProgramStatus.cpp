@@ -105,7 +105,9 @@ void Terminal::ProgramStatusReport(const ProgramStatus::ParseResult& result)
 
     if (result.outcome != ProgramStatus::Outcome::Report)
     {
-        Axan::Log::Warn(LogComponent, "report discarded", { { "reason", std::string{ result.reason } } });
+        // Debug, not Warn: this runs on the output thread under the write lock, and a
+        // misbehaving program can emit malformed reports at output speed.
+        Axan::Log::Debug(LogComponent, "report discarded", { { "reason", std::string{ result.reason } } });
         return;
     }
 
@@ -161,6 +163,10 @@ void Terminal::ProgramStatusReport(const ProgramStatus::ParseResult& result)
         _programStatusRecords.erase(oldest);
     }
 
+    const auto previous = _programStatusRecords.find(report.id);
+    const bool isNew = previous == _programStatusRecords.end();
+    const auto previousState = isNew ? report.state : previous->second.state;
+
     auto& record = _programStatusRecords[report.id];
     record.id = report.id;
     record.state = report.state;
@@ -172,17 +178,27 @@ void Terminal::ProgramStatusReport(const ProgramStatus::ParseResult& result)
     record.msg = report.msg;
     record.revision = ++_programStatusRevision;
 
-    Axan::Log::Info(LogComponent,
-                    "report accepted",
-                    { { "id", IdForLog(report.id) },
-                      { "state", std::string{ ProgramStatus::StateName(report.state) } },
-                      { "app", Utf8(report.app) },
-                      { "kind", std::string{ ProgramStatus::KindName(report.kind) } },
-                      { "progress", report.progress ? std::to_string(*report.progress) : std::string{} },
-                      { "titleLen", std::to_string(report.title.size()) },
-                      { "msgLen", std::to_string(report.msg.size()) },
-                      { "skippedPairs", std::to_string(result.skippedPairs) },
-                      { "records", std::to_string(_programStatusRecords.size()) } });
+    // Every report is Debug (programs re-report progress many times a second, and this
+    // runs under the write lock on the output thread); only a state change is Info.
+    if (isNew || previousState != report.state)
+    {
+        Axan::Log::Info(LogComponent,
+                        "record state changed",
+                        { { "id", IdForLog(report.id) },
+                          { "from", isNew ? std::string{ "<none>" } : std::string{ ProgramStatus::StateName(previousState) } },
+                          { "to", std::string{ ProgramStatus::StateName(report.state) } } });
+    }
+    Axan::Log::Debug(LogComponent,
+                     "report accepted",
+                     { { "id", IdForLog(report.id) },
+                       { "state", std::string{ ProgramStatus::StateName(report.state) } },
+                       { "app", Utf8(report.app) },
+                       { "kind", std::string{ ProgramStatus::KindName(report.kind) } },
+                       { "progress", report.progress ? std::to_string(*report.progress) : std::string{} },
+                       { "titleLen", std::to_string(report.title.size()) },
+                       { "msgLen", std::to_string(report.msg.size()) },
+                       { "skippedPairs", std::to_string(result.skippedPairs) },
+                       { "records", std::to_string(_programStatusRecords.size()) } });
     _programStatusNotify();
 }
 
