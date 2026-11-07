@@ -28,11 +28,11 @@ What counts as a failure, and what is only a warning:
 | Two rows with the same `id` | Both are imported. Anything that looks a row up by id finds the later one. Do not do this |
 | `parent-id` names a row that comes later in the file, or no row at all | Imported as written. The row shows at root depth, and at launch it spawns as a root session with a warning |
 | `parent-id` names a separator | At launch the row is placed under the separator's own parent, with a warning |
-| `profile` GUID not on this machine | Re-matched by `profile-name` if one is given; otherwise kept, with a warning, and the session spawns under the default profile |
+| `profile` missing, empty, malformed or not on this machine | Matched by `profile-name` if one is given (exact, then case-insensitive). Otherwise a warning naming the row is logged and the session spawns under the default profile (an unknown GUID is kept, so it resolves once that profile appears) |
 | `icon = "builtin:NAME"` with an unknown NAME | The icon is dropped (default placeholder), with a warning |
 | Unknown names inside `hoist` | Dropped, with a warning. If none are left, the row becomes `"never"` |
-| Unknown keys | Ignored silently. The README says they are logged; the code does not log them |
-| A known key with the wrong TOML type (`collapsed = "true"`, `name = 5`) | Ignored silently; the field takes its default |
+| Unknown keys (a typo such as `colour`) | Ignored, with one warning per key naming the row and the key |
+| A known key with the wrong TOML type (`collapsed = "true"`, `name = 5`) | Ignored, with one warning per key; the field takes its default |
 
 The parser is [toml++](https://github.com/marzer/tomlplusplus) v3.4.0 in strict TOML 1.0 mode. TOML 1.1 additions such as `\x41` and `\e` escapes are rejected as parse errors. Save the file as UTF-8.
 
@@ -63,7 +63,7 @@ The file has an optional `[meta]` table and one `[[startup-sessions]]` table per
 | `id` | string | a generated UUID | The row's identity |
 | `parent-id` | string | `""` (root) | The `id` of an earlier session row |
 | `profile` | string | the default profile | Bare GUID of the Windows Terminal profile to spawn under (`61c54bbd-c2c6-5271-96e7-009a87ff44bf`; braces are tolerated). This picks the shell: PowerShell, cmd, a WSL distro |
-| `profile-name` | string | none | The profile's display name, used only when `profile` is present but not found. See section 3 |
+| `profile-name` | string | none | The profile's display name, used whenever `profile` is missing, empty or not found. See section 3 |
 | `name` | string | `""` | The row's label, a template (section 4). `""` means the terminal title, else the folder name, else `shell` |
 | `directory` | string | `""` | Starting directory. `"~"` or a path starting `~\` or `~/` expands to `%USERPROFILE%`; `%VAR%` references are expanded by Windows Terminal. `""` means the directory axan was launched from |
 | `command` | string | `""` | A command to run inside the profile's shell. `""` means just the shell. See below |
@@ -92,13 +92,13 @@ A labelled section covers the rows after it, up to the next separator at the sam
 
 ## 3. Profiles
 
-`profile-name` is only consulted when `profile` is also present and that GUID is not installed. A row with only `profile-name` spawns under the default profile. The name must match the profile's display name exactly, including case.
+`profile-name` is consulted whenever `profile` is missing, empty, malformed or not installed, so a row with only `profile-name` resolves by name. An exact match of the profile's display name wins; otherwise the first case-insensitive match is used. If no profile matches, a warning naming the row is logged and the row spawns under the default profile.
 
 In order of preference:
 
 1. **Use the real GUID.** On the target machine, the file names in `LocalState\profiles\` are the profile GUIDs, and each `<guid>.toml` has the profile's name inside it. The `guid` fields in `settings.json` work too.
 2. **Use a stock GUID.** Windows Terminal generates these two the same way on every machine: Windows PowerShell is `61c54bbd-c2c6-5271-96e7-009a87ff44bf` and Command Prompt is `0caa0dad-35be-5f56-a8ff-afceeeaa6101`.
-3. **Use a placeholder GUID plus the name** when you know the name but not the GUID, typical for PowerShell 7 (`"PowerShell"`) and WSL distros (`"Ubuntu"`): `profile = "00000000-0000-0000-0000-000000000000"` with `profile-name = "Ubuntu"`. Import swaps in the real GUID when the name matches. If it does not match, the placeholder is kept, a warning is logged, and the row spawns under the default profile.
+3. **Use the name alone** when you know the name but not the GUID, typical for PowerShell 7 (`"PowerShell"`) and WSL distros (`"Ubuntu"`): `profile-name = "Ubuntu"` with no `profile` key. Import stores the matching profile's real GUID. If no profile matches, a warning is logged and the row spawns under the default profile.
 4. **Omit both** to use whatever the default profile is.
 
 ## 4. Labels
@@ -129,11 +129,12 @@ Recommendation: **use a literal name** (`name = "billing-api"`) for any row with
 |---|---|---|
 | `""` | `""` | The profile's icon, else an automatic glyph |
 | `builtin:NAME` | `"builtin:git"` | One of eleven portable names, **lowercase only**: `terminal`, `ssh`, `server`, `database`, `package`, `container`, `git`, `editor`, `logs`, `build`, `test`. An unknown name becomes the placeholder with a warning. The only form the Linux build also understands |
-| A Segoe Fluent Icons glyph name | `"robot"` | About 1,400 names. Case-insensitive; spaces and underscores read as hyphens (`"Chat Bubbles"` = `"chat-bubbles"`). The eleven builtin names also work bare (`"git"`). **An invalid name is not reported**: it silently renders as the placeholder |
+| A Segoe Fluent Icons glyph name | `"robot"` | About 1,400 names. Case-insensitive; spaces and underscores read as hyphens (`"Chat Bubbles"` = `"chat-bubbles"`). The eleven builtin names also work bare (`"git"`). An invalid name renders as the placeholder, and axan logs `unknown glyph name` once per name |
 | One character | `"A"`, `"🦀"`, `"𓆣"`, `"ᚠ"` | Exactly one user-perceived character: a letter, digit, symbol, emoji (including joined emoji and flags) or historic-script sign. Two or more characters render as the placeholder |
+| Code-point text | `"U+131A3"` | `U+`, `u+`, `0x` or `0X` followed by 4 to 6 hex digits, or the bare digits (`"131A3"`). Renders as that character, exactly as if the character were written. Surrogates (U+D800–U+DFFF), non-characters and control characters are rejected and render as the placeholder. A glyph name wins over bare digits of the same spelling (`"cafe"` is the Segoe glyph), so prefer the `U+` form |
 | An image path | `'C:\icons\api.png'` | Absolute path to PNG, ICO or SVG, or an exe/dll to take its icon. Windows only, not portable |
 
-**Code-point text is not accepted.** `"U+131A3"`, `"0x131A3"` and `"131A3"` render as the placeholder. Those forms only work in the icon picker's search box. In the file, write the character itself, either pasted or escaped.
+**Code-point text is the simplest form for an agent.** `icon = "U+131A3"` needs no escaping and survives any editor. The character itself, pasted or escaped as below, works equally well.
 
 ### Writing characters in TOML
 
@@ -186,7 +187,7 @@ The font also covers Syriac, Lycian, Carian, Lydian, Cypriot, Imperial Aramaic, 
 
 **Avoid Linear B** (U+10000–100FF). It is not in any of the Segoe fonts. On the checked machine only `SansSerifCollection.ttf` covered it, which has not been tested with axan.
 
-The icon picker in axan offers two named sets, **Segoe Fluent Icons** and **Letters and digits**. Any other character is picked by typing its code point into the picker's search, and is stored as the character itself, exactly as described above.
+The icon picker in axan offers two named sets, **Segoe Fluent Icons** and **Letters and digits**. Any other character is picked by typing its code point into the picker's search, and is stored as the character itself. A file may use either the character or its code-point text.
 
 ### Choosing glyphs for a list of repos
 
@@ -253,8 +254,7 @@ icon      = "\U0001F310"                                  # globe with meridians
 [[startup-sessions]]                                      # session: infrastructure repo in WSL
 id           = "ce83343c-423d-4b36-ab32-29e760cdbd47"     # unique row id
 parent-id    = ""                                         # root level
-profile      = "00000000-0000-0000-0000-000000000000"     # placeholder GUID: resolve by name instead
-profile-name = "Ubuntu"                                   # exact WSL profile display name
+profile-name = "Ubuntu"                                   # no GUID: resolved by display name
 name         = "$repo"                                    # plain WSL shell, so $repo resolves
 directory    = '\\wsl.localhost\Ubuntu\home\me\infra'     # a WSL path, written as a literal string
 icon         = "cloud"                                    # Segoe Fluent Icons glyph name
@@ -309,13 +309,13 @@ Before importing, validate the TOML syntax:
 python -I -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" startup-sessions.toml
 ```
 
-Then grep the Segoe names you used against `AxanSegoeFluentGlyphs.h`, because a wrong name is never reported.
+Then grep the Segoe names you used against `AxanSegoeFluentGlyphs.h`. A wrong name is only reported in the log after the icon first renders.
 
 After **Import from TOML…**:
 
 1. **Check the list.** The Startup sessions list should show every row in file order, nested as intended, with the right icon and `name · folder`. A row with no icon at all means its icon string did not resolve. A hollow box in place of a glyph means no installed font has that character.
 2. **Save, then relaunch axan** and look at the sidebar. Headers show their label and a chevron; the Tools section should start collapsed.
-3. **Read the log** at `%LOCALAPPDATA%\Packages\sh.axan.Axan_<publisher-id>\LocalState\logs\axan.log`. Import lines come from the `StartupSessionsViewModel` component; launch lines come from `AxanSessionTree`. A clean import logs `import: replaced the startup tree from TOML` with the row and separator counts. Search for these warnings:
+3. **Read the log** at `%LOCALAPPDATA%\Packages\sh.axan.Axan_<publisher-id>\LocalState\logs\axan.log`. Import lines come from the `StartupSessionsViewModel` component; launch lines come from `AxanSessionTree`. A clean import logs `import: replaced the startup tree from TOML` with the row, separator and warning counts. Search for these warnings:
 
 ```
 import: TOML parse failed
@@ -326,6 +326,9 @@ import: unrecognized row kind
 import: unknown builtin: icon
 import: unknown hoist state name(s) ignored
 import: profile GUID not found; re-matched by name        (informational: the fallback worked)
+import: profile matched by profile-name                   (informational: no GUID was given)
+import: ignoring a key in a [[startup-sessions]] row       (unknown key or wrong type; key= names it)
+unknown glyph name; rendering the placeholder             (IconPathConverter, after the icon renders)
 import: entry references a profile this machine doesn't have
 LoadStartupTree: parentId not seen before its child
 LoadStartupTree: entry names a separator as its parent

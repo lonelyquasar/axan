@@ -91,6 +91,12 @@ All notable changes to axan are documented here.
   has Settings, and from a session's right-click menu, where a plain Settings
   item replaces it. It opened Settings without going to the session's profile.
   Windows only.
+- An icon can be written as a code point (`"U+131A3"`, `"0x131A3"` or
+  `"131A3"`) in `settings.json` or the startup TOML, and renders as that
+  character. Windows only. (#44)
+- Importing a startup TOML resolves a row's `profile-name` on its own (exact,
+  then case-insensitive), so a cross-machine file needn't know profile GUIDs.
+  Windows only. (#44)
 
 ### Security
 
@@ -110,6 +116,9 @@ All notable changes to axan are documented here.
   is busy. Windows only.
 - The bash shell wrapper no longer reports an idle WSL prompt as a running
   command. Windows only.
+- Startup TOML import logs a warning for each unknown key or wrongly typed
+  value, naming the row and key, and an unknown glyph name in an icon is logged
+  once instead of silently drawing the placeholder. Windows only. (#44)
 
 ## [0.1.2] — 2026-09-01
 
