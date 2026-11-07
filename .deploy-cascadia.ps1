@@ -146,6 +146,29 @@ try {
   # package's resources.pri mapped. Observed twice on 2026-07-02, and an immediate
   # manual rerun succeeded both times — so retry once after a short pause before
   # declaring failure.
+  # Issue #43 workaround. Registration of the SAME full package name can be refused with
+  # 0x80070020 (the package's activation store on the system side is stuck; only a reboot
+  # clears it), but a NEW full name registers fine. The full name includes the version, so
+  # bumping the 4th field in the LAYOUT manifest (never the source manifest) sidesteps it.
+  # Verified 2026-11-06: 0.1.2.0 refused, 0.1.2.1 registered on the first try, no reboot.
+  # Keep the layout version >= whatever is registered, or a later plain deploy would be a
+  # downgrade against the bumped registration.
+  $layoutManifest = Join-Path $root 'src\cascadia\CascadiaPackage\bin\x64\Debug\AppX\AppxManifest.xml'
+  function Get-LayoutVersion { [version](([xml](Get-Content $layoutManifest -Raw)).Package.Identity.Version) }
+  function Set-LayoutRevision([int]$rev) {
+    $v = Get-LayoutVersion
+    $new = '{0}.{1}.{2}.{3}' -f $v.Major, $v.Minor, $v.Build, $rev
+    $raw = Get-Content $layoutManifest -Raw
+    $raw = $raw -replace ('Version="' + [regex]::Escape($v.ToString()) + '" ProcessorArchitecture'), ('Version="' + $new + '" ProcessorArchitecture')
+    [IO.File]::WriteAllText($layoutManifest, $raw, (New-Object Text.UTF8Encoding($false)))
+    Note "layout manifest version set to $new (#43 workaround; the source manifest is untouched)"
+    $new
+  }
+  $registered = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
+  if ($registered -and ([version]$registered.Version -gt (Get-LayoutVersion))) {
+    Set-LayoutRevision (([version]$registered.Version).Revision + 1) | Out-Null
+  }
+
   $dcode = 1
   foreach ($attempt in 1..2) {
     Note "--- DeployAppRecipe.exe (register sh.axan.Axan) [attempt $attempt] ---"
@@ -167,11 +190,23 @@ try {
     # does not). Say so instead of the generic "still active" line, which is wrong here.
     $tail = Get-Content -Path $wrap -Raw -ErrorAction SilentlyContinue
     if ($tail -match '0x80070020') {
-      Note "RESULT: DEPLOY FAILED ($dcode) - registration refused with 0x80070020 (issue #43); the package is now UNREGISTERED. Reboot, then rerun this script. Before rebooting, from an elevated shell, 'handle.exe -a sh.axan.Axan' would identify the holder."
+      $rev = (Get-LayoutVersion).Revision + 1
+      $reg = Get-AppxPackage -Name 'sh.axan.Axan' -ErrorAction SilentlyContinue
+      if ($reg) { $rev = [Math]::Max($rev, ([version]$reg.Version).Revision + 1) }
+      $new = Set-LayoutRevision $rev
+      Note "--- 0x80070020 (issue #43): Add-AppxPackage -Register under the fresh full name $new ---"
+      try {
+        Add-AppxPackage -Register $layoutManifest -ForceApplicationShutdown -ErrorAction Stop
+        $dcode = 0
+      } catch {
+        Note ("fallback register failed: " + ($_.Exception.Message -replace '\s+', ' '))
+        Note "RESULT: DEPLOY FAILED ($dcode) - registration refused with 0x80070020 even under a fresh version (issue #43); the package is now UNREGISTERED. Reboot, then rerun this script. Before rebooting, from an elevated shell, 'handle.exe -a sh.axan.Axan' would identify the holder."
+        exit $dcode
+      }
     } else {
       Note "RESULT: DEPLOY FAILED ($dcode) - the previously registered build is still active"
+      exit $dcode
     }
-    exit $dcode
   }
 
   $pkg = Get-AppxPackage -Name 'sh.axan.Axan*'
