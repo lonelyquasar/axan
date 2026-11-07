@@ -144,7 +144,7 @@ A row can show a dot on the corner of its icon, a second line under the label, a
 - **Hoisted group.** With `sidebar.needsYouGroup` on, a list above the tree repeats every row whose state is in `sidebar.hoistStates`, longest-waiting first. The default list is `blocked`, `error`, `done`. `blocked` matches any kind; `permission`, `question` and `auth` match only that kind; `done` means unseen, including the bell; `idle` matches only a row with records. A session can override the list with Default, Never or Custom under **Hoisted group**, on the Startup sessions page or in the sidebar's **Edit node** card; it is stored as the startup entry's `hoist` ([TOML guide](startup-sessions-toml.md#session-rows)). The group is titled "Needs you" while the list holds only attention states, and "Hoisted" otherwise.
 - **Section headers.** A collapsed section header shows a count of the rows it hides and the most urgent state among them.
 
-Nothing in the sidebar animates, except a long second line when `sidebar.stateLineMarquee` is on.
+Nothing in the sidebar animates.
 
 To see how each state looks without a program, right-click a session row and pick a state under **Preview state**. The row draws as if that report had arrived two minutes ago. It is display only: the hoisted group, section badges and idle handling keep using the real state. With `sidebar.hoistPreview` on, the hoisted group uses the previewed state instead, so you can try out `sidebar.hoistStates` and a session's own hoist setting. **Clear preview**, a new report from the session, or a real state change ends it, and it is never saved.
 
@@ -248,7 +248,6 @@ All are in `settings.json` at the root, next to `startupSessions`, and on the **
 | `sidebar.needsYouGroup` | `false` | Show the hoisted group above the tree |
 | `sidebar.hoistStates` | `["blocked", "error", "done"]` | States that put a row in the hoisted group: `idle`, `working`, `blocked`, `done`, `error`, `running`, `permission`, `question`, `auth` |
 | `sidebar.hoistPreview` | `false` | A previewed row is hoisted by its previewed state instead of its real one (**Preview state** menu) |
-| `sidebar.stateLineMarquee` | `false` | A second line too long for its row scrolls slowly back and forth instead of ending in "…", in the hoisted group and on the selected row. Never when Windows animation effects or `disableAnimations` turn animation off |
 | `sidebar.statusAfterSeen` | `"keep"` | `"keep"` or `"clear"`: what a seen done or error report does |
 | `sidebar.stateGlyphs` | robot, bolt, play for `idle`, `working`, `running`; none for the rest | Per-state slot glyphs |
 | `sidebar.stateLabels` | `true` | Show the slot word |

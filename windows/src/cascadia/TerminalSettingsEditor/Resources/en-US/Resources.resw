@@ -912,14 +912,6 @@
     <value>The hoisted group uses a row's previewed state instead of its real one, so you can try out which states it lists. A session's own hoist setting still applies. When off, previews never change the group.</value>
     <comment>axan #49: A description for the "Hoist previewed rows" setting. Presented near "Globals_SidebarHoistPreview.Header".</comment>
   </data>
-  <data name="Globals_SidebarStateLineMarquee.Header" xml:space="preserve">
-    <value>Scroll long state lines</value>
-    <comment>axan #49: Header for a toggle: a state line too long for its sidebar row scrolls back and forth instead of being cut off.</comment>
-  </data>
-  <data name="Globals_SidebarStateLineMarquee.HelpText" xml:space="preserve">
-    <value>A state line too long for its row scrolls slowly back and forth instead of ending in "…". Applies to rows in the hoisted group and to the selected row. Off when Windows animation effects are turned off.</value>
-    <comment>axan #49: A description for the "Scroll long state lines" setting. Presented near "Globals_SidebarStateLineMarquee.Header".</comment>
-  </data>
   <data name="Sidebar_TextAndIconsHeader.Text" xml:space="preserve">
     <value>Text and icons</value>
     <comment>axan: Section header on the Sessions &gt; Sidebar settings page. The sizes of a sidebar row's text and icons.</comment>

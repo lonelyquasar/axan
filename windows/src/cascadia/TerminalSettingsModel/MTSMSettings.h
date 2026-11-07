@@ -54,7 +54,6 @@ using IAxanDoubleMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstr
     X(bool, SidebarNeedsYouGroup, "sidebar.needsYouGroup", false)                                                                                                                                    \
     X(winrt::Windows::Foundation::Collections::IVector<winrt::hstring>, SidebarHoistStates, "sidebar.hoistStates", nullptr)                                                                          \
     X(bool, SidebarHoistPreview, "sidebar.hoistPreview", false)                                                                                                                                      \
-    X(bool, SidebarStateLineMarquee, "sidebar.stateLineMarquee", false)                                                                                                                              \
     X(Model::SidebarStatusAfterSeen, SidebarStatusAfterSeen, "sidebar.statusAfterSeen", Model::SidebarStatusAfterSeen::Keep)                                                                         \
     X(IAxanStringMap, SidebarStateGlyphs, "sidebar.stateGlyphs", nullptr)                                                                                                                            \
     X(bool, SidebarStateLabels, "sidebar.stateLabels", true)                                                                                                                                         \

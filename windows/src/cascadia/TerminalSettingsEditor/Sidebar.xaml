@@ -206,8 +206,8 @@
 
         <!--
             axan #49: the sidebar's "Preview state" submenu (right-click a session row). What
-            it is, a link to its documentation (PreviewStatesInfo_Click), and its two options:
-            sidebar.hoistPreview and sidebar.stateLineMarquee.
+            it is, a link to its documentation (PreviewStatesInfo_Click), and its option
+            sidebar.hoistPreview.
         -->
         <TextBlock x:Uid="Sidebar_PreviewStatesHeader"
                    Style="{StaticResource TextBlockSubHeaderStyle}" />
@@ -218,10 +218,6 @@
                          Click="PreviewStatesInfo_Click" />
         <local:SettingContainer x:Uid="Globals_SidebarHoistPreview">
             <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarHoistPreview, Mode=TwoWay}"
-                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
-        </local:SettingContainer>
-        <local:SettingContainer x:Uid="Globals_SidebarStateLineMarquee">
-            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarStateLineMarquee, Mode=TwoWay}"
                           Style="{StaticResource ToggleSwitchInExpanderStyle}" />
         </local:SettingContainer>
 

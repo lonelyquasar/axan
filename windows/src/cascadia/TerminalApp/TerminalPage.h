@@ -582,31 +582,6 @@ namespace winrt::TerminalApp::implementation
         void _OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args);
         void _SetNeedsYouGroupEnabled(bool enabled);
         void _AppendNeedsYouGroupToggle(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout);
-        // axan #49: sidebar.stateLineMarquee. Each state-line host (the clipping Grid around
-        // the SubLabel TextBlock, in the tree's and the hoisted group's templates) registers
-        // on Loaded and drops out on Unloaded; see AxanSessionTreeView.cpp.
-        struct StateLineMarquee
-        {
-            winrt::Windows::UI::Xaml::FrameworkElement host{ nullptr };
-            winrt::Windows::UI::Xaml::Controls::TextBlock text{ nullptr };
-            bool inTree{ false }; // a tree row (else the hoisted group); for the log only
-            bool starting{ false }; // axan #49 (UAT): set while a start runs; its own SizeChanged is ignored
-            int64_t textToken{ 0 };
-            int64_t fontToken{ 0 };
-            winrt::Windows::UI::Xaml::Media::Animation::Storyboard storyboard{ nullptr };
-            double distance{ 0 }; // px the running storyboard scrolls (0 = not running)
-        };
-        std::unordered_map<void*, StateLineMarquee> _stateLineMarquees;
-        winrt::Windows::UI::Xaml::Controls::TextBlock _stateLineMeasure{ nullptr };
-        winrt::Windows::UI::ViewManagement::UISettings _marqueeUISettings{ nullptr };
-        winrt::Windows::UI::ViewManagement::UISettings::AnimationsEnabledChanged_revoker _marqueeAnimationsRevoker;
-        void _OnStateLineHostLoaded(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs& args);
-        void _OnStateLineHostUnloaded(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs& args);
-        void _OnStateLineHostSizeChanged(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::SizeChangedEventArgs& args);
-        void _UpdateStateLineMarquee(StateLineMarquee& entry, const char* reason);
-        void _StopStateLineMarquee(StateLineMarquee& entry, const char* reason);
-        void _RefreshStateLineMarquees(const char* reason);
-        bool _StateLineMotionAllowed();
         // axan #34: per-entry hoist overrides, seeded from / re-synced with startupSessions.
         winrt::hstring _HoistOverrideForEntry(const winrt::hstring& entryId) const;
         void _SyncHoistOverridesFromSettings();

@@ -2,7 +2,7 @@
 
 All notable changes to axan are documented here.
 
-## [Unreleased]
+## [0.2.2] — 2026-11-07
 
 ### Session state in the sidebar
 
@@ -110,12 +110,10 @@ All notable changes to axan are documented here.
   enlarge its icon box and the row instead of being cropped to the icon size.
   Windows only. (#48)
 - A "Preview states" group on the Sidebar page explains the Preview state
-  submenu and adds two switches: "Hoist previewed rows"
-  (`sidebar.hoistPreview`) makes the "Needs you" group treat a previewed state
-  as real, so hoisting can be tried out; "Scroll long state lines"
-  (`sidebar.stateLineMarquee`) scrolls a status line that doesn't fit back and
-  forth, for hoisted rows and the selected row, and stays still when Windows
-  animation effects are off. Both default off. Windows only. (#49)
+  submenu and adds "Hoist previewed rows" (`sidebar.hoistPreview`, default
+  off), which makes the "Needs you" group treat a previewed state as real so
+  hoisting can be tried out. Hoisted rows have the same right-click menu as
+  tree rows. Windows only. (#49)
 - The colour swatches in the Edit node card and the Startup sessions panel end
   with a custom swatch: it opens a box that takes `#RRGGBB`, `#RGB` or
   `rgb(r, g, b)`, previews the colour as you type, and stores it as `#rrggbb`
@@ -148,6 +146,9 @@ All notable changes to axan are documented here.
   children instead of between the source and its children. Windows only. (#38)
 - Copying from a text flyout no longer crashes the terminal when the clipboard
   is busy. Windows only.
+- Output that arrives within a second of a window resize (the redraw) no longer
+  counts as session activity, so idle rows stay de-emphasised through a resize.
+  Windows only.
 - The bash shell wrapper no longer reports an idle WSL prompt as a running
   command. Windows only.
 - Startup TOML import logs a warning for each unknown key or wrongly typed

@@ -93,10 +93,6 @@ namespace Microsoft.Terminal.Settings.Model
         // axan #49: a row being previewed (the "Preview state" submenu) is hoisted by its
         // previewed state instead of its real one. Default false (previews are visual only).
         INHERITABLE_SETTING(Boolean, SidebarHoistPreview);
-        // axan #49: a state line too long for its row scrolls back and forth instead of
-        // ending in an ellipsis (hoisted rows and the selected row; never with reduced
-        // motion). Default false.
-        INHERITABLE_SETTING(Boolean, SidebarStateLineMarquee);
         // axan: after a done/error session is seen, keep its last report on the row (muted)
         // or clear it. Default Keep. Either way it stops counting as needing attention.
         INHERITABLE_SETTING(SidebarStatusAfterSeen, SidebarStatusAfterSeen);

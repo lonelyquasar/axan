@@ -4076,9 +4076,6 @@ namespace winrt::TerminalApp::implementation
         _SyncHoistOverridesFromSettings();
         // axan: sidebar.statusAfterSeen / stateGlyphs may have changed.
         _RecomputeAllNodeStates();
-        // axan #49: sidebar.stateLineMarquee / disableAnimations may have changed. (The
-        // hoisted group already re-evaluated sidebar.hoistPreview in _SyncHoistOverridesFromSettings.)
-        _RefreshStateLineMarquees("settings reloaded");
 
         // Reload the current value of alwaysOnTop from the settings file. This
         // will let the user hot-reload this setting, but any runtime changes to

@@ -165,17 +165,12 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <!--  axan #49: the marquee host clips the message while sidebar.stateLineMarquee scrolls it (any row whose message overflows; code sets no Width, only trimming / clip / transform)  -->
-                            <Grid Grid.Column="0"
-                                  Loaded="_OnStateLineHostLoaded"
-                                  SizeChanged="_OnStateLineHostSizeChanged"
-                                  Unloaded="_OnStateLineHostUnloaded">
-                                <TextBlock FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
-                                           Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
-                                           Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabel, Mode=OneWay}"
-                                           TextTrimming="CharacterEllipsis"
-                                           TextWrapping="NoWrap" />
-                            </Grid>
+                            <TextBlock Grid.Column="0"
+                                       FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
+                                       Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                                       Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabel, Mode=OneWay}"
+                                       TextTrimming="CharacterEllipsis"
+                                       TextWrapping="NoWrap" />
                             <TextBlock Grid.Column="1"
                                        FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
                                        Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
@@ -650,17 +645,12 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <!--  axan #49: the marquee host clips the message while sidebar.stateLineMarquee scrolls it (as in the tree template; every overflowing hoisted row scrolls)  -->
-                                            <Grid Grid.Column="0"
-                                                  Loaded="_OnStateLineHostLoaded"
-                                                  SizeChanged="_OnStateLineHostSizeChanged"
-                                                  Unloaded="_OnStateLineHostUnloaded">
-                                                <TextBlock FontSize="{x:Bind StateLineFontSize, Mode=OneWay}"
-                                                           Foreground="{x:Bind LabelBrush, Mode=OneWay}"
-                                                           Text="{x:Bind SubLabel, Mode=OneWay}"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           TextWrapping="NoWrap" />
-                                            </Grid>
+                                            <TextBlock Grid.Column="0"
+                                                       FontSize="{x:Bind StateLineFontSize, Mode=OneWay}"
+                                                       Foreground="{x:Bind LabelBrush, Mode=OneWay}"
+                                                       Text="{x:Bind SubLabel, Mode=OneWay}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       TextWrapping="NoWrap" />
                                             <TextBlock Grid.Column="1"
                                                        FontSize="{x:Bind StateLineFontSize, Mode=OneWay}"
                                                        Foreground="{x:Bind LabelBrush, Mode=OneWay}"

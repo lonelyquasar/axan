@@ -65,7 +65,6 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Int32, SidebarIdleAfterMinutes); // axan #31
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarNeedsYouGroup); // axan #34
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarHoistPreview); // axan #49
-        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarStateLineMarquee); // axan #49
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarStateLabels);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarShowAgentName);
         // axan: the "Text and icons" sizes (sidebar.labelFontSize / stateLineFontSize /
