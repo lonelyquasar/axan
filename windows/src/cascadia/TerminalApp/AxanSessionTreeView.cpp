@@ -40,6 +40,7 @@
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
 #include <AxanHoistRule.h> // axan #34: the hoisted group's match rule
 #include <AxanIdleEffects.h> // axan: sidebar.idleEffects
+#include <AxanCheckBoxWrap.h> // full-label columns for the node card's hoist checkboxes
 #include <AxanEntryIdentityEditor.h> // axan #38: the node editor's identity section, shared with Settings
 
 #include <shlobj.h>
@@ -2416,6 +2417,8 @@ namespace winrt::TerminalApp::implementation
             boxes.Children().Append(box);
             checks.push_back(box);
         }
+        // Columns as wide as the longest label, so "needs permission" etc. wrap instead of clipping.
+        Axan::Ui::CheckBoxWrap::FitItemWidth(boxes);
         const auto sync = [checks, boxes](const winrt::hstring& hoist, bool custom) {
             const auto o = Parse(hoist);
             for (size_t i = 0; i < checks.size(); ++i)
