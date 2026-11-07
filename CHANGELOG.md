@@ -66,6 +66,12 @@ All notable changes to axan are documented here.
   row; with the list focused, Alt+Up/Down, Alt+Left/Right, Ctrl+D and Delete do
   the same. Drag a row to reorder it; its children move with it. Narrow windows
   stack the panel under the list. Windows only. (#38)
+- The icon picker offers the whole Segoe Fluent Icons font (about 1,400
+  glyphs) instead of eleven, with search by name, the current icon and a Clear
+  button above the grid. It is the same picker in the Edit node card, the
+  Startup sessions panel and the Sidebar page's state glyphs. A picked icon is
+  stored by name (`"icon": "robot"`); glyph characters, emoji, image paths and
+  `builtin:NAME` keep working. Windows only. (#39)
 
 ### Fixes
 
