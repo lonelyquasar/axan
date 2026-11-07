@@ -11,7 +11,8 @@ All notable changes to axan are documented here.
   that report `idle`, `working`, `done`, `blocked` or `error` (such as Claude
   Code). Windows only. (#29)
 - Sidebar rows show session state: a dot on the icon, a second line (`kind ·
-  age` or `message · age`), a lightning-bolt glyph while working, a play glyph
+  age` or `message · age`; a long message is trimmed to the sidebar's width,
+  never the age), a lightning-bolt glyph while working, a play glyph
   while a shell command runs (OSC 133), and a tooltip with the state and when
   it began. A done or error report counts as unread until you open the tab.
   Windows only. (#30, #32)
@@ -37,14 +38,34 @@ All notable changes to axan are documented here.
 - The group's states are configurable: `sidebar.hoistStates` (default
   `["blocked", "error", "done"]`; add `running` to watch long commands), and
   each startup session can follow it, opt out (`"hoist": "never"`) or set its
-  own list (Settings > Appearance for the global list, the sidebar's node
-  editor for one session). The heading reads "Hoisted" once non-attention states are included.
-  Windows only. (#34)
+  own list (the Sidebar settings page for the global list; the session's
+  Hoisted group on the Startup sessions page, or the sidebar's node editor, for
+  one session). The heading reads "Hoisted" once non-attention states are
+  included. Windows only. (#34)
 - Separators with a label are now collapsible section headers; a collapsed
   header shows how many sessions it hides and the most urgent state among
   them. Windows only. (#33)
 - `tools/axan-status.sh` and `tools/axan-status.ps1` send OSC 7501 reports for
   manual testing, with `--query` and `--demo` modes.
+
+### Settings
+
+- New "Sessions" group in Settings with the Startup sessions page and a new
+  Sidebar page. Every sidebar setting moves there from Appearance (sidebar
+  matches profile transparency, status after seen, state labels, agent name,
+  the hoisted group and its states, idle dimming, the state glyphs); the
+  `settings.json` keys are unchanged. `sidebar.needsYouGroup` gets its first
+  Settings toggle. Windows only. (#38)
+- The Startup sessions page is now a list and a detail panel. The list shows
+  each row's nesting, icon, colour and name, with separators as header rows;
+  the panel edits the selected row: Identity (the same name, icon and colour
+  editor as the sidebar's Edit node card, plus the icon as text), Launch
+  (profile, directory, command) and Hoisted group for a session, or a
+  separator's label, start collapsed, style, height and placement. A toolbar
+  under the list moves, outdents, indents, duplicates and deletes the selected
+  row; with the list focused, Alt+Up/Down, Alt+Left/Right, Ctrl+D and Delete do
+  the same. Drag a row to reorder it; its children move with it. Narrow windows
+  stack the panel under the list. Windows only. (#38)
 
 ### Fixes
 
@@ -53,6 +74,8 @@ All notable changes to axan are documented here.
 - Settings reloads coalesce theme refreshes and skip unchanged node brushes,
   and the Startup sessions page no longer does quadratic work on long lists.
   Windows only. (#26, #19)
+- Duplicate on the Startup sessions page places the copy after the source's
+  children instead of between the source and its children. Windows only. (#38)
 - Copying from a text flyout no longer crashes the terminal when the clipboard
   is busy. Windows only.
 - The bash shell wrapper no longer reports an idle WSL prompt as a running
