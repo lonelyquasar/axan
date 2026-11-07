@@ -15,15 +15,6 @@
 //     win over a font key of the same spelling so "git" and "builtin:git" agree
 //   * a "builtin:NAME" token
 //
-// Letters and digits (a-z, A-Z, 0-9; kTextIcons) are offered as text icons too. They are
-// stored as the literal character ("a", "Q", "7"), not as a name: IconPathConverter already
-// draws any single non-symbol character as text (Segoe UI), so the stored form needs no
-// resolver and reads the same in settings.json and the TOML. A bare one-character string is
-// never a file (BitmapIcon needs an absolute URI) and never a glyph name (ResolveIcon only
-// resolves names longer than one character), so it isn't ambiguous. Their names
-// ("letter-a", "letter-A", "digit-0") are picker labels and search terms only; typing one
-// into an icon field does not resolve.
-//
 // Pure (no WinRT) and header-only in the shared src/inc, like AxanIconRegistry.h, so the
 // UI helpers, both editors and the unit tests share it.
 
@@ -33,7 +24,6 @@
 #include <AxanSegoeFluentGlyphs.h>
 
 #include <algorithm>
-#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -177,155 +167,6 @@ namespace Axan::GlyphNames
             }
         }
         return std::wstring{ icon };
-    }
-
-    // ---- letters and digits ----
-
-    struct TextIcon
-    {
-        wchar_t character; // what settings store: the character itself
-        std::wstring_view key; // the picker's label / search term, case kept ("letter-A")
-        std::wstring_view displayName;
-    };
-
-    // Hand-written (not generated): a-z, A-Z, 0-9, in that order (the picker's order).
-    inline constexpr std::array<TextIcon, 62> kTextIcons{ {
-        { L'a', L"letter-a", L"Letter a" },
-        { L'b', L"letter-b", L"Letter b" },
-        { L'c', L"letter-c", L"Letter c" },
-        { L'd', L"letter-d", L"Letter d" },
-        { L'e', L"letter-e", L"Letter e" },
-        { L'f', L"letter-f", L"Letter f" },
-        { L'g', L"letter-g", L"Letter g" },
-        { L'h', L"letter-h", L"Letter h" },
-        { L'i', L"letter-i", L"Letter i" },
-        { L'j', L"letter-j", L"Letter j" },
-        { L'k', L"letter-k", L"Letter k" },
-        { L'l', L"letter-l", L"Letter l" },
-        { L'm', L"letter-m", L"Letter m" },
-        { L'n', L"letter-n", L"Letter n" },
-        { L'o', L"letter-o", L"Letter o" },
-        { L'p', L"letter-p", L"Letter p" },
-        { L'q', L"letter-q", L"Letter q" },
-        { L'r', L"letter-r", L"Letter r" },
-        { L's', L"letter-s", L"Letter s" },
-        { L't', L"letter-t", L"Letter t" },
-        { L'u', L"letter-u", L"Letter u" },
-        { L'v', L"letter-v", L"Letter v" },
-        { L'w', L"letter-w", L"Letter w" },
-        { L'x', L"letter-x", L"Letter x" },
-        { L'y', L"letter-y", L"Letter y" },
-        { L'z', L"letter-z", L"Letter z" },
-        { L'A', L"letter-A", L"Letter A" },
-        { L'B', L"letter-B", L"Letter B" },
-        { L'C', L"letter-C", L"Letter C" },
-        { L'D', L"letter-D", L"Letter D" },
-        { L'E', L"letter-E", L"Letter E" },
-        { L'F', L"letter-F", L"Letter F" },
-        { L'G', L"letter-G", L"Letter G" },
-        { L'H', L"letter-H", L"Letter H" },
-        { L'I', L"letter-I", L"Letter I" },
-        { L'J', L"letter-J", L"Letter J" },
-        { L'K', L"letter-K", L"Letter K" },
-        { L'L', L"letter-L", L"Letter L" },
-        { L'M', L"letter-M", L"Letter M" },
-        { L'N', L"letter-N", L"Letter N" },
-        { L'O', L"letter-O", L"Letter O" },
-        { L'P', L"letter-P", L"Letter P" },
-        { L'Q', L"letter-Q", L"Letter Q" },
-        { L'R', L"letter-R", L"Letter R" },
-        { L'S', L"letter-S", L"Letter S" },
-        { L'T', L"letter-T", L"Letter T" },
-        { L'U', L"letter-U", L"Letter U" },
-        { L'V', L"letter-V", L"Letter V" },
-        { L'W', L"letter-W", L"Letter W" },
-        { L'X', L"letter-X", L"Letter X" },
-        { L'Y', L"letter-Y", L"Letter Y" },
-        { L'Z', L"letter-Z", L"Letter Z" },
-        { L'0', L"digit-0", L"Digit 0" },
-        { L'1', L"digit-1", L"Digit 1" },
-        { L'2', L"digit-2", L"Digit 2" },
-        { L'3', L"digit-3", L"Digit 3" },
-        { L'4', L"digit-4", L"Digit 4" },
-        { L'5', L"digit-5", L"Digit 5" },
-        { L'6', L"digit-6", L"Digit 6" },
-        { L'7', L"digit-7", L"Digit 7" },
-        { L'8', L"digit-8", L"Digit 8" },
-        { L'9', L"digit-9", L"Digit 9" },
-    } };
-
-    // The letter / digit an icon string is, or null: exactly one ASCII alphanumeric.
-    inline const TextIcon* FindTextIcon(std::wstring_view icon) noexcept
-    {
-        if (icon.size() != 1)
-        {
-            return nullptr;
-        }
-        for (const auto& t : kTextIcons)
-        {
-            if (t.character == icon.front())
-            {
-                return &t;
-            }
-        }
-        return nullptr;
-    }
-
-    // Indices into kTextIcons matching a query, by the same word rules as Search(): every
-    // word must match. A one-character word matches the character itself, either case ("a"
-    // finds a and A, not every "letter-..."); a longer word must appear in the lowercased
-    // key ("letter", "digit", "letter q"). An empty query matches all.
-    inline std::vector<size_t> SearchTextIcons(std::wstring_view query)
-    {
-        const auto lower = [](wchar_t ch) noexcept {
-            return (ch >= L'A' && ch <= L'Z') ? static_cast<wchar_t>(ch - L'A' + L'a') : ch;
-        };
-        std::vector<std::wstring> words;
-        {
-            std::wstring word;
-            for (const auto ch : query)
-            {
-                if (ch == L' ' || ch == L'_' || ch == L'-' || ch == L'\t')
-                {
-                    if (!word.empty())
-                    {
-                        words.push_back(std::move(word));
-                        word.clear();
-                    }
-                    continue;
-                }
-                word.push_back(lower(ch));
-            }
-            if (!word.empty())
-            {
-                words.push_back(std::move(word));
-            }
-        }
-
-        std::vector<size_t> hits;
-        for (size_t i = 0; i < kTextIcons.size(); ++i)
-        {
-            const auto& t = kTextIcons[i];
-            std::wstring key{ t.key };
-            std::transform(key.begin(), key.end(), key.begin(), lower);
-            const auto matches = std::all_of(words.begin(), words.end(), [&](const std::wstring& w) {
-                return w.size() == 1 ? w.front() == lower(t.character) : key.find(w) != std::wstring::npos;
-            });
-            if (matches)
-            {
-                hits.push_back(i);
-            }
-        }
-        return hits;
-    }
-
-    // True when the query is one letter or digit (blanks aside): the picker then lists the
-    // matching text icons first, ahead of the font glyphs whose names merely contain it.
-    inline bool IsSingleCharacterQuery(std::wstring_view query) noexcept
-    {
-        const auto first = query.find_first_not_of(L" \t");
-        const auto last = query.find_last_not_of(L" \t");
-        return first != std::wstring_view::npos && first == last && FindTextIcon(query.substr(first, 1)) != nullptr;
     }
 
     // Indices into All() whose key contains the normalized query, or whose builtin alias

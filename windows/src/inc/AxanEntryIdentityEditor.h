@@ -69,8 +69,8 @@ namespace Axan::Ui::IdentityEditor
         winrt::hstring currentPrefix{ L"Current: " }; // + the icon's display name or value
         winrt::hstring clearText{ L"Clear" };
         winrt::hstring clearName{ L"Clear icon" };
-        winrt::hstring searchPlaceholder{ L"Search icons by name" };
-        winrt::hstring searchName{ L"Search icons" };
+        winrt::hstring searchPlaceholder{ L"Name or U+code" };
+        winrt::hstring searchName{ L"Search icons by name or Unicode code point" };
         winrt::hstring gridName{ L"Icons" };
         winrt::hstring browseText{ L"Browse to icon file…" };
         winrt::hstring browseName{ L"Browse to icon file" };

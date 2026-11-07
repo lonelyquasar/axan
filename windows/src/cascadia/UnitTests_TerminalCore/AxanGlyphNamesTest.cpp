@@ -3,19 +3,21 @@
 
 // axan #39: the Segoe Fluent glyph name table (src/inc/AxanSegoeFluentGlyphs.h) and its
 // lookups (src/inc/AxanGlyphNames.h): name -> codepoint, the eleven builtin aliases, the
-// forms that must NOT resolve (paths, emoji, unknown names), search, the export mapping,
-// and the letters and digits offered as text icons.
+// forms that must NOT resolve (paths, emoji, unknown names), search, the export mapping;
+// and the picker's character sets and code-point search (src/inc/AxanGlyphSets.h).
 
 #include "pch.h"
 #include <WexTestClass.h>
 
 #include <AxanGlyphNames.h>
+#include <AxanGlyphSets.h>
 #include <AxanLaunchEntryWire.h>
 
 #include <string>
 
 using namespace WEX::Logging;
 namespace G = Axan::GlyphNames;
+namespace S = Axan::GlyphSets;
 
 namespace TerminalCoreUnitTests
 {
@@ -117,66 +119,135 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_EQUAL(size_t{ 0 }, G::Search(L"zzzz-no-match").size());
         }
 
+        TEST_METHOD(SetsRegistry)
+        {
+            const auto& sets = S::Sets();
+            VERIFY_ARE_EQUAL(size_t{ 2 }, sets.size());
+            Log::Comment(L"Segoe Fluent Icons is first (the default) and is the whole font, stored by name");
+            VERIFY_ARE_EQUAL(std::wstring{ L"Segoe Fluent Icons" }, std::wstring{ sets[0]->Name() });
+            VERIFY_ARE_EQUAL(G::All().size(), sets[0]->Size());
+            VERIFY_ARE_EQUAL(G::All().size(), sets[0]->Search(L"").size());
+            const auto robot = sets[0]->Find(L"robot");
+            VERIFY_IS_TRUE(robot.has_value());
+            VERIFY_ARE_EQUAL(std::wstring{ L"robot" }, sets[0]->At(*robot).stored);
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE99A }), sets[0]->At(*robot).glyph);
+            VERIFY_IS_TRUE(sets[0]->Find(std::wstring(1, wchar_t{ 0xE99A })) == robot); // a literal glyph too
+            VERIFY_IS_TRUE(sets[0]->FindCodepoint(0xE99A) == robot);
+            VERIFY_IS_FALSE(sets[0]->Find(L"a").has_value());
+            VERIFY_IS_FALSE(sets[0]->FindCodepoint(0x131A3).has_value());
+
+            Log::Comment(L"The second set is the letters and digits; a stored icon finds its set");
+            VERIFY_ARE_EQUAL(std::wstring{ L"Letters and digits" }, std::wstring{ sets[1]->Name() });
+            VERIFY_IS_TRUE(S::SetForIcon(L"robot") == std::optional<size_t>{ 0 });
+            VERIFY_IS_TRUE(S::SetForIcon(L"Q") == std::optional<size_t>{ 1 });
+            VERIFY_IS_FALSE(S::SetForIcon(L"C:\\x\\y.png").has_value());
+            VERIFY_IS_FALSE(S::SetForIcon(L"").has_value());
+        }
+
         TEST_METHOD(LettersAndDigitsAreTextIcons)
         {
-            const auto& texts = G::kTextIcons;
-            VERIFY_ARE_EQUAL(size_t{ 62 }, texts.size());
-            for (size_t i = 0; i < texts.size(); ++i)
+            const auto& letters = *S::Sets()[1];
+            VERIFY_ARE_EQUAL(size_t{ 62 }, letters.Size());
+            for (size_t i = 0; i < letters.Size(); ++i)
             {
-                const auto ch = texts[i].character;
+                const auto cell = letters.At(i);
+                VERIFY_ARE_EQUAL(size_t{ 1 }, cell.stored.size());
+                const auto ch = cell.stored.front();
                 VERIFY_IS_TRUE((ch >= L'a' && ch <= L'z') || (ch >= L'A' && ch <= L'Z') || (ch >= L'0' && ch <= L'9'));
                 for (size_t j = 0; j < i; ++j)
                 {
-                    VERIFY_IS_TRUE(texts[j].character != ch); // one cell per character
-                    VERIFY_ARE_NOT_EQUAL(std::wstring{ texts[j].key }, std::wstring{ texts[i].key });
+                    VERIFY_IS_TRUE(letters.At(j).stored != cell.stored); // one cell per character
+                    VERIFY_IS_TRUE(letters.At(j).key != cell.key);
                 }
-                const std::wstring stored(1, ch);
-                VERIFY_IS_TRUE(&texts[i] == G::FindTextIcon(stored));
+                VERIFY_IS_TRUE(letters.Find(cell.stored) == std::optional<size_t>{ i });
+                VERIFY_IS_TRUE(letters.FindCodepoint(ch) == std::optional<size_t>{ i });
                 Log::Comment(L"Stored as the character itself, which renders as text unchanged");
-                VERIFY_ARE_EQUAL(stored, G::ResolveIcon(stored));
-                VERIFY_IS_FALSE(G::ResolveCodepoint(stored).has_value());
+                VERIFY_ARE_EQUAL(cell.stored, G::ResolveIcon(cell.stored));
+                VERIFY_IS_FALSE(G::ResolveCodepoint(cell.stored).has_value());
             }
-            VERIFY_ARE_EQUAL(std::wstring{ L"letter-a" }, std::wstring{ G::FindTextIcon(L"a")->key });
-            VERIFY_ARE_EQUAL(std::wstring{ L"letter-A" }, std::wstring{ G::FindTextIcon(L"A")->key });
-            VERIFY_ARE_EQUAL(std::wstring{ L"digit-0" }, std::wstring{ G::FindTextIcon(L"0")->key });
-            for (const auto* icon : { L"", L"ab", L"-", L"\U0001F916", L"letter-a" })
+            VERIFY_ARE_EQUAL(std::wstring{ L"letter-a" }, std::wstring{ letters.At(*letters.Find(L"a")).key });
+            VERIFY_ARE_EQUAL(std::wstring{ L"letter-A" }, std::wstring{ letters.At(*letters.Find(L"A")).key });
+            VERIFY_ARE_EQUAL(std::wstring{ L"digit-0" }, std::wstring{ letters.At(*letters.Find(L"0")).key });
+            for (const auto* icon : { L"", L"ab", L"-", L"\U0001F916", L"letter-a", L"robot" })
             {
                 Log::Comment(icon);
-                VERIFY_IS_NULL(G::FindTextIcon(icon));
+                VERIFY_IS_FALSE(letters.Find(icon).has_value());
             }
-            VERIFY_IS_NULL(G::FindTextIcon(std::wstring(1, wchar_t{ 0xE756 })));
         }
 
         TEST_METHOD(SearchFindsLettersAndDigits)
         {
-            const auto chars = [](const std::vector<size_t>& hits) {
+            const auto& letters = *S::Sets()[1];
+            const auto chars = [&](const std::vector<size_t>& hits) {
                 std::wstring out;
                 for (const auto i : hits)
                 {
-                    out.push_back(G::kTextIcons[i].character);
+                    out += letters.At(i).stored;
                 }
                 return out;
             };
-            VERIFY_ARE_EQUAL(size_t{ 62 }, G::SearchTextIcons(L"").size());
+            VERIFY_ARE_EQUAL(size_t{ 62 }, letters.Search(L"").size());
             Log::Comment(L"One character finds that letter in both cases, not every 'letter-...'");
-            VERIFY_ARE_EQUAL(std::wstring{ L"aA" }, chars(G::SearchTextIcons(L"a")));
-            VERIFY_ARE_EQUAL(std::wstring{ L"aA" }, chars(G::SearchTextIcons(L" A ")));
-            VERIFY_ARE_EQUAL(std::wstring{ L"eE" }, chars(G::SearchTextIcons(L"e")));
-            VERIFY_ARE_EQUAL(std::wstring{ L"7" }, chars(G::SearchTextIcons(L"7")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"aA" }, chars(letters.Search(L"a")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"aA" }, chars(letters.Search(L" A ")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"eE" }, chars(letters.Search(L"e")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"7" }, chars(letters.Search(L"7")));
             Log::Comment(L"Longer words match the label");
-            VERIFY_ARE_EQUAL(size_t{ 52 }, G::SearchTextIcons(L"letter").size());
-            VERIFY_ARE_EQUAL(size_t{ 10 }, G::SearchTextIcons(L"DIGIT").size());
-            VERIFY_ARE_EQUAL(std::wstring{ L"qQ" }, chars(G::SearchTextIcons(L"letter q")));
-            VERIFY_ARE_EQUAL(std::wstring{ L"3" }, chars(G::SearchTextIcons(L"digit-3")));
-            VERIFY_ARE_EQUAL(size_t{ 0 }, G::SearchTextIcons(L"robot").size());
+            VERIFY_ARE_EQUAL(size_t{ 52 }, letters.Search(L"letter").size());
+            VERIFY_ARE_EQUAL(size_t{ 10 }, letters.Search(L"DIGIT").size());
+            VERIFY_ARE_EQUAL(std::wstring{ L"qQ" }, chars(letters.Search(L"letter q")));
+            VERIFY_ARE_EQUAL(std::wstring{ L"3" }, chars(letters.Search(L"digit-3")));
+            VERIFY_ARE_EQUAL(size_t{ 0 }, letters.Search(L"robot").size());
+            Log::Comment(L"The sets search separately: the font's search has no letters in it");
+            VERIFY_ARE_EQUAL(G::Search(L"letter").size(), S::Sets()[0]->Search(L"letter").size());
+        }
 
-            VERIFY_IS_TRUE(G::IsSingleCharacterQuery(L"a"));
-            VERIFY_IS_TRUE(G::IsSingleCharacterQuery(L" 9 "));
-            for (const auto* query : { L"", L"  ", L"ab", L"-", L"a b" })
+        TEST_METHOD(CodepointQueryForms)
+        {
+            const auto is = [](std::wstring_view q, char32_t cp) {
+                const auto v = S::ParseCodepoint(q);
+                return v.has_value() && *v == cp;
+            };
+            for (const auto* q : { L"U+131A3", L"u+131a3", L"0x131A3", L"0X131a3", L"131A3", L"  U+131A3  " })
             {
-                Log::Comment(query);
-                VERIFY_IS_FALSE(G::IsSingleCharacterQuery(query));
+                Log::Comment(q);
+                VERIFY_IS_TRUE(is(q, 0x131A3));
             }
+            Log::Comment(L"4 to 6 hex digits, leading zeros allowed");
+            VERIFY_IS_TRUE(is(L"U+0041", 0x41));
+            VERIFY_IS_TRUE(is(L"E99A", 0xE99A));
+            VERIFY_IS_TRUE(is(L"face", 0xFACE)); // a bare hex word counts
+            VERIFY_IS_TRUE(is(L"U+10FFFD", 0x10FFFD));
+            VERIFY_IS_TRUE(is(L"01F916", 0x1F916));
+            for (const auto* q : { L"", L"U+", L"U+41", L"123", L"1234567", L"U+1234567", L"U+12G4", L"robot",
+                                   L"x1234", L"U 1234", L"+1234", L"0x", L"U+110000", L"FFFFFF" })
+            {
+                Log::Comment(q);
+                VERIFY_IS_FALSE(S::ParseCodepoint(q).has_value());
+            }
+            Log::Comment(L"Surrogates, non-characters and controls parse to nothing");
+            for (const auto* q : { L"U+D800", L"U+DBFF", L"U+DC00", L"U+DFFF", L"U+FDD0", L"U+FDEF", L"U+FFFE",
+                                   L"U+FFFF", L"U+1FFFE", L"U+10FFFF", L"U+0000", L"U+001F", L"U+007F", L"U+009F" })
+            {
+                Log::Comment(q);
+                VERIFY_IS_FALSE(S::ParseCodepoint(q).has_value());
+            }
+            VERIFY_IS_TRUE(is(L"U+FDCF", 0xFDCF));
+            VERIFY_IS_TRUE(is(L"U+FFFD", 0xFFFD));
+            VERIFY_IS_TRUE(is(L"U+00A0", 0xA0));
+        }
+
+        TEST_METHOD(CodepointStoredFormAndLabel)
+        {
+            VERIFY_ARE_EQUAL(std::wstring{ L"A" }, S::ToUtf16(0x41));
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xE99A }), S::ToUtf16(0xE99A));
+            VERIFY_ARE_EQUAL(std::wstring{ L"\U000131A3" }, S::ToUtf16(0x131A3));
+            VERIFY_ARE_EQUAL(std::wstring{ L"\U0010FFFD" }, S::ToUtf16(0x10FFFD));
+            VERIFY_ARE_EQUAL(std::wstring{ L"U+131A3" }, S::FormatCodepoint(0x131A3));
+            VERIFY_ARE_EQUAL(std::wstring{ L"U+0041" }, S::FormatCodepoint(0x41));
+            VERIFY_ARE_EQUAL(std::wstring{ L"U+E99A" }, S::FormatCodepoint(0xE99A));
+            Log::Comment(L"A direct pick passes through the resolver as a literal character");
+            VERIFY_ARE_EQUAL(S::ToUtf16(0x131A3), G::ResolveIcon(S::ToUtf16(0x131A3)));
         }
 
         TEST_METHOD(ExportMapsBuiltinGlyphNamesToPortableTokens)

@@ -1,36 +1,40 @@
 // Copyright (c) Lonely Quasar.
 // Licensed under the MIT license.
 //
-// AxanGlyphGrid — the searchable Segoe Fluent Icons grid (#39): a search box over a
-// virtualized GridView of glyph + name cells covering the whole font (AxanSegoeFluentGlyphs.h,
-// ~1,400 glyphs), with an optional leading "No icon" cell and, after the font, the letters
-// and digits (AxanGlyphNames.h kTextIcons, drawn in Segoe UI).
+// AxanGlyphGrid — the searchable icon grid (#39): a search box and a character-set selector
+// over a virtualized GridView of glyph + name cells, with an optional leading "No icon"
+// cell. The sets come from AxanGlyphSets.h: "Segoe Fluent Icons" (the whole font, ~1,400
+// glyphs; the default) and "Letters and digits"; a new set there appears in the selector
+// with no change here or in the hosts.
 //
 // Shared by the identity editor (AxanEntryIdentityEditor.h: the sidebar's live node card and
 // the Settings Startup sessions detail panel) and the icon picker flyout (AxanIconPicker.h:
 // the Sidebar page's state glyphs). Code-built, so it needs only the Windows.UI.Xaml
-// projection (Controls, Markup) the including project's pch provides.
+// projection (Controls, Markup, Media) the including project's pch provides.
 //
 // Behaviour:
-//   - A pick stores the glyph's NAME ("robot"); AxanGlyphNames.h resolves it at render
-//     time. A letter or digit stores the character itself ("a"). "No icon" stores "". The
-//     callback fires only on a real change of selection.
-//   - Search: a one-character query ("a") lists the matching letters first; otherwise the
-//     letters and digits follow the font glyphs.
+//   - The grid shows one set; the search filters within it. It opens on the set holding the
+//     current icon (else the first). A pick stores the set's form: a Segoe glyph's NAME
+//     ("robot", resolved at render time by AxanGlyphNames.h), a letter's character ("a").
+//     "No icon" stores "". The callback fires only on a real change of selection.
+//   - A code point in the search box (U+131A3, 0x131A3, 131A3) filters to its cell when the
+//     set has it; otherwise one "direct" cell leads the grid, labelled U+131A3, drawn as text
+//     so font fallback finds a font for it, and storing the literal character.
 //   - Virtualized: the GridView's ItemsWrapGrid realizes only the visible cells, which are
 //     filled in ContainerContentChanging from a boxed index (no per-glyph elements, no
 //     bindings). The grid has a fixed Height so it scrolls inside a bounded host.
+//   - Fits a 300 px flyout: the selector is capped beside a star-sized search box.
 //   - Keyboard: arrows move focus without selecting (SingleSelectionFollowsFocus off); Space,
 //     Enter or a click picks. In the search box, Down moves into the grid and Enter picks
-//     the first match. Each cell's UIA name is the glyph's display name (and its builtin
-//     alias, if any).
+//     the first match. Each cell's UIA name is the glyph's display name; the tooltip adds
+//     its search name (and builtin alias, if any).
 //   - Lifetime: every handler holds the shared Picker, which holds only weak references to
 //     its XAML elements, so the elements own the picker and nothing cycles. Hosts that need
 //     Select() keep the returned shared_ptr too.
 
 #pragma once
 
-#include <AxanGlyphNames.h>
+#include <AxanGlyphSets.h>
 
 #include <climits>
 #include <cstdint>
@@ -44,11 +48,13 @@ namespace Axan::Ui::GlyphGrid
 {
     struct Strings
     {
-        winrt::hstring searchPlaceholder{ L"Search icons by name" };
-        winrt::hstring searchName{ L"Search icons" };
+        winrt::hstring searchPlaceholder{ L"Name or U+code" };
+        winrt::hstring searchName{ L"Search icons by name or Unicode code point" };
         winrt::hstring gridName{ L"Icons" };
         winrt::hstring noIconName{ L"No icon" };
         winrt::hstring iconNamePrefix{ L"Icon: " }; // + the glyph's display name, for Narrator
+        winrt::hstring setSelectorName{ L"Character set" };
+        winrt::hstring anyFontName{ L"any font" }; // the direct code-point cell's tooltip
     };
 
     struct Options
@@ -57,57 +63,35 @@ namespace Axan::Ui::GlyphGrid
         double height{ 176 }; // fixed; the grid scrolls inside it
         bool showNone{ true }; // the leading "No icon" cell (only while the search is empty)
         Strings strings;
-        std::function<void(const winrt::hstring&)> onPick; // a glyph name, or "" for "No icon"
+        std::function<void(const winrt::hstring&)> onPick; // the stored form, or "" for "No icon"
     };
 
     inline constexpr int32_t kNoneItem = -1;
-    // A letter / digit cell's item is kTextItemBase + its kTextIcons index (font items are
-    // indices into All(), well below it).
-    inline constexpr int32_t kTextItemBase = 1 << 16;
-
-    inline const Axan::GlyphNames::TextIcon* TextIconForItem(int32_t item) noexcept
-    {
-        const auto& texts = Axan::GlyphNames::kTextIcons;
-        if (item >= kTextItemBase && static_cast<size_t>(item - kTextItemBase) < texts.size())
-        {
-            return &texts[static_cast<size_t>(item - kTextItemBase)];
-        }
-        return nullptr;
-    }
-
-    // The icon's grid item: kNoneItem for "", the font index for anything that resolves to a
-    // named glyph, a text item for a letter / digit, nullopt for what the grid can't show
-    // (an emoji, a path, an unnamed PUA).
-    inline std::optional<int32_t> ItemForIcon(std::wstring_view icon)
-    {
-        if (icon.empty())
-        {
-            return kNoneItem;
-        }
-        if (const auto t = Axan::GlyphNames::FindTextIcon(icon))
-        {
-            return kTextItemBase + static_cast<int32_t>(t - Axan::GlyphNames::kTextIcons.data());
-        }
-        if (const auto cp = Axan::GlyphNames::ResolveCodepoint(icon))
-        {
-            if (const auto g = Axan::GlyphNames::FindByCodepoint(*cp))
-            {
-                return static_cast<int32_t>(g - Axan::GlyphNames::All().data());
-            }
-        }
-        return std::nullopt;
-    }
+    inline constexpr int32_t kDirectItem = -2; // the code-point cell; other items index the set
+    inline constexpr double kSetSelectorMaxWidth = 136;
 
     class Picker : public std::enable_shared_from_this<Picker>
     {
     public:
         explicit Picker(Options options) :
-            _options{ std::move(options) }, _current{ _options.initial } {}
+            _options{ std::move(options) }, _current{ _options.initial }
+        {
+            _setIndex = Axan::GlyphSets::SetForIcon(_current).value_or(0);
+        }
 
-        // Re-highlight for an icon set from outside (Browse, a text box). Never calls onPick.
+        // Re-highlight for an icon set from outside (Browse, a text box), switching to the
+        // set that holds it if the shown one doesn't. Never calls onPick.
         void Select(const winrt::hstring& icon)
         {
             _current = icon;
+            if (!_set().Find(icon))
+            {
+                if (const auto other = Axan::GlyphSets::SetForIcon(icon))
+                {
+                    _showSet(*other);
+                    return;
+                }
+            }
             _syncSelection(false);
         }
 
@@ -128,10 +112,52 @@ namespace Axan::Ui::GlyphGrid
             namespace WUX = winrt::Windows::UI::Xaml;
             namespace Controls = winrt::Windows::UI::Xaml::Controls;
 
+            const auto& sets = Axan::GlyphSets::Sets();
+            for (const auto set : sets)
+            {
+                _setFonts.push_back(WUX::Media::FontFamily{ winrt::hstring{ set->FontFamily() } });
+            }
+            _symbolFont = WUX::Media::FontFamily{ winrt::hstring{ Axan::GlyphSets::kSymbolFont } };
+            _textFont = WUX::Media::FontFamily{ winrt::hstring{ Axan::GlyphSets::kTextFont } };
+
             Controls::TextBox search;
             search.PlaceholderText(_options.strings.searchPlaceholder);
             search.IsSpellCheckEnabled(false);
             WUX::Automation::AutomationProperties::SetName(search, _options.strings.searchName);
+
+            // The set selector: the sets' names, trimmed to fit beside the search box.
+            Controls::ComboBox setBox;
+            setBox.MaxWidth(kSetSelectorMaxWidth);
+            setBox.VerticalAlignment(WUX::VerticalAlignment::Stretch);
+            setBox.ItemTemplate(WUX::Markup::XamlReader::Load(LR"(<DataTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+  <TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" />
+</DataTemplate>)")
+                                    .as<WUX::DataTemplate>());
+            {
+                std::vector<winrt::Windows::Foundation::IInspectable> names;
+                for (const auto set : sets)
+                {
+                    names.push_back(winrt::box_value(winrt::hstring{ set->Name() }));
+                }
+                setBox.ItemsSource(winrt::single_threaded_vector<winrt::Windows::Foundation::IInspectable>(std::move(names)));
+            }
+            setBox.SelectedIndex(static_cast<int32_t>(_setIndex));
+            WUX::Automation::AutomationProperties::SetName(setBox, _options.strings.setSelectorName);
+            Controls::ToolTipService::SetToolTip(setBox, winrt::box_value(_options.strings.setSelectorName));
+
+            Controls::Grid header;
+            header.ColumnSpacing(4);
+            {
+                Controls::ColumnDefinition c0, c1;
+                c0.Width(WUX::GridLengthHelper::FromValueAndType(1, WUX::GridUnitType::Star));
+                c1.Width(WUX::GridLengthHelper::FromValueAndType(0, WUX::GridUnitType::Auto));
+                header.ColumnDefinitions().Append(c0);
+                header.ColumnDefinitions().Append(c1);
+            }
+            Controls::Grid::SetColumn(search, 0);
+            Controls::Grid::SetColumn(setBox, 1);
+            header.Children().Append(search);
+            header.Children().Append(setBox);
 
             Controls::GridView grid;
             grid.Height(_options.height);
@@ -149,9 +175,8 @@ namespace Axan::Ui::GlyphGrid
                                   .as<WUX::DataTemplate>());
 
             _search = winrt::make_weak(search);
+            _setBox = winrt::make_weak(setBox);
             _grid = winrt::make_weak(grid);
-            _symbolFont = WUX::Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" };
-            _textFont = WUX::Media::FontFamily{ L"Segoe UI" };
 
             const auto self = shared_from_this();
             grid.ContainerContentChanging([self](const auto&, const Controls::ContainerContentChangingEventArgs& args) {
@@ -186,6 +211,16 @@ namespace Axan::Ui::GlyphGrid
                 self->_syncSelection(true); // ScrollIntoView needs a laid-out list
             });
 
+            setBox.SelectionChanged([self](const auto&, const auto&) {
+                if (self->_syncing)
+                {
+                    return;
+                }
+                if (const auto box = self->_setBox.get(); box && box.SelectedIndex() >= 0)
+                {
+                    self->_showSet(static_cast<size_t>(box.SelectedIndex()));
+                }
+            });
             search.TextChanged([self](const auto&, const auto&) {
                 self->_applyFilter();
             });
@@ -213,12 +248,35 @@ namespace Axan::Ui::GlyphGrid
 
             Controls::StackPanel root;
             root.Spacing(4);
-            root.Children().Append(search);
+            root.Children().Append(header);
             root.Children().Append(grid);
             return root;
         }
 
     private:
+        const Axan::GlyphSets::Set& _set() const
+        {
+            return *Axan::GlyphSets::Sets()[_setIndex];
+        }
+
+        // Switch the shown set (the selector follows) and re-filter.
+        void _showSet(size_t index)
+        {
+            if (index >= Axan::GlyphSets::Sets().size())
+            {
+                return;
+            }
+            _setIndex = index;
+            if (const auto box = _setBox.get(); box && box.SelectedIndex() != static_cast<int32_t>(index))
+            {
+                _syncing = true;
+                box.SelectedIndex(static_cast<int32_t>(index));
+                _syncing = false;
+            }
+            _applyFilter();
+            _syncSelection(true);
+        }
+
         void _fillCell(const winrt::Windows::UI::Xaml::Controls::Primitives::SelectorItem& container, int32_t item) const
         {
             namespace WUX = winrt::Windows::UI::Xaml;
@@ -233,40 +291,46 @@ namespace Axan::Ui::GlyphGrid
             winrt::hstring glyph;
             winrt::hstring display;
             winrt::hstring tip;
-            bool isText = false;
+            WUX::Media::FontFamily font{ nullptr };
             if (item == kNoneItem)
             {
                 glyph = winrt::hstring{ L"\xE711" }; // Cancel
                 display = _options.strings.noIconName;
                 tip = display;
+                font = _symbolFont;
             }
-            else if (const auto textIcon = TextIconForItem(item))
+            else if (item == kDirectItem && _direct)
             {
-                isText = true;
-                glyph = winrt::hstring{ std::wstring(1, textIcon->character) };
-                display = winrt::hstring{ textIcon->displayName };
-                tip = winrt::hstring{ std::wstring{ textIcon->displayName } + L" (" + std::wstring{ textIcon->key } + L")" };
+                const auto label = Axan::GlyphSets::FormatCodepoint(*_direct);
+                glyph = winrt::hstring{ Axan::GlyphSets::ToUtf16(*_direct) };
+                display = winrt::hstring{ label };
+                tip = winrt::hstring{ label + L" (" + std::wstring{ _options.strings.anyFontName } + L")" };
+                font = _textFont; // a text font, so DirectWrite falls back per character
             }
-            else
+            else if (item >= 0 && static_cast<size_t>(item) < _set().Size())
             {
-                const auto& g = Axan::GlyphNames::All()[static_cast<size_t>(item)];
-                glyph = winrt::hstring{ std::wstring(1, g.codepoint) };
-                display = winrt::hstring{ g.displayName };
-                std::wstring t{ g.displayName };
+                const auto cell = _set().At(static_cast<size_t>(item));
+                glyph = winrt::hstring{ cell.glyph };
+                display = winrt::hstring{ cell.displayName };
+                std::wstring t{ cell.displayName };
                 t += L" (";
-                t += g.key;
-                if (const auto alias = Axan::GlyphNames::AliasFor(g.codepoint); !alias.empty() && alias != g.key)
+                t += cell.key;
+                if (!cell.alias.empty() && cell.alias != cell.key)
                 {
                     t += L", ";
-                    t += alias;
+                    t += cell.alias;
                 }
                 t += L")";
                 tip = winrt::hstring{ t };
+                font = _setFonts[_setIndex];
             }
             if (icon)
             {
-                // Containers are recycled between font and text cells: set the font each time.
-                icon.FontFamily(isText ? _textFont : _symbolFont);
+                // Containers are recycled across sets and the special cells: set the font each time.
+                if (font)
+                {
+                    icon.FontFamily(font);
+                }
                 icon.Glyph(glyph);
             }
             if (text)
@@ -280,13 +344,13 @@ namespace Axan::Ui::GlyphGrid
         void _pick(int32_t item)
         {
             winrt::hstring value;
-            if (const auto t = TextIconForItem(item))
+            if (item == kDirectItem && _direct)
             {
-                value = winrt::hstring{ std::wstring(1, t->character) };
+                value = winrt::hstring{ Axan::GlyphSets::ToUtf16(*_direct) };
             }
-            else if (item != kNoneItem && item >= 0 && static_cast<size_t>(item) < Axan::GlyphNames::All().size())
+            else if (item >= 0 && static_cast<size_t>(item) < _set().Size())
             {
-                value = winrt::hstring{ Axan::GlyphNames::All()[static_cast<size_t>(item)].key };
+                value = winrt::hstring{ _set().At(static_cast<size_t>(item)).stored };
             }
             const auto changed = value != _current;
             _current = value;
@@ -306,38 +370,57 @@ namespace Axan::Ui::GlyphGrid
             }
             const auto search = _search.get();
             const auto query = search ? search.Text() : winrt::hstring{};
+            const std::wstring_view q{ query };
+            const auto& set = _set();
+            auto hits = set.Search(q);
+
             std::vector<winrt::Windows::Foundation::IInspectable> items;
-            const auto hits = Axan::GlyphNames::Search(query);
-            const auto textHits = Axan::GlyphNames::SearchTextIcons(query);
-            items.reserve(hits.size() + textHits.size() + 1);
-            if (_options.showNone && Axan::GlyphNames::NormalizeName(query).empty())
+            items.reserve(hits.size() + 2);
+            if (_options.showNone && q.find_first_not_of(L" \t") == std::wstring_view::npos)
             {
                 items.push_back(winrt::box_value(kNoneItem));
             }
-            const auto pushText = [&]() {
-                for (const auto i : textHits)
-                {
-                    items.push_back(winrt::box_value(kTextItemBase + static_cast<int32_t>(i)));
-                }
-            };
-            const auto textFirst = Axan::GlyphNames::IsSingleCharacterQuery(query);
-            if (textFirst)
+            // A code point leads: its own cell when the set has it, else the direct cell.
+            _direct = Axan::GlyphSets::ParseCodepoint(q);
+            if (_direct)
             {
-                pushText();
+                if (const auto own = set.FindCodepoint(*_direct))
+                {
+                    hits.erase(std::remove(hits.begin(), hits.end(), *own), hits.end());
+                    items.push_back(winrt::box_value(static_cast<int32_t>(*own)));
+                }
+                else
+                {
+                    items.push_back(winrt::box_value(kDirectItem));
+                }
             }
             for (const auto i : hits)
             {
                 items.push_back(winrt::box_value(static_cast<int32_t>(i)));
-            }
-            if (!textFirst)
-            {
-                pushText();
             }
             _items = winrt::single_threaded_vector<winrt::Windows::Foundation::IInspectable>(std::move(items));
             _syncing = true;
             grid.ItemsSource(_items);
             _syncing = false;
             _syncSelection(false);
+        }
+
+        // The grid item showing the current icon, if any.
+        std::optional<int32_t> _itemForCurrent() const
+        {
+            if (_current.empty())
+            {
+                return kNoneItem;
+            }
+            if (const auto index = _set().Find(_current))
+            {
+                return static_cast<int32_t>(*index);
+            }
+            if (_direct && _current == Axan::GlyphSets::ToUtf16(*_direct))
+            {
+                return kDirectItem;
+            }
+            return std::nullopt;
         }
 
         void _syncSelection(bool scrollIntoView)
@@ -348,7 +431,7 @@ namespace Axan::Ui::GlyphGrid
                 return;
             }
             int32_t index = -1;
-            if (const auto want = ItemForIcon(_current))
+            if (const auto want = _itemForCurrent())
             {
                 const auto size = _items.Size();
                 for (uint32_t i = 0; i < size; ++i)
@@ -371,21 +454,25 @@ namespace Axan::Ui::GlyphGrid
 
         Options _options;
         winrt::hstring _current;
+        size_t _setIndex{ 0 };
+        std::optional<char32_t> _direct; // the code point the search box names, if any
         bool _syncing{ false };
         winrt::Windows::Foundation::Collections::IVector<winrt::Windows::Foundation::IInspectable> _items{ nullptr };
         winrt::weak_ref<winrt::Windows::UI::Xaml::Controls::TextBox> _search;
+        winrt::weak_ref<winrt::Windows::UI::Xaml::Controls::ComboBox> _setBox;
         winrt::weak_ref<winrt::Windows::UI::Xaml::Controls::GridView> _grid;
+        std::vector<winrt::Windows::UI::Xaml::Media::FontFamily> _setFonts;
         winrt::Windows::UI::Xaml::Media::FontFamily _symbolFont{ nullptr };
         winrt::Windows::UI::Xaml::Media::FontFamily _textFont{ nullptr };
     };
 
     struct Built
     {
-        winrt::Windows::UI::Xaml::Controls::StackPanel root{ nullptr }; // search box over grid
+        winrt::Windows::UI::Xaml::Controls::StackPanel root{ nullptr }; // search + selector over grid
         std::shared_ptr<Picker> picker;
     };
 
-    // Builds the search box + grid. Never calls onPick during Build.
+    // Builds the search box, set selector and grid. Never calls onPick during Build.
     inline Built Build(Options options)
     {
         auto picker = std::make_shared<Picker>(std::move(options));
