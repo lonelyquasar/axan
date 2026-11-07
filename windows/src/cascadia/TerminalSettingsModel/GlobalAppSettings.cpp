@@ -125,6 +125,16 @@ winrt::com_ptr<GlobalAppSettings> GlobalAppSettings::Copy() const
         }
         globals->_SidebarIconFontScale = scales;
     }
+    // axan #48: and sidebar.iconFontWeight.
+    if (_SidebarIconFontWeight && *_SidebarIconFontWeight)
+    {
+        auto weights = winrt::single_threaded_map<winrt::hstring, winrt::hstring>();
+        for (const auto& kv : *_SidebarIconFontWeight)
+        {
+            weights.Insert(kv.Key(), kv.Value());
+        }
+        globals->_SidebarIconFontWeight = weights;
+    }
     // axan #34: sidebar.hoistStates is a vector; copy it so a settings clone never shares it.
     if (_SidebarHoistStates && *_SidebarHoistStates)
     {

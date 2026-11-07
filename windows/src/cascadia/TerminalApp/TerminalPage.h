@@ -589,7 +589,9 @@ namespace winrt::TerminalApp::implementation
         // _AppendNeedsYouGroupToggle) and the re-derive they (and a settings reload) trigger.
         void _SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply);
         void _RecomputeAllNodeStates();
-        // axan: hand sidebar.iconFontScale to IconPathConverter (process-wide) and rebuild
+        // axan #48 (UAT): push one shared icon column width to every node (see the .cpp).
+        void _RecomputeIconColumnWidth();
+        // axan: hand sidebar.iconFontScale (and #48 sidebar.iconFontWeight) to IconPathConverter (process-wide) and rebuild
         // this window's node icons when its generation differs from what this page last applied.
         void _ApplyIconFontScales();
         std::optional<uint64_t> _appliedIconFontScales;
@@ -650,7 +652,17 @@ namespace winrt::TerminalApp::implementation
         // True while the last clock tick ran the collapse pass with the effect on; lets the
         // tick skip the tree walk while the effect is off once it has been undone.
         bool _idleCollapseApplied{ false };
-        void _ApplyIdleCollapse(bool enabled);
+        // axan #46: the tuck itself lives in _RecomputeSections; this re-runs it (and, when
+        // the effect goes off or on, clears every hold so nothing stays tucked or held).
+        void _ApplyIdleCollapse(bool enabled, bool effectChanged);
+        // axan #46: manual expand/collapse of a session row (chevron, keyboard, row click)
+        // sets/clears its idle hold. Expansions the page makes itself go through
+        // _ExpandNodeFromCode so they don't count as manual.
+        void _OnSessionTreeExpanding(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewExpandingEventArgs& args);
+        void _OnSessionTreeCollapsed(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewCollapsedEventArgs& args);
+        void _ExpandNodeFromCode(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        void _QueueRecomputeSections();
+        uint32_t _expandFromCode{ 0 };
         Windows::UI::Xaml::DispatcherTimer _sessionStateClock{ nullptr };
 
         // axan M13: right-click a session node for its actions (rename label, set/clear icon,
@@ -664,7 +676,13 @@ namespace winrt::TerminalApp::implementation
         void _OnSessionTreeContextRequested(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::ContextRequestedEventArgs& args);
         // axan M13/#429: the menu itself, shared by both routes. `position` is item-relative
         // when the gesture reported one (pointer), else the flyout anchors to the row (keyboard).
-        void _ShowSessionNodeContextMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const Microsoft::UI::Xaml::Controls::TreeViewItem& item, const std::optional<Windows::Foundation::Point>& position);
+        // axan #49 (UAT): `item` is the row the flyout anchors to, a TreeViewItem or (from the
+        // hoisted group) a ListViewItem.
+        void _ShowSessionNodeContextMenu(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, const Windows::UI::Xaml::FrameworkElement& item, const std::optional<Windows::Foundation::Point>& position);
+        // axan #49 (UAT): the same menu from a hoisted ("Needs you") row, mouse and keyboard.
+        void _OnNeedsYouRightTapped(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::RightTappedRoutedEventArgs& args);
+        void _OnNeedsYouContextRequested(const Windows::Foundation::IInspectable& sender, const Windows::UI::Xaml::Input::ContextRequestedEventArgs& args);
+        bool _ShowNeedsYouRowMenu(const winrt::Windows::Foundation::IInspectable& originalSource, const std::optional<Windows::Foundation::Point>& position, const char* route);
         // axan: the node menu's "Preview state" submenu. id = a kStatePreviews id, "" = clear.
         void _AppendStatePreviewSubMenu(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout, const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         void _PreviewNodeState(const Microsoft::UI::Xaml::Controls::TreeViewNode& node, std::wstring_view id);

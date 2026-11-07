@@ -12,6 +12,7 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         static Windows::UI::Xaml::Controls::IconSource IconSourceWUX(const winrt::hstring& iconPath);
         static Microsoft::UI::Xaml::Controls::IconSource IconSourceMUX(const winrt::hstring& iconPath, bool convertToGrayscale);
         static uint64_t SetIconFontScales(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>& scales);
+        static uint64_t SetIconFontWeights(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring>& weights);
     };
 }
 

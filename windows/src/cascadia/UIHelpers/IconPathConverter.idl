@@ -14,6 +14,10 @@ namespace Microsoft.Terminal.UI
         // case-insensitively. Returns the scales' generation, which changes only when the
         // effective map does, so each window can tell whether its icons need rebuilding.
         static UInt64 SetIconFontScales(Windows.Foundation.Collections.IMap<String, Double> scales);
+        // axan #48: sidebar.iconFontWeight (font family -> "normal" | "semibold" | "bold", see
+        // src/inc/AxanGlyphWeight.h), the same way. Shares the scales' generation counter, so
+        // the value returned by whichever of the two is called last covers both maps.
+        static UInt64 SetIconFontWeights(Windows.Foundation.Collections.IMap<String, String> weights);
     };
 
 }

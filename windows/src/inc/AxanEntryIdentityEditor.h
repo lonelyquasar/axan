@@ -3,8 +3,8 @@
 //
 // AxanEntryIdentityEditor — the shared "identity" section of a session editor (#38): the
 // name / label template field with its variables help, an icon preview, the searchable
-// Segoe Fluent icon grid + "Browse to icon file…" (#39), the palette colour swatches, and the colour target radio
-// (icon / text / both).
+// Segoe Fluent icon grid + "Browse to icon file…" (#39), the palette colour swatches plus a
+// custom hex / rgb() swatch (#50), and the colour target radio (icon / text / both).
 //
 // Two hosts build it: TerminalApp's live node editor (the sidebar's "Edit session node"
 // card, staged behind Save/Cancel) and the Settings Editor's Startup sessions detail panel
@@ -75,6 +75,12 @@ namespace Axan::Ui::IdentityEditor
         winrt::hstring browseText{ L"Browse to icon file…" };
         winrt::hstring browseName{ L"Browse to icon file" };
         winrt::hstring colorLabel{ L"Color" };
+        // axan #50: the custom swatch after the palette and its hex / RGB entry.
+        winrt::hstring customName{ L"Custom color" };
+        winrt::hstring customTooltip{ L"Custom color: hex or RGB" };
+        winrt::hstring customBoxName{ L"Custom color value" };
+        winrt::hstring customPlaceholder{ L"#RRGGBB or r, g, b" };
+        winrt::hstring customError{ L"Use #RRGGBB or r, g, b" };
         winrt::hstring applyLabel{ L"Apply color to" };
         winrt::hstring applyHint{ L"recolors glyph icons; image files keep their own colors" };
         winrt::hstring targetIcon{ L"Icon" };
@@ -246,6 +252,117 @@ namespace Axan::Ui::IdentityEditor
             for (const auto& [token, border] : _swatches)
             {
                 _setSelected(border, token == _fields.color);
+            }
+            if (_customSwatch)
+            {
+                _setSelected(_customSwatch, _isCustomColor(_fields.color));
+            }
+        }
+
+        // axan #50: a stored "#hex" is the custom swatch's; a palette name (or "") is not.
+        static bool _isCustomColor(const winrt::hstring& color) noexcept
+        {
+            return !color.empty() && color.front() == L'#';
+        }
+
+        // Paints the custom swatch: filled with _customColor when it parses, otherwise the
+        // hollow box with the pencil glyph.
+        void _paintCustomSwatch() const
+        {
+            namespace WUX = winrt::Windows::UI::Xaml;
+            namespace Controls = winrt::Windows::UI::Xaml::Controls;
+            if (!_customSwatch)
+            {
+                return;
+            }
+            if (const auto c = Axan::SessionPalette::ParseHexColor(_customColor))
+            {
+                _customSwatch.Background(WUX::Media::SolidColorBrush{ winrt::Windows::UI::Color{ c->a, c->r, c->g, c->b } });
+                _customSwatch.Child(nullptr);
+                Controls::ToolTipService::SetToolTip(_customSwatchButton, winrt::box_value(winrt::hstring{ std::wstring{ _options.strings.customName } + L": " + std::wstring{ _customColor } }));
+            }
+            else
+            {
+                _customSwatch.Background(nullptr);
+                Controls::FontIcon fi;
+                fi.FontFamily(WUX::Media::FontFamily{ L"Segoe MDL2 Assets" });
+                fi.Glyph(winrt::hstring{ L"\xE70F" } /* Edit */);
+                fi.FontSize(14);
+                fi.Opacity(0.75);
+                _customSwatch.Child(fi);
+                Controls::ToolTipService::SetToolTip(_customSwatchButton, winrt::box_value(_options.strings.customTooltip));
+            }
+        }
+
+        // axan #50: validates the custom box on Enter / focus loss. Valid -> the canonical
+        // "#rrggbb" becomes the colour (swatch filled and selected); invalid -> the previous
+        // colour stays and the inline error shows. Never throws. explicitCommit = Enter (the
+        // user asked for this value); false = focus loss, which must never undo a preset.
+        void _commitCustomColor(bool explicitCommit)
+        {
+            namespace WUX = winrt::Windows::UI::Xaml;
+            if (!_customBox)
+            {
+                return;
+            }
+            const auto text = _customBox.Text();
+            std::wstring_view trimmed{ text };
+            while (!trimmed.empty() && (trimmed.front() == L' ' || trimmed.front() == L'\t'))
+            {
+                trimmed.remove_prefix(1);
+            }
+            while (!trimmed.empty() && (trimmed.back() == L' ' || trimmed.back() == L'\t'))
+            {
+                trimmed.remove_suffix(1);
+            }
+            if (trimmed.empty())
+            {
+                _customError.Visibility(WUX::Visibility::Collapsed);
+                return;
+            }
+            // The last committed custom value unchanged (which may be a "#AARRGGBB" from JSON
+            // that the box doesn't itself accept, or a value left in the box after a preset
+            // was picked). On focus loss: nothing to commit, so a preset is never undone. On
+            // Enter: re-select it verbatim (no re-parse, so "#AARRGGBB" survives).
+            if (trimmed == std::wstring_view{ _customColor })
+            {
+                _customError.Visibility(WUX::Visibility::Collapsed);
+                if (explicitCommit && _customColor != _fields.color)
+                {
+                    Axan::Log::Debug("IdentityEditor", "custom color reselected", { { "issue", "50" }, { "stored", winrt::to_string(_customColor) } });
+                    _fields.color = _customColor;
+                    _highlightSwatch();
+                    RefreshPreview();
+                    _notify();
+                }
+                return;
+            }
+            const auto result = Axan::SessionPalette::ParseCustomColorDetailed(trimmed);
+            if (!result.color)
+            {
+                // The parser's specific hint ("blue cannot be 400"); the host's generic
+                // string only if it gave none.
+                const winrt::hstring hint{ result.error.empty() ? std::wstring{ _options.strings.customError } : result.error };
+                _customError.Text(hint);
+                _customError.Visibility(WUX::Visibility::Visible);
+                Axan::Log::Debug("IdentityEditor", "custom color rejected", { { "issue", "50" }, { "input", winrt::to_string(text) }, { "hint", winrt::to_string(hint) }, { "kept", winrt::to_string(_fields.color) } });
+                return;
+            }
+            _customError.Visibility(WUX::Visibility::Collapsed);
+            const winrt::hstring value{ *result.color };
+            if (_customBox.Text() != value)
+            {
+                _customBox.Text(value); // show the stored spelling
+            }
+            Axan::Log::Debug("IdentityEditor", "custom color accepted", { { "issue", "50" }, { "input", winrt::to_string(text) }, { "stored", winrt::to_string(value) } });
+            _customColor = value;
+            _paintCustomSwatch();
+            if (value != _fields.color)
+            {
+                _fields.color = value;
+                _highlightSwatch();
+                RefreshPreview();
+                _notify();
             }
         }
 
@@ -522,8 +639,9 @@ namespace Axan::Ui::IdentityEditor
             return section;
         }
 
-        // "No color" + the six AxanSessionPalette names. A swatch stores the name and fills
-        // with the active theme's hex (#422).
+        // "No color" + the six AxanSessionPalette names + the custom swatch (#50), over the
+        // custom entry. A palette swatch stores the name and fills with the active theme's
+        // hex (#422); the custom swatch stores a literal "#rrggbb".
         winrt::Windows::UI::Xaml::Controls::StackPanel _buildSwatchRow()
         {
             namespace WUX = winrt::Windows::UI::Xaml;
@@ -554,6 +672,13 @@ namespace Axan::Ui::IdentityEditor
                 el.Tapped([weak = weak_from_this(), token](auto&&, auto&&) {
                     if (const auto self = weak.lock())
                     {
+                        // axan #50: a preset pick discards uncommitted custom-box text, so a
+                        // later focus loss can't re-apply it over the preset.
+                        if (self->_customBox && self->_customBox.Text() != self->_customColor)
+                        {
+                            self->_customBox.Text(self->_customColor);
+                            self->_customError.Visibility(winrt::Windows::UI::Xaml::Visibility::Collapsed);
+                        }
                         if (token != self->_fields.color)
                         {
                             self->_fields.color = token;
@@ -571,7 +696,149 @@ namespace Axan::Ui::IdentityEditor
             {
                 addSwatch(winrt::hstring{ sw.name });
             }
-            return row;
+
+            // axan #50: the custom swatch. A Button (so it takes Tab focus and Enter/Space,
+            // unlike the Tapped-only palette Borders) whose content is a Border of the same
+            // size: hollow with a pencil glyph until a custom colour exists, then filled with
+            // it. Clicking it re-applies that colour (if any) and opens the entry below.
+            _customSwatch = Controls::Border{};
+            _customSwatch.Width(34);
+            _customSwatch.Height(34);
+            _customSwatch.CornerRadius(WUX::CornerRadius{ 5, 5, 5, 5 });
+            _customSwatchButton = Controls::Button{};
+            _customSwatchButton.Padding(WUX::Thickness{ 0, 0, 0, 0 });
+            _customSwatchButton.BorderThickness(WUX::Thickness{ 0, 0, 0, 0 });
+            _customSwatchButton.Background(WUX::Media::SolidColorBrush{ winrt::Windows::UI::Color{ 0, 0, 0, 0 } });
+            _customSwatchButton.MinWidth(0);
+            _customSwatchButton.MinHeight(0);
+            _customSwatchButton.Width(34);
+            _customSwatchButton.Height(34);
+            _customSwatchButton.CornerRadius(WUX::CornerRadius{ 5, 5, 5, 5 });
+            _customSwatchButton.Content(_customSwatch);
+            WUX::Automation::AutomationProperties::SetName(_customSwatchButton, _options.strings.customName);
+            _customSwatchButton.Click([weak = weak_from_this()](auto&&, auto&&) {
+                if (const auto self = weak.lock())
+                {
+                    self->_customEntry.Visibility(WUX::Visibility::Visible);
+                    if (!self->_customColor.empty() && self->_customColor != self->_fields.color)
+                    {
+                        self->_fields.color = self->_customColor;
+                        self->_customBox.Text(self->_customColor);
+                        self->_highlightSwatch();
+                        self->RefreshPreview();
+                        self->_notify();
+                    }
+                    // The entry may have been Collapsed a moment ago; if it can't take focus
+                    // until the next layout pass, retry once from the dispatcher.
+                    if (self->_customBox.Focus(WUX::FocusState::Programmatic))
+                    {
+                        self->_customBox.SelectAll();
+                    }
+                    else
+                    {
+                        self->_customBox.Dispatcher().RunAsync(winrt::Windows::UI::Core::CoreDispatcherPriority::Low, [weak]() {
+                            if (const auto s = weak.lock())
+                            {
+                                s->_customBox.Focus(WUX::FocusState::Programmatic);
+                                s->_customBox.SelectAll();
+                            }
+                        });
+                    }
+                }
+            });
+            row.Children().Append(_customSwatchButton);
+
+            // The entry: [hex / rgb() box | live preview chip] over the inline error.
+            _customBox = Controls::TextBox{};
+            _customBox.Width(180);
+            _customBox.AcceptsReturn(false);
+            _customBox.PlaceholderText(_options.strings.customPlaceholder);
+            _customBox.VerticalAlignment(WUX::VerticalAlignment::Center);
+            WUX::Automation::AutomationProperties::SetName(_customBox, _options.strings.customBoxName);
+            _customChip = Controls::Border{};
+            _customChip.Width(24);
+            _customChip.Height(24);
+            _customChip.CornerRadius(WUX::CornerRadius{ 4, 4, 4, 4 });
+            _customChip.BorderThickness(WUX::Thickness{ 1, 1, 1, 1 });
+            _customChip.BorderBrush(_options.neutralBrush);
+            _customChip.VerticalAlignment(WUX::VerticalAlignment::Center);
+            _customBox.TextChanged([weak = weak_from_this()](auto&&, auto&&) {
+                if (const auto self = weak.lock())
+                {
+                    // Live preview only; nothing is stored until commit.
+                    const auto parsed = Axan::SessionPalette::ParseCustomColor(self->_customBox.Text());
+                    const auto c = parsed ? Axan::SessionPalette::ParseHexColor(*parsed) : Axan::SessionPalette::ParseHexColor(self->_customBox.Text());
+                    self->_customChip.Background(c ? WUX::Media::Brush{ WUX::Media::SolidColorBrush{ winrt::Windows::UI::Color{ c->a, c->r, c->g, c->b } } } : WUX::Media::Brush{ nullptr });
+                    self->_customError.Visibility(WUX::Visibility::Collapsed);
+                }
+            });
+            _customBox.KeyDown([weak = weak_from_this()](auto&&, const WUX::Input::KeyRoutedEventArgs& e) {
+                if (e.Key() == winrt::Windows::System::VirtualKey::Enter)
+                {
+                    if (const auto self = weak.lock())
+                    {
+                        self->_commitCustomColor(true);
+                    }
+                    e.Handled(true); // don't let Enter reach the host (e.g. a dialog default)
+                }
+            });
+            _customBox.LostFocus([weak = weak_from_this()](auto&&, auto&&) {
+                if (const auto self = weak.lock())
+                {
+                    self->_commitCustomColor(false);
+                }
+            });
+
+            _customError = Controls::TextBlock{};
+            _customError.Text(_options.strings.customError);
+            _customError.Visibility(WUX::Visibility::Collapsed);
+            _customError.TextWrapping(WUX::TextWrapping::Wrap);
+            {
+                winrt::Windows::UI::Xaml::Media::Brush err{ WUX::Media::SolidColorBrush{ winrt::Windows::UI::Color{ 255, 0xe8, 0x11, 0x23 } } };
+                if (const auto b = WUX::Application::Current().Resources().TryLookup(winrt::box_value(winrt::hstring{ L"SystemControlErrorTextForegroundBrush" })))
+                {
+                    if (const auto brush = b.try_as<WUX::Media::Brush>())
+                    {
+                        err = brush;
+                    }
+                }
+                _customError.Foreground(err);
+            }
+            // Narrator announces the error when it appears.
+            WUX::Automation::AutomationProperties::SetLiveSetting(_customError, WUX::Automation::Peers::AutomationLiveSetting::Assertive);
+
+            Controls::StackPanel entryRow;
+            entryRow.Orientation(Controls::Orientation::Horizontal);
+            entryRow.Spacing(8);
+            entryRow.Children().Append(_customBox);
+            entryRow.Children().Append(_customChip);
+
+            _customEntry = Controls::StackPanel{};
+            _customEntry.Spacing(4);
+            _customEntry.Margin(WUX::Thickness{ 0, 6, 0, 0 });
+            _customEntry.Children().Append(entryRow);
+            _customEntry.Children().Append(_customError);
+
+            // Seed: an existing "#hex" colour pre-fills and selects the custom swatch and
+            // opens the entry with that value; a palette name or "" leaves it collapsed.
+            if (_isCustomColor(_fields.color))
+            {
+                _customColor = _fields.color;
+                _customBox.Text(_fields.color);
+                _customEntry.Visibility(WUX::Visibility::Visible);
+            }
+            else
+            {
+                _customEntry.Visibility(WUX::Visibility::Collapsed);
+            }
+            _paintCustomSwatch();
+            _setSelected(_customSwatch, _isCustomColor(_fields.color));
+
+            Controls::StackPanel section;
+            section.Spacing(0);
+            section.Children().Append(row);
+            section.Children().Append(_customEntry);
+            return section;
         }
 
         // [caption + hint] over the Icon / Text / Both radios.
@@ -658,6 +925,15 @@ namespace Axan::Ui::IdentityEditor
         winrt::Windows::UI::Xaml::Controls::Button _clearIcon{ nullptr };
         std::shared_ptr<Axan::Ui::GlyphGrid::Picker> _glyphs; // holds only weak XAML refs
         std::vector<std::pair<winrt::hstring, winrt::Windows::UI::Xaml::Controls::Border>> _swatches;
+        // axan #50: the custom swatch and its entry. _customColor is the last committed custom
+        // "#hex" (kept while a preset is selected, so clicking the swatch re-applies it).
+        winrt::hstring _customColor;
+        winrt::Windows::UI::Xaml::Controls::Button _customSwatchButton{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Border _customSwatch{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::StackPanel _customEntry{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::TextBox _customBox{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::Border _customChip{ nullptr };
+        winrt::Windows::UI::Xaml::Controls::TextBlock _customError{ nullptr };
     };
 
     // Builds the section. Never calls options.onChanged. Hold the result while the UI is up.

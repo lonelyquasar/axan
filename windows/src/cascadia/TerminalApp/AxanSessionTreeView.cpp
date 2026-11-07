@@ -36,6 +36,7 @@
 #include "AxanSessionState.h" // axan #30
 #include <AxanStateGlyphs.h> // axan: sidebar.stateGlyphs
 #include <AxanSidebarSizes.h> // axan: sidebar row size ranges and defaults
+#include <AxanGlyphScale.h> // axan #48 (UAT): icon -> font family -> scale for the shared icon column
 #include "SessionNodeViewModel.h"
 #include <AxanIconRegistry.h>
 #include <AxanLaunchEntryWire.h> // axan #3: separator kind/style/placement vocabulary for capture
@@ -553,7 +554,7 @@ namespace winrt::TerminalApp::implementation
             container.InsertAt(insertAt, node);
             if (parentNode)
             {
-                parentNode.IsExpanded(true);
+                _ExpandNodeFromCode(parentNode); // axan #46: not a manual expand
             }
         }
         _pendingStartupSeparators.clear();
@@ -953,7 +954,7 @@ namespace winrt::TerminalApp::implementation
             if (parentNode)
             {
                 parentNode.Children().Append(node);
-                parentNode.IsExpanded(true); // show the restored hierarchy on launch
+                _ExpandNodeFromCode(parentNode); // show the restored hierarchy on launch (axan #46: no hold)
             }
             else
             {
@@ -964,6 +965,7 @@ namespace winrt::TerminalApp::implementation
             {
                 _startupNodesBySpawnIndex[spawnIndex] = winrt::make_weak(node);
             }
+            _RecomputeIconColumnWidth(); // axan #48 (UAT): the new node's icon may widen the column
         }
     }
 
@@ -1035,6 +1037,10 @@ namespace winrt::TerminalApp::implementation
         for (const auto& node : dead)
         {
             _RemoveNodeSelfHealing(node);
+        }
+        if (!dead.empty())
+        {
+            _RecomputeIconColumnWidth(); // axan #48 (UAT): the widest icon may have gone
         }
     }
 
@@ -1253,7 +1259,7 @@ namespace winrt::TerminalApp::implementation
                     continue;
                 }
                 const bool wasExpanded = parent.IsExpanded();
-                parent.IsExpanded(true);
+                _ExpandNodeFromCode(parent); // axan #46: not a manual expand
                 if (const auto container = SessionTree().ContainerFromNode(parent).try_as<MUX::Controls::TreeViewItem>())
                 {
                     container.GlyphOpacity(1.0);
@@ -1744,7 +1750,7 @@ namespace winrt::TerminalApp::implementation
     // (each item captures the target node); _sessionNodeMenu only exists so a gesture that
     // raises both events can't open it twice.
     void TerminalPage::_ShowSessionNodeContextMenu(const MUX::Controls::TreeViewNode& node,
-                                                   const MUX::Controls::TreeViewItem& item,
+                                                   const FrameworkElement& item,
                                                    const std::optional<winrt::Windows::Foundation::Point>& position)
     {
         if (_sessionNodeMenu && _sessionNodeMenu.IsOpen())
@@ -2167,6 +2173,7 @@ namespace winrt::TerminalApp::implementation
         vm->ApplyAppearance(_resolveNodeIconPath(iconOverride, tab), iconColor, colorTarget);
 
         Axan::Log::Info("TerminalPage", "applied node appearance", { { "override", winrt::to_string(iconOverride) }, { "color", winrt::to_string(iconColor) }, { "target", winrt::to_string(colorTarget) } });
+        _RecomputeIconColumnWidth(); // axan #48 (UAT): the icon change may widen or narrow the column
 
         // Keep the minimized icon list in step if it's the surface currently showing.
         if (_sidebarState == SidebarState::Minimized)
@@ -2714,7 +2721,7 @@ namespace winrt::TerminalApp::implementation
             container.RemoveAt(index);
         }
         node.Children().Append(newNode);
-        node.IsExpanded(true);
+        _ExpandNodeFromCode(node); // axan #46: not a manual expand
         // axan #3: the append may have landed the new child below a bottom-placed separator.
         _SinkBottomSeparators();
         Axan::Log::Info("TerminalPage", "added child session under node");
@@ -3197,10 +3204,23 @@ namespace winrt::TerminalApp::implementation
         {
             namespace Sizes = Axan::SidebarSizes;
             const auto globals = _settings.GlobalSettings();
-            vm->SetSizes(Sizes::SanitizeSize(globals.SidebarLabelFontSize(), Sizes::kLabelFontSize),
-                         Sizes::SanitizeSize(globals.SidebarStateLineFontSize(), Sizes::kStateLineFontSize),
-                         Sizes::SanitizeSize(globals.SidebarIconSize(), Sizes::kIconSize),
-                         Sizes::SanitizeSize(globals.SidebarStateGlyphSize(), Sizes::kStateGlyphSize));
+            // axan #47: plus the absolute sizes the "smaller" idle effect uses.
+            const auto idleLabelFontSize = Sizes::SanitizeSize(globals.SidebarIdleLabelFontSize(), Sizes::kIdleLabelFontSize);
+            const auto idleRowHeight = Sizes::SanitizeSize(globals.SidebarIdleRowHeight(), Sizes::kIdleRowHeight);
+            if (vm->SetSizes(Sizes::SanitizeSize(globals.SidebarLabelFontSize(), Sizes::kLabelFontSize),
+                             Sizes::SanitizeSize(globals.SidebarStateLineFontSize(), Sizes::kStateLineFontSize),
+                             Sizes::SanitizeSize(globals.SidebarIconSize(), Sizes::kIconSize),
+                             Sizes::SanitizeSize(globals.SidebarStateGlyphSize(), Sizes::kStateGlyphSize),
+                             idleLabelFontSize,
+                             idleRowHeight))
+            {
+                Axan::Log::Debug("TerminalPage", "row sizes applied", { { "labelFontSize", std::to_string(vm->LabelFontSize()) }, { "idleLabelFontSize", std::to_string(idleLabelFontSize) }, { "idleRowHeight", std::to_string(idleRowHeight) } });
+            }
+            // axan #48: sidebar.largeIconsGrowRow; a no-op unless it changed.
+            if (vm->SetLargeIconsGrowRow(globals.SidebarLargeIconsGrowRow()))
+            {
+                Axan::Log::Debug("TerminalPage", "large icons grow row applied", { { "largeIconsGrowRow", globals.SidebarLargeIconsGrowRow() ? "true" : "false" } });
+            }
         }
         // axan: sidebar.idleEffects, resolved once per settings change (_IdleEffectsMask); a
         // no-op unless it changed. Covers new nodes and the post-reload re-derive.
@@ -3274,6 +3294,7 @@ namespace winrt::TerminalApp::implementation
         }
         // axan: a new OSC 7501 report ends a state preview, so a preview is never mistaken for
         // what the program said. (SetSessionState also ends it on a real state change.)
+        const bool previewingAtStart = vm->IsPreviewing(); // axan #49
         if (vm->IsPreviewing() && Axan::SessionState::HasNewReport(vm->PreviewBaselineRevisions, reportRevisions) && vm->ClearPreview(now))
         {
             Axan::Log::Debug("TerminalPage", "state preview cleared: new report", { { "label", winrt::to_string(vm->Label()) } });
@@ -3308,6 +3329,12 @@ namespace winrt::TerminalApp::implementation
                              { { "label", winrt::to_string(vm->Label()) },
                                { "from", winrt::to_string(hoistSlotBefore) },
                                { "to", winrt::to_string(vm->SlotKey()) } });
+        }
+        else if (previewingAtStart && !vm->IsPreviewing() && _settings && _settings.GlobalSettings().SidebarHoistPreview())
+        {
+            // axan #49: the preview ended without a real change; the row may have been hoisted
+            // by the preview alone.
+            _RefreshNeedsYouGroup();
         }
     }
 
@@ -3372,6 +3399,10 @@ namespace winrt::TerminalApp::implementation
             if (vm->ClearPreview(now))
             {
                 Axan::Log::Debug("TerminalPage", "state preview cleared: menu", { { "label", winrt::to_string(vm->Label()) } });
+                if (_settings && _settings.GlobalSettings().SidebarHoistPreview())
+                {
+                    _RefreshNeedsYouGroup(); // axan #49: the preview may have hoisted the row
+                }
             }
             return;
         }
@@ -3391,6 +3422,10 @@ namespace winrt::TerminalApp::implementation
         vm->PreviewBaselineRevisions = std::move(baseline);
         vm->SetPreview(winrt::hstring{ spec->id }, winrt::hstring{ spec->state }, winrt::hstring{ spec->message }, winrt::hstring{ spec->kind }, now - std::chrono::minutes{ 2 }, now, resting);
         Axan::Log::Debug("TerminalPage", "state preview set", { { "label", winrt::to_string(vm->Label()) }, { "preview", winrt::to_string(spec->id) }, { "state", winrt::to_string(spec->state) }, { "kind", winrt::to_string(spec->kind) } });
+        if (_settings && _settings.GlobalSettings().SidebarHoistPreview())
+        {
+            _RefreshNeedsYouGroup(); // axan #49: hoisted by the previewed state
+        }
     }
 
     // Mark everything the node currently shows as seen, then recompute. One-shot: called on
@@ -3442,6 +3477,68 @@ namespace winrt::TerminalApp::implementation
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             _RecomputeNodeState(node);
         });
+        _RecomputeIconColumnWidth(); // axan #48 (UAT): iconSize / iconFontScale / growRow may have changed
+    }
+
+    // axan #48 (UAT): one icon column width for every row, so a row whose glyph grew its box
+    // (sidebar.largeIconsGrowRow) doesn't push its label right of its neighbours'. On: the
+    // icon size times the largest effective glyph scale among the session icons in use (the
+    // scale IconPathConverter draws each with: the font family the icon resolves to, with the
+    // live sidebar.iconFontScale over the built-in table; an image counts as 1). Off: the
+    // icon size, today's layout. Never below the icon size. Every node (tree, hoisted group and
+    // minimized list share the view models) gets the value; each raises only on a change.
+    // Called after a settings reload, a node is added or removed, or a node's icon changes.
+    void TerminalPage::_RecomputeIconColumnWidth()
+    {
+        if (!_settings || !SessionTree())
+        {
+            return;
+        }
+        namespace Sizes = Axan::SidebarSizes;
+        const auto globals = _settings.GlobalSettings();
+        const auto iconSize = Sizes::SanitizeSize(globals.SidebarIconSize(), Sizes::kIconSize);
+        const bool grow = globals.SidebarLargeIconsGrowRow();
+        double maxScale = 1.0;
+        size_t icons = 0;
+        if (grow)
+        {
+            const auto scales = globals.SidebarIconFontScale();
+            const auto lookup = [&](std::wstring_view font) -> std::optional<double> {
+                if (scales)
+                {
+                    for (const auto& kv : scales)
+                    {
+                        if (Axan::GlyphScale::SameFamily(kv.Key(), font))
+                        {
+                            return kv.Value();
+                        }
+                    }
+                }
+                return std::nullopt;
+            };
+            _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+                const auto vm = _nodeVM(node);
+                if (!vm || vm->IsSeparator())
+                {
+                    return;
+                }
+                ++icons;
+                const auto family = Axan::GlyphScale::FamilyForIcon(vm->IconPath());
+                if (!family.empty()) // "" = an image path, drawn at the icon size
+                {
+                    maxScale = std::max(maxScale, Axan::GlyphScale::FontScaleFor(family, lookup));
+                }
+            });
+        }
+        const auto width = iconSize * maxScale;
+        size_t changed = 0;
+        _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+            if (const auto vm = _nodeVM(node); vm && vm->SetIconColumnWidth(width))
+            {
+                ++changed;
+            }
+        });
+        Axan::Log::Debug("TerminalPage", "icon column width resolved", { { "width", std::to_string(width) }, { "iconSize", std::to_string(iconSize) }, { "maxScale", std::to_string(maxScale) }, { "largeIconsGrowRow", grow ? "true" : "false" }, { "icons", std::to_string(icons) }, { "changed", std::to_string(changed) } });
     }
 
     // axan: sidebar.iconFontScale. IconPathConverter keeps one process-wide copy (every
@@ -3452,18 +3549,23 @@ namespace winrt::TerminalApp::implementation
     void TerminalPage::_ApplyIconFontScales()
     {
         winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double> map{ nullptr };
+        winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring> weights{ nullptr };
         if (_settings)
         {
             map = _settings.GlobalSettings().SidebarIconFontScale();
+            weights = _settings.GlobalSettings().SidebarIconFontWeight(); // axan #48
         }
-        const auto generation = winrt::Microsoft::Terminal::UI::IconPathConverter::SetIconFontScales(map);
+        winrt::Microsoft::Terminal::UI::IconPathConverter::SetIconFontScales(map);
+        // axan #48: sidebar.iconFontWeight shares the scales' generation counter, so the value
+        // returned by this second call reflects a change to either map.
+        const auto generation = winrt::Microsoft::Terminal::UI::IconPathConverter::SetIconFontWeights(weights);
         if (_appliedIconFontScales == generation)
         {
             return;
         }
         const bool firstApply = !_appliedIconFontScales;
         _appliedIconFontScales = generation;
-        Axan::Log::Debug("TerminalPage", "icon font scales applied", { { "families", std::to_string(map ? map.Size() : 0u) }, { "generation", std::to_string(generation) } });
+        Axan::Log::Debug("TerminalPage", "icon font scales applied", { { "families", std::to_string(map ? map.Size() : 0u) }, { "weightFamilies", std::to_string(weights ? weights.Size() : 0u) }, { "generation", std::to_string(generation) } });
         if (!firstApply && SessionTree())
         {
             _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
@@ -3513,6 +3615,7 @@ namespace winrt::TerminalApp::implementation
         const auto idleAfterMinutes = _settings ? _settings.GlobalSettings().SidebarIdleAfterMinutes() : 0; // axan #31
         const auto focusedTab = _GetFocusedTab(); // axan #31: the row being looked at is never de-emphasised
         const auto idleEffects = static_cast<Axan::IdleEffects::Mask>(_IdleEffectsMask()); // axan: sidebar.idleEffects (cached)
+        bool deEmphasisFlipped = false; // axan #46: the idle tuck only needs re-deriving when one flips
         _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
             const auto vm = _nodeVM(node);
             const auto tab = _nodeTab(node);
@@ -3529,16 +3632,22 @@ namespace winrt::TerminalApp::implementation
             vm->RefreshAge(now); // axan #32: only rows showing an age ever change
             if (vm->UpdateDeEmphasis(now, tab == focusedTab ? 0 : idleAfterMinutes)) // axan #31
             {
+                deEmphasisFlipped = true;
                 Axan::Log::Debug("SessionState", vm->IsDeEmphasised() ? "row de-emphasised: idle" : "row promoted", { { "label", winrt::to_string(vm->Label()) }, { "idleAfterMinutes", std::to_string(idleAfterMinutes) } });
             }
         });
         // axan: the collapse pass walks the whole tree, so skip it while the effect is off,
-        // except for the one pass after it was turned off that re-expands what it collapsed
-        // (after that pass no node has AutoCollapsed set).
+        // except for the one pass after it was turned off that unhides what it tucked and
+        // clears the holds. axan #46: while on, it re-runs only when a row's idleness flipped
+        // this tick or the effect was just turned on (every other trigger, i.e. state changes,
+        // focus, tree mutations and expand/collapse, already re-derives the sections).
         const bool collapse = (idleEffects & Axan::IdleEffects::kCollapse) != 0;
         if (collapse || _idleCollapseApplied)
         {
-            _ApplyIdleCollapse(collapse);
+            if (deEmphasisFlipped || collapse != _idleCollapseApplied)
+            {
+                _ApplyIdleCollapse(collapse, collapse != _idleCollapseApplied);
+            }
             _idleCollapseApplied = collapse;
         }
     }
@@ -3587,56 +3696,97 @@ namespace winrt::TerminalApp::implementation
         return mask;
     }
 
-    // axan: the "collapse" idle effect. Rule: a session node with session children closes
-    // its expander when it AND every session descendant are de-emphasised (idle past
-    // sidebar.idleAfterMinutes). The focused session is never de-emphasised, so a node that
-    // is or contains the focused pane never qualifies. It fires on the transition into
-    // all-idle only, so a user who re-expands an idle subtree isn't fought every second.
-    // When any node in the subtree becomes active again (or the effect is turned off), a
-    // node the page collapsed is re-expanded, the same way dim/smaller are undone; a node
-    // the user collapsed by hand is never touched. Separators don't count either way.
-    void TerminalPage::_ApplyIdleCollapse(bool enabled)
+    // axan #46: the "collapse" idle effect. The tuck itself (which idle rows an expanded
+    // section header or session row hides, and the expander-slot dot) is derived in
+    // _RecomputeSections, so every trigger that re-derives the sections (state changes,
+    // focus, tree mutations, expand/collapse) keeps it current; the clock re-runs it when a
+    // row's idleness flips. Turning the effect off or on (effectChanged) clears every hold
+    // (header and row), so a newly enabled effect starts with nothing held open; turning it
+    // off then lets the recompute unhide everything.
+    void TerminalPage::_ApplyIdleCollapse(bool enabled, bool effectChanged)
     {
-        const auto visit = [&](const auto& self, const MUX::Controls::TreeViewNode& node) -> bool {
-            bool childrenIdle = true;
-            bool hasSessionChild = false;
-            for (const auto& child : node.Children())
-            {
-                const bool childIdle = self(self, child);
-                if (!_nodeIsSeparator(child))
-                {
-                    hasSessionChild = true;
-                    childrenIdle = childrenIdle && childIdle;
-                }
-            }
-            const auto vm = _nodeVM(node);
-            if (!vm || vm->IsSeparator())
-            {
-                return true;
-            }
-            const bool subtreeIdle = enabled && vm->IsDeEmphasised() && childrenIdle;
-            if (subtreeIdle && !vm->SubtreeIdle && hasSessionChild && node.IsExpanded())
-            {
-                node.IsExpanded(false);
-                vm->AutoCollapsed = true;
-                Axan::Log::Debug("SessionState", "idle subtree collapsed", { { "label", winrt::to_string(vm->Label()) } });
-            }
-            else if (!subtreeIdle && vm->AutoCollapsed)
-            {
-                vm->AutoCollapsed = false;
-                if (!node.IsExpanded() && node.Children().Size() > 0)
-                {
-                    node.IsExpanded(true);
-                    Axan::Log::Debug("SessionState", enabled ? "idle subtree re-expanded: activity" : "idle subtree re-expanded: effect off", { { "label", winrt::to_string(vm->Label()) } });
-                }
-            }
-            vm->SubtreeIdle = subtreeIdle;
-            return subtreeIdle;
-        };
-        for (const auto& root : SessionTree().RootNodes())
+        if (effectChanged)
         {
-            visit(visit, root);
+            size_t cleared = 0;
+            const std::function<void(const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>&)> clear =
+                [&](const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>& nodes) {
+                    for (const auto& node : nodes)
+                    {
+                        if (const auto vm = _nodeVM(node); vm && vm->IdleHold)
+                        {
+                            vm->IdleHold = false;
+                            ++cleared;
+                        }
+                        clear(node.Children());
+                    }
+                };
+            clear(SessionTree().RootNodes());
+            Axan::Log::Debug("SessionState", "holds cleared", { { "reason", enabled ? "idle collapse turned on" : "idle collapse turned off" }, { "holdsCleared", std::to_string(cleared) } });
         }
+        _RecomputeSections();
+    }
+
+    // axan #46: an expansion the page makes itself (restored hierarchy, add child, drop into
+    // a parent) is not a manual expand, so it must not set the idle hold.
+    void TerminalPage::_ExpandNodeFromCode(const MUX::Controls::TreeViewNode& node)
+    {
+        ++_expandFromCode;
+        const auto restore = wil::scope_exit([&]() noexcept { --_expandFromCode; });
+        node.IsExpanded(true);
+    }
+
+    // axan #46: re-derive the sections on the next dispatcher turn (after the TreeView has
+    // finished an expand/collapse). The hold itself is already set, so a held row never
+    // flashes its idle children hidden in between.
+    void TerminalPage::_QueueRecomputeSections()
+    {
+        Dispatcher().RunAsync(winrt::Windows::UI::Core::CoreDispatcherPriority::Normal, [weakThis{ get_weak() }]() {
+            if (const auto page{ weakThis.get() })
+            {
+                page->_RecomputeSections();
+            }
+        });
+    }
+
+    // axan #46: a manual expand of a session row (chevron, Right arrow, row click) holds it
+    // open against the automatic idle tuck until the user collapses it again.
+    void TerminalPage::_OnSessionTreeExpanding(const MUX::Controls::TreeView& /*sender*/, const MUX::Controls::TreeViewExpandingEventArgs& args)
+    {
+        const auto node = args.Node();
+        const auto vm = _nodeVM(node);
+        // A drag auto-expands the node it hovers; that isn't a manual expand either.
+        if (!vm || vm->IsSeparator() || _expandFromCode > 0 || _sessionTreeDragInFlight)
+        {
+            return;
+        }
+        // Holds only mean something while the effect is on (they are cleared when it flips).
+        if (!vm->IdleHold && (_IdleEffectsMask() & Axan::IdleEffects::kCollapse) != 0)
+        {
+            vm->IdleHold = true;
+            Axan::Log::Debug("SessionState", "idle hold set: row expanded by hand", { { "label", winrt::to_string(vm->Label()) } });
+        }
+        // Deferred: the TreeView is mid-way through (un)flattening the node's children here.
+        _QueueRecomputeSections();
+    }
+
+    // axan #46: a manual collapse clears the hold (the row is now fully collapsed; the next
+    // manual expand holds it again). Re-derive so the dot goes and the tooltip gains the
+    // folded count.
+    void TerminalPage::_OnSessionTreeCollapsed(const MUX::Controls::TreeView& /*sender*/, const MUX::Controls::TreeViewCollapsedEventArgs& args)
+    {
+        const auto node = args.Node();
+        const auto vm = _nodeVM(node);
+        if (!vm || vm->IsSeparator())
+        {
+            return;
+        }
+        if (vm->IdleHold)
+        {
+            vm->IdleHold = false;
+            Axan::Log::Debug("SessionState", "idle hold cleared: row collapsed by hand", { { "label", winrt::to_string(vm->Label()) } });
+        }
+        // Deferred: the TreeView is mid-way through (un)flattening the node's children here.
+        _QueueRecomputeSections();
     }
 
     // ----- axan #33: section headers ---------------------------------------------------------
@@ -3712,16 +3862,66 @@ namespace winrt::TerminalApp::implementation
             return std::find(activeChain.begin(), activeChain.end(), node) != activeChain.end();
         };
 
+        // axan #46: the "collapse" idle effect's tuck. Under an expanded section header (not
+        // held) and under an expanded session row with children (not held), a row that is
+        // idle together with its whole subtree is hidden like a collapsed section's row, and
+        // the header / parent shows the hollow dot with the count (SetFold). A row in a
+        // labelled section follows its header; otherwise its parent row. The focused chain is
+        // exempt, and a row that stops being idle simply isn't tucked on the next recompute.
+        const bool idleCollapse = (_IdleEffectsMask() & Axan::IdleEffects::kCollapse) != 0;
+        const std::function<bool(const MUX::Controls::TreeViewNode&)> subtreeIdle = [&](const MUX::Controls::TreeViewNode& n) {
+            const auto v = _nodeVM(n);
+            if (!v || v->IsSeparator() || !v->IsDeEmphasised())
+            {
+                return false;
+            }
+            for (const auto& c : n.Children())
+            {
+                if (!_nodeIsSeparator(c) && !subtreeIdle(c))
+                {
+                    return false;
+                }
+            }
+            return true;
+        };
+        const std::function<uint32_t(const MUX::Controls::TreeViewNode&)> sessionsIn = [&](const MUX::Controls::TreeViewNode& n) {
+            uint32_t total = 0;
+            if (const auto v = _nodeVM(n); v && !v->IsSeparator())
+            {
+                ++total;
+            }
+            for (const auto& c : n.Children())
+            {
+                total += sessionsIn(c);
+            }
+            return total;
+        };
+        const auto tuckedText = [](uint32_t n) {
+            return winrt::hstring{ std::to_wstring(n) + (n == 1 ? L" idle session tucked away" : L" idle sessions tucked away") };
+        };
+        const auto applyFold = [&](const winrt::com_ptr<winrt::TerminalApp::implementation::SessionNodeViewModel>& v, uint32_t tucked, const winrt::hstring& toolTip, const winrt::hstring& label) {
+            const bool wasTucked = v->IdleTuckedCount() > 0;
+            if (v->SetFold(tucked, toolTip) && (wasTucked || tucked > 0))
+            {
+                Axan::Log::Debug("SessionState", tucked == 0 ? "idle fold removed" : (wasTucked ? "idle fold updated" : "idle fold applied"), { { "label", winrt::to_string(label) }, { "tucked", std::to_string(tucked) }, { "held", v->IdleHold ? "1" : "0" } });
+            }
+        };
+
         size_t hiddenRows = 0;
+        size_t tuckedRows = 0; // axan #46
         size_t collapsedHeaders = 0;
-        const std::function<void(const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>&, bool)> walk =
-            [&](const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>& container, bool parentHidden) {
+        // axan #46: ownerTucks = the session row owning `container` is expanded, not held and
+        // the effect is on; returns how many session rows it tucked (for that owner's dot).
+        const std::function<uint32_t(const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>&, bool, bool)> walk =
+            [&](const Windows::Foundation::Collections::IVector<MUX::Controls::TreeViewNode>& container, bool parentHidden, bool ownerTucks) -> uint32_t {
                 if (!container)
                 {
-                    return;
+                    return 0;
                 }
+                uint32_t ownerTucked = 0; // axan #46
                 winrt::com_ptr<winrt::TerminalApp::implementation::SessionNodeViewModel> headerVm;
                 uint32_t count = 0;
+                uint32_t sectionTucked = 0; // axan #46
                 int strongest = 0;
                 uint32_t strongestCount = 0;
                 const auto finish = [&]() {
@@ -3731,14 +3931,18 @@ namespace winrt::TerminalApp::implementation
                         {
                             ++collapsedHeaders;
                             headerVm->SetSectionSummary(winrt::hstring{ L" \u00B7 " + std::to_wstring(count) }, winrt::hstring{ _stateBadge(strongest, strongestCount) });
+                            // axan #46: fully collapsed: chevron right + "\u00B7 N"; the count in words in the tooltip.
+                            applyFold(headerVm, 0, count == 0 ? winrt::hstring{} : winrt::hstring{ std::to_wstring(count) + (count == 1 ? L" session hidden" : L" sessions hidden") }, headerVm->SeparatorLabel());
                         }
                         else
                         {
                             headerVm->SetSectionSummary({}, {});
+                            applyFold(headerVm, sectionTucked, sectionTucked == 0 ? winrt::hstring{} : tuckedText(sectionTucked), headerVm->SeparatorLabel());
                         }
                     }
                     headerVm = nullptr;
                     count = 0;
+                    sectionTucked = 0;
                     strongest = 0;
                     strongestCount = 0;
                 };
@@ -3776,11 +3980,15 @@ namespace winrt::TerminalApp::implementation
                         finish();
                         headerVm = vm->HasSectionHeader() ? vm : nullptr;
                         vm->SetSectionHidden(parentHidden);
-                        walk(node.Children(), parentHidden);
+                        walk(node.Children(), parentHidden, false);
                         continue;
                     }
                     const bool bySection = headerVm && headerVm->IsCollapsed() && !exempt;
-                    const bool hidden = (parentHidden && !exempt) || bySection;
+                    // axan #46: the idle tuck (section rule inside a labelled section, else the owner row's).
+                    const bool tuckable = idleCollapse && !bySection && !exempt && subtreeIdle(node);
+                    const bool tuckedBySection = tuckable && headerVm && !headerVm->IdleHold;
+                    const bool tuckedByOwner = tuckable && !headerVm && ownerTucks;
+                    const bool hidden = (parentHidden && !exempt) || bySection || tuckedBySection || tuckedByOwner;
                     vm->SetSectionHidden(hidden);
                     if (hidden)
                     {
@@ -3790,16 +3998,40 @@ namespace winrt::TerminalApp::implementation
                     {
                         tally(node);
                     }
-                    walk(node.Children(), hidden);
+                    if (tuckedBySection || tuckedByOwner)
+                    {
+                        const auto n = sessionsIn(node);
+                        (tuckedBySection ? sectionTucked : ownerTucked) += n;
+                        // Log total: count a tucked subtree once, at its topmost tucked row (a
+                        // row under an already-hidden ancestor was counted with that ancestor).
+                        if (!parentHidden)
+                        {
+                            tuckedRows += n;
+                        }
+                    }
+                    // axan #46: this row as an owner: idle-collapsed (dot + count), fully
+                    // collapsed (count in the tooltip only) or expanded (nothing).
+                    const bool expanded = node.IsExpanded();
+                    const auto childTucked = walk(node.Children(), hidden, idleCollapse && expanded && !vm->IdleHold);
+                    const auto descendants = sessionsIn(node) - 1;
+                    if (descendants > 0 && !expanded)
+                    {
+                        applyFold(vm, 0, winrt::hstring{ std::to_wstring(descendants) + (descendants == 1 ? L" session collapsed" : L" sessions collapsed") }, vm->Label());
+                    }
+                    else
+                    {
+                        applyFold(vm, childTucked, childTucked == 0 ? winrt::hstring{} : tuckedText(childTucked), vm->Label());
+                    }
                 }
                 finish();
+                return ownerTucked;
             };
-        walk(SessionTree().RootNodes(), false);
+        walk(SessionTree().RootNodes(), false, false);
         _ApplySeparatorContainerStates();
         _RefreshNeedsYouGroup(); // axan #34: same trigger set (mutations, state transitions, focus)
-        if (collapsedHeaders > 0)
+        if (collapsedHeaders > 0 || tuckedRows > 0)
         {
-            Axan::Log::Debug("TerminalPage", "recomputed sections", { { "collapsedHeaders", std::to_string(collapsedHeaders) }, { "hiddenRows", std::to_string(hiddenRows) } });
+            Axan::Log::Debug("TerminalPage", "recomputed sections", { { "collapsedHeaders", std::to_string(collapsedHeaders) }, { "hiddenRows", std::to_string(hiddenRows) }, { "idleTuckedRows", std::to_string(tuckedRows) } });
         }
     }
 
@@ -3812,6 +4044,16 @@ namespace winrt::TerminalApp::implementation
         }
         vm->SetCollapsed(collapsed);
         Axan::Log::Info("TerminalPage", collapsed ? "section collapsed" : "section expanded", { { "label", winrt::to_string(vm->SeparatorLabel()) }, { "reason", reason } });
+        // axan #46: every caller is a manual action (header click, badge, context menu), so
+        // this is the click cycle: idle-collapsed or expanded -> fully collapsed (clears the
+        // hold), fully collapsed -> expanded (holds it open against the idle tuck). Reveals the
+        // page makes itself go through _ExpandSectionsContaining and set no hold.
+        const bool hold = !collapsed && (_IdleEffectsMask() & Axan::IdleEffects::kCollapse) != 0; // no holds while the effect is off
+        if (vm->IdleHold != hold)
+        {
+            vm->IdleHold = hold;
+            Axan::Log::Debug("SessionState", hold ? "idle hold set: section expanded by hand" : "idle hold cleared: section collapsed by hand", { { "label", winrt::to_string(vm->SeparatorLabel()) }, { "reason", reason } });
+        }
         _RecomputeSections();
     }
 
@@ -3966,6 +4208,7 @@ namespace winrt::TerminalApp::implementation
             NeedsYouList().ItemsSource(_needsYouItems);
         }
         const bool enabled = _settings && _settings.GlobalSettings().SidebarNeedsYouGroup();
+        const bool hoistPreview = _settings && _settings.GlobalSettings().SidebarHoistPreview(); // axan #49
         // axan #34: the global list (sidebar.hoistStates; unset = blocked / error / done).
         auto globalMask = Axan::HoistRule::kDefault;
         if (_settings && _settings.GlobalSettings().HasSidebarHoistStates())
@@ -4003,11 +4246,19 @@ namespace winrt::TerminalApp::implementation
                 }
                 // Matched on the slot state + blocked kind (AxanHoistRule.h): blocked = any
                 // kind, done = an unseen report, idle = an agent at rest (never a plain shell).
-                const auto slot = vm->SlotKey();
-                const auto kind = vm->StateKind();
-                if (Axan::HoistRule::IsHoisted(slot, kind, Axan::HoistRule::Parse(vm->HoistOverride), globalMask))
+                // axan #49: with sidebar.hoistPreview on, a previewing row is matched on the
+                // state it shows, so the preview submenu can be used to try hoisting out.
+                const bool usePreview = hoistPreview && vm->IsPreviewing();
+                const auto slot = usePreview ? vm->ShownSlotKey() : vm->SlotKey();
+                const auto kind = usePreview ? vm->ShownStateKind() : vm->StateKind();
+                const bool hoisted = Axan::HoistRule::IsHoisted(slot, kind, Axan::HoistRule::Parse(vm->HoistOverride), globalMask);
+                if (usePreview)
                 {
-                    wanted.emplace_back(vm->StateSince(), node.Content().as<winrt::TerminalApp::SessionNodeViewModel>());
+                    Axan::Log::Debug("SessionState", "hoist evaluated on preview", { { "previewId", winrt::to_string(vm->PreviewId()) }, { "slot", winrt::to_string(slot) }, { "kind", winrt::to_string(kind) }, { "realSlot", winrt::to_string(vm->SlotKey()) }, { "hoisted", hoisted ? "true" : "false" } });
+                }
+                if (hoisted)
+                {
+                    wanted.emplace_back(usePreview ? vm->ShownStateSince() : vm->StateSince(), node.Content().as<winrt::TerminalApp::SessionNodeViewModel>());
                 }
             });
             std::stable_sort(wanted.begin(), wanted.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
@@ -4094,6 +4345,87 @@ namespace winrt::TerminalApp::implementation
                                             const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args)
     {
         _SelectTabForNodeVM(args.ClickedItem().try_as<winrt::TerminalApp::SessionNodeViewModel>());
+    }
+
+    // axan #49 (UAT): right-click (or Shift+F10 / the menu key) on a hoisted row opens the same
+    // per-node menu as the tree. The row's item is the same SessionNodeViewModel the tree node
+    // holds, so the node is found by matching Content; the flyout anchors to the hoisted row.
+    // Returns true when the menu was shown (or a resolve failure was logged and the event
+    // should still count as handled).
+    static ListViewItem _needsYouRowFrom(const winrt::Windows::Foundation::IInspectable& source)
+    {
+        for (auto current = source.try_as<DependencyObject>(); current; current = WUX::Media::VisualTreeHelper::GetParent(current))
+        {
+            if (const auto row = current.try_as<ListViewItem>())
+            {
+                return row;
+            }
+        }
+        return nullptr;
+    }
+
+    bool TerminalPage::_ShowNeedsYouRowMenu(const winrt::Windows::Foundation::IInspectable& originalSource,
+                                            const std::optional<winrt::Windows::Foundation::Point>& position,
+                                            const char* route)
+    {
+        const auto row = _needsYouRowFrom(originalSource);
+        if (!row)
+        {
+            Axan::Log::Debug("TerminalPage", "hoisted-row menu: no row under the event source", { { "route", route } });
+            return false;
+        }
+        const auto vm = NeedsYouList().ItemFromContainer(row).try_as<winrt::TerminalApp::SessionNodeViewModel>();
+        MUX::Controls::TreeViewNode node{ nullptr };
+        if (vm && SessionTree())
+        {
+            _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& candidate) {
+                if (!node && candidate.Content() == vm)
+                {
+                    node = candidate;
+                }
+            });
+        }
+        if (!node)
+        {
+            Axan::Log::Warn("TerminalPage", "hoisted-row menu: row did not resolve to a tree node; menu suppressed", { { "route", route }, { "hasViewModel", vm ? "true" : "false" } });
+            return true;
+        }
+        _ShowSessionNodeContextMenu(node, row, position);
+        Axan::Log::Debug("TerminalPage", "hoisted-row menu shown", { { "route", route }, { "label", winrt::to_string(vm.Label()) } });
+        return true;
+    }
+
+    void TerminalPage::_OnNeedsYouRightTapped(const winrt::Windows::Foundation::IInspectable& /*sender*/,
+                                              const WUX::Input::RightTappedRoutedEventArgs& args)
+    {
+        // Anchored to the row, at the pointer (row-relative).
+        const auto row = _needsYouRowFrom(args.OriginalSource());
+        const auto position = row ? std::optional<winrt::Windows::Foundation::Point>{ args.GetPosition(row) } : std::nullopt;
+        if (_ShowNeedsYouRowMenu(args.OriginalSource(), position, "right-tap"))
+        {
+            args.Handled(true);
+        }
+    }
+
+    void TerminalPage::_OnNeedsYouContextRequested(const winrt::Windows::Foundation::IInspectable& /*sender*/,
+                                                   const WUX::Input::ContextRequestedEventArgs& args)
+    {
+        // Keyboard invocations carry no position (the flyout anchors to the row); a pointer
+        // one that also raised RightTapped is a no-op thanks to the IsOpen guard in
+        // _ShowSessionNodeContextMenu.
+        std::optional<winrt::Windows::Foundation::Point> position;
+        if (const auto row = _needsYouRowFrom(args.OriginalSource()))
+        {
+            winrt::Windows::Foundation::Point point{};
+            if (args.TryGetPosition(row, point))
+            {
+                position = point;
+            }
+        }
+        if (_ShowNeedsYouRowMenu(args.OriginalSource(), position, "context-requested"))
+        {
+            args.Handled(true);
+        }
     }
 
     // The toggle (sidebar background / separator right-click menu). Persisted as the global

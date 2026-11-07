@@ -511,7 +511,13 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kStateLineFontSize), 11.0);
             VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kIconSize), 16.0);
             VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kStateGlyphSize), 12.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kIdleLabelFontSize), 12.0); // axan #47
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(nan, Z::kIdleRowHeight), 24.0);
             Log::Comment(L"Anything else is clamped to the page's range");
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(4.0, Z::kIdleLabelFontSize), 8.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(8.0, Z::kIdleRowHeight), 16.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(100.0, Z::kIdleRowHeight), 64.0);
+            VERIFY_ARE_EQUAL(Z::SanitizeSize(20.0, Z::kIdleRowHeight), 20.0);
             VERIFY_ARE_EQUAL(Z::SanitizeSize(2.0, Z::kLabelFontSize), 8.0);
             VERIFY_ARE_EQUAL(Z::SanitizeSize(100.0, Z::kLabelFontSize), 32.0);
             VERIFY_ARE_EQUAL(Z::SanitizeSize(100.0, Z::kIconSize), 48.0);

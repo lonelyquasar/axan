@@ -13,11 +13,12 @@
 //   smaller   smaller label and a shorter row
 //   gray      a node with a colour renders its icon/label in a neutral gray while idle
 //             (nodes without a colour are unaffected)
-//   collapse  a node with children collapses its expander once it AND every descendant
-//             are idle; it re-expands when any of them becomes active again (only if the
-//             collapse was automatic and the user hasn't expanded it since). The focused
-//             session never counts as idle, so a node holding the focused pane never
-//             collapses.
+//   collapse  (axan #46) an expanded section header or session row with children tucks
+//             away its idle members/children (a row counts as idle when it AND every
+//             descendant are idle) while active ones stay visible; a hollow ring marks the
+//             expander slot (the count is in the tooltip). A tucked row reappears as soon as it
+//             is active again. A manual expand holds the node open until it is manually
+//             collapsed. The focused session never counts as idle.
 //
 // Unknown names are ignored (the caller logs them once). Unset = kDefault.
 //

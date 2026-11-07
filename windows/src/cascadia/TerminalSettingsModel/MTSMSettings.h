@@ -53,6 +53,7 @@ using IAxanDoubleMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstr
     X(winrt::Windows::Foundation::Collections::IVector<winrt::hstring>, SidebarIdleEffects, "sidebar.idleEffects", nullptr)                                                                          \
     X(bool, SidebarNeedsYouGroup, "sidebar.needsYouGroup", false)                                                                                                                                    \
     X(winrt::Windows::Foundation::Collections::IVector<winrt::hstring>, SidebarHoistStates, "sidebar.hoistStates", nullptr)                                                                          \
+    X(bool, SidebarHoistPreview, "sidebar.hoistPreview", false)                                                                                                                                      \
     X(Model::SidebarStatusAfterSeen, SidebarStatusAfterSeen, "sidebar.statusAfterSeen", Model::SidebarStatusAfterSeen::Keep)                                                                         \
     X(IAxanStringMap, SidebarStateGlyphs, "sidebar.stateGlyphs", nullptr)                                                                                                                            \
     X(bool, SidebarStateLabels, "sidebar.stateLabels", true)                                                                                                                                         \
@@ -61,7 +62,11 @@ using IAxanDoubleMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstr
     X(double, SidebarStateLineFontSize, "sidebar.stateLineFontSize", 11.0)                                                                                                                          \
     X(double, SidebarIconSize, "sidebar.iconSize", 16.0)                                                                                                                                            \
     X(double, SidebarStateGlyphSize, "sidebar.stateGlyphSize", 12.0)                                                                                                                                \
+    X(double, SidebarIdleLabelFontSize, "sidebar.idleLabelFontSize", 12.0)                                                                                                                          \
+    X(double, SidebarIdleRowHeight, "sidebar.idleRowHeight", 24.0)                                                                                                                                  \
     X(IAxanDoubleMap, SidebarIconFontScale, "sidebar.iconFontScale", nullptr)                                                                                                                       \
+    X(IAxanStringMap, SidebarIconFontWeight, "sidebar.iconFontWeight", nullptr)                                                                                                                     \
+    X(bool, SidebarLargeIconsGrowRow, "sidebar.largeIconsGrowRow", false)                                                                                                                           \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \

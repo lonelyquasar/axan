@@ -346,6 +346,9 @@ namespace winrt::TerminalApp::implementation
         // tab-selection path (which drives the content swap + keeps the strip in sync).
         _tabs.VectorChanged({ get_weak(), &TerminalPage::_OnSessionsCollectionChanged });
         SessionTree().ItemInvoked({ get_weak(), &TerminalPage::_OnSessionTreeItemInvoked });
+        // axan #46: a manual expand/collapse of a session row sets/clears its idle hold.
+        SessionTree().Expanding({ get_weak(), &TerminalPage::_OnSessionTreeExpanding });
+        SessionTree().Collapsed({ get_weak(), &TerminalPage::_OnSessionTreeCollapsed });
         // axan #16: after a drag-and-drop reparent, expand the target so a former leaf shows
         // its new child instead of swallowing it.
         SessionTree().DragItemsCompleted({ get_weak(), &TerminalPage::_OnSessionTreeDragItemsCompleted });
@@ -378,6 +381,9 @@ namespace winrt::TerminalApp::implementation
         // axan #429: Shift+F10 / the menu key raise ContextRequested, not RightTapped — wire
         // the keyboard route to the same menu.
         SessionTree().ContextRequested({ get_weak(), &TerminalPage::_OnSessionTreeContextRequested });
+        // axan #49 (UAT): the hoisted group's rows get the same per-node menu.
+        NeedsYouList().RightTapped({ get_weak(), &TerminalPage::_OnNeedsYouRightTapped });
+        NeedsYouList().ContextRequested({ get_weak(), &TerminalPage::_OnNeedsYouContextRequested });
         // axan M13: when the sidebar's resolved theme changes, repaint node labels with the
         // theme-correct default text color (fires after ActualTheme actually settles).
         if (const auto sidebar{ SessionSidebar() })

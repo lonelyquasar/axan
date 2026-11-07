@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cwctype>
+#include <limits> // axan #48: NaN = Auto for the icon box
 #include <optional>
 #include <string_view>
 
@@ -170,7 +171,7 @@ namespace winrt::TerminalApp::implementation
 
     // ----- axan: sizes ---------------------------------------------------------------------
 
-    bool SessionNodeViewModel::SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize)
+    bool SessionNodeViewModel::SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize, double idleLabelFontSize, double idleRowHeight)
     {
         bool changed = false;
         const auto raise = [this](const wchar_t* name) {
@@ -192,6 +193,7 @@ namespace winrt::TerminalApp::implementation
         {
             _iconSize = iconSize;
             raise(L"IconSize");
+            raise(L"IconBoxSize"); // axan #48
             raise(L"Icon");
             changed = true;
         }
@@ -201,7 +203,55 @@ namespace winrt::TerminalApp::implementation
             raise(L"StateGlyphIcon");
             changed = true;
         }
+        // axan #47: the "smaller" idle effect's sizes (LabelFontSize / RowMinHeight read them
+        // only while that effect applies; raising regardless is harmless).
+        if (idleLabelFontSize != _idleLabelFontSize)
+        {
+            _idleLabelFontSize = idleLabelFontSize;
+            raise(L"LabelFontSize");
+            changed = true;
+        }
+        if (idleRowHeight != _idleRowHeight)
+        {
+            _idleRowHeight = idleRowHeight;
+            raise(L"RowMinHeight");
+            changed = true;
+        }
         return changed;
+    }
+
+    // axan #48: sidebar.largeIconsGrowRow. While on, the icon box and its presenter have no
+    // fixed size (NaN is XAML's Auto), so a glyph drawn larger than IconSize (a big
+    // sidebar.iconFontScale) sizes the box itself and the row grows to fit; the box's
+    // MinWidth/MinHeight keep it at least IconSize. Off: the box is IconSize and clips.
+    bool SessionNodeViewModel::SetLargeIconsGrowRow(bool grow)
+    {
+        if (grow == _largeIconsGrowRow)
+        {
+            return false;
+        }
+        _largeIconsGrowRow = grow;
+        for (const auto name : { L"IconBoxSize", L"Icon" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+        return true;
+    }
+
+    double SessionNodeViewModel::IconBoxSize() const noexcept
+    {
+        return _largeIconsGrowRow ? std::numeric_limits<double>::quiet_NaN() : _iconSize;
+    }
+
+    bool SessionNodeViewModel::SetIconColumnWidth(double width)
+    {
+        if (!(width == width) || width == _iconColumnWidth)
+        {
+            return false;
+        }
+        _iconColumnWidth = width;
+        PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IconColumnWidth" });
+        return true;
     }
 
     void SessionNodeViewModel::RefreshIcons()
@@ -753,7 +803,13 @@ namespace winrt::TerminalApp::implementation
             // so it scales with the box.
             icon.Width(_iconSize);
             icon.Height(_iconSize);
-            _scaleGlyphIcon(icon, _iconSize / 16.0);
+            // axan #48: with sidebar.largeIconsGrowRow on, a glyph takes its natural size (Auto)
+            // so the box and row grow to fit it. An image keeps IconSize in both modes.
+            if (_scaleGlyphIcon(icon, _iconSize / 16.0) && _largeIconsGrowRow)
+            {
+                icon.Width(std::numeric_limits<double>::quiet_NaN());
+                icon.Height(std::numeric_limits<double>::quiet_NaN());
+            }
         }
         return icon;
     }
@@ -990,6 +1046,51 @@ namespace winrt::TerminalApp::implementation
         _sectionHidden = hidden;
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IsSectionHidden" });
         return true;
+    }
+
+    // ----- axan #46: idle-collapsed indicator ----------------------------------------------
+    // A hollow dot in the expander slot while the automatic idle tuck hides rows here; the
+    // hidden count is in the tooltip (FoldToolTip / HeaderToolTip), not on the dot.
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::IdleTuckVisibility() const noexcept
+    {
+        return _idleTucked > 0 ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::FoldToolTipVisibility() const noexcept
+    {
+        return _foldToolTip.empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    // The section header's own tooltip: null (no tooltip at all) when nothing is hidden.
+    winrt::Windows::Foundation::IInspectable SessionNodeViewModel::HeaderToolTip() const
+    {
+        return _foldToolTip.empty() ? nullptr : winrt::box_value(_foldToolTip);
+    }
+
+    bool SessionNodeViewModel::SetFold(uint32_t idleTucked, const hstring& toolTip)
+    {
+        bool changed = false;
+        if (idleTucked != _idleTucked)
+        {
+            const bool visibilityChanged = (idleTucked == 0) != (_idleTucked == 0);
+            _idleTucked = idleTucked;
+            if (visibilityChanged)
+            {
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IdleTuckVisibility" });
+            }
+            changed = true;
+        }
+        if (toolTip != _foldToolTip)
+        {
+            _foldToolTip = toolTip;
+            for (const auto name : { L"FoldToolTip", L"FoldToolTipVisibility", L"HeaderToolTip" })
+            {
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+            }
+            changed = true;
+        }
+        return changed;
     }
 
     // axan #3: flip this VM into separator mode. Called once by the page when it mints a

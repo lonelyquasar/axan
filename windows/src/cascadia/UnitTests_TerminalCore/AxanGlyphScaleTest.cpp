@@ -8,6 +8,7 @@
 #include <WexTestClass.h>
 
 #include <AxanGlyphScale.h>
+#include <AxanGlyphWeight.h> // axan #48
 
 #include <limits>
 #include <map>
@@ -158,6 +159,48 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_EQUAL(S::FirstCodepoint(L"\xD80C"), static_cast<char32_t>(0));
             VERIFY_ARE_EQUAL(S::FirstCodepoint(L"\xDDA3"), static_cast<char32_t>(0));
             VERIFY_ARE_EQUAL(S::ScaleFor(L"\xD80Cx"), 1.0);
+        }
+
+        // axan #48: sidebar.iconFontWeight values (src/inc/AxanGlyphWeight.h).
+        TEST_METHOD(WeightNamesParse)
+        {
+            namespace W = Axan::GlyphWeight;
+            VERIFY_ARE_EQUAL(W::ParseWeight(L"normal").value_or(uint16_t{ 0 }), W::kNormal);
+            VERIFY_ARE_EQUAL(W::ParseWeight(L"semibold").value_or(uint16_t{ 0 }), W::kSemiBold);
+            VERIFY_ARE_EQUAL(W::ParseWeight(L"bold").value_or(uint16_t{ 0 }), W::kBold);
+            VERIFY_ARE_EQUAL(W::kNormal, static_cast<uint16_t>(400));
+            VERIFY_ARE_EQUAL(W::kSemiBold, static_cast<uint16_t>(600));
+            VERIFY_ARE_EQUAL(W::kBold, static_cast<uint16_t>(700));
+
+            Log::Comment(L"Case-insensitive; a space, '-' or '_' inside the name is ignored");
+            VERIFY_ARE_EQUAL(W::ParseWeight(L"BOLD").value_or(uint16_t{ 0 }), W::kBold);
+            VERIFY_ARE_EQUAL(W::ParseWeight(L"Semi-Bold").value_or(uint16_t{ 0 }), W::kSemiBold);
+            VERIFY_ARE_EQUAL(W::ParseWeight(L"semi bold").value_or(uint16_t{ 0 }), W::kSemiBold);
+            VERIFY_ARE_EQUAL(W::ParseWeight(L"SEMI_BOLD").value_or(uint16_t{ 0 }), W::kSemiBold);
+
+            Log::Comment(L"Anything else is not a weight");
+            VERIFY_IS_FALSE(W::ParseWeight(L"").has_value());
+            VERIFY_IS_FALSE(W::ParseWeight(L"-").has_value());
+            VERIFY_IS_FALSE(W::ParseWeight(L"700").has_value());
+            VERIFY_IS_FALSE(W::ParseWeight(L"bolder").has_value());
+            VERIFY_IS_FALSE(W::ParseWeight(L"bol").has_value());
+            VERIFY_IS_FALSE(W::ParseWeight(L"light").has_value());
+            VERIFY_IS_FALSE(W::ParseWeight(L"b\x00F6ld").has_value());
+        }
+
+        TEST_METHOD(WeightNamesCanonicalise)
+        {
+            namespace W = Axan::GlyphWeight;
+            VERIFY_ARE_EQUAL(std::wstring{ W::CanonicalWeightName(L"Semi-Bold") }, std::wstring{ L"semibold" });
+            VERIFY_ARE_EQUAL(std::wstring{ W::CanonicalWeightName(L"BOLD") }, std::wstring{ L"bold" });
+            VERIFY_ARE_EQUAL(std::wstring{ W::CanonicalWeightName(L"Normal") }, std::wstring{ L"normal" });
+            VERIFY_ARE_EQUAL(std::wstring{ W::CanonicalWeightName(L"heavy") }, std::wstring{});
+            Log::Comment(L"WeightName round-trips the three weights; any other value reads as normal");
+            VERIFY_ARE_EQUAL(std::wstring{ W::WeightName(W::kBold) }, std::wstring{ L"bold" });
+            VERIFY_ARE_EQUAL(std::wstring{ W::WeightName(W::kSemiBold) }, std::wstring{ L"semibold" });
+            VERIFY_ARE_EQUAL(std::wstring{ W::WeightName(W::kNormal) }, std::wstring{ L"normal" });
+            VERIFY_ARE_EQUAL(std::wstring{ W::WeightName(900) }, std::wstring{ L"normal" });
+            static_assert(W::ParseWeight(L"bold").value() == W::kBold, "ParseWeight is constexpr");
         }
     };
 }

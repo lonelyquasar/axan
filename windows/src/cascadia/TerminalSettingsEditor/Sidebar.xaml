@@ -82,6 +82,25 @@
                             Style="{StaticResource NumberBoxSettingStyle}"
                             Value="{x:Bind ViewModel.SidebarStateGlyphSize, Mode=TwoWay}" />
         </local:SettingContainer>
+        <!--  axan #47: the sizes the "smaller" idle effect gives a row  -->
+        <local:SettingContainer x:Uid="Globals_SidebarIdleLabelFontSize">
+            <muxc:NumberBox LargeChange="2"
+                            Maximum="32"
+                            Minimum="8"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarIdleLabelFontSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <local:SettingContainer x:Uid="Globals_SidebarIdleRowHeight">
+            <muxc:NumberBox LargeChange="4"
+                            Maximum="64"
+                            Minimum="16"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
+                            Style="{StaticResource NumberBoxSettingStyle}"
+                            Value="{x:Bind ViewModel.SidebarIdleRowHeight, Mode=TwoWay}" />
+        </local:SettingContainer>
         <!--
             axan: sidebar.iconFontScale. One row per font family the sidebar's icons come
             from (name, an inline 0.5-3 spin box, Reset when it differs from the default),
@@ -92,6 +111,11 @@
                                 Style="{StaticResource ExpanderSettingContainerStyle}">
             <StackPanel x:Name="IconFontsPanel"
                         Spacing="8" />
+        </local:SettingContainer>
+        <!--  axan #48: sidebar.largeIconsGrowRow, a large glyph grows its icon box and the row instead of being clipped  -->
+        <local:SettingContainer x:Uid="Globals_SidebarLargeIconsGrowRow">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarLargeIconsGrowRow, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
         </local:SettingContainer>
 
         <TextBlock x:Uid="Sidebar_SessionStateHeader"
@@ -178,6 +202,23 @@
                 <HyperlinkButton x:Uid="Globals_SidebarIdleEffectsReset"
                                  Click="IdleEffectsReset_Click" />
             </StackPanel>
+        </local:SettingContainer>
+
+        <!--
+            axan #49: the sidebar's "Preview state" submenu (right-click a session row). What
+            it is, a link to its documentation (PreviewStatesInfo_Click), and its option
+            sidebar.hoistPreview.
+        -->
+        <TextBlock x:Uid="Sidebar_PreviewStatesHeader"
+                   Style="{StaticResource TextBlockSubHeaderStyle}" />
+        <TextBlock x:Uid="Sidebar_PreviewStatesDescription"
+                   Style="{StaticResource DisclaimerStyle}" />
+        <HyperlinkButton x:Uid="Sidebar_PreviewStatesInfo"
+                         Margin="0,0,0,8"
+                         Click="PreviewStatesInfo_Click" />
+        <local:SettingContainer x:Uid="Globals_SidebarHoistPreview">
+            <ToggleSwitch IsOn="{x:Bind ViewModel.SidebarHoistPreview, Mode=TwoWay}"
+                          Style="{StaticResource ToggleSwitchInExpanderStyle}" />
         </local:SettingContainer>
 
         <!--

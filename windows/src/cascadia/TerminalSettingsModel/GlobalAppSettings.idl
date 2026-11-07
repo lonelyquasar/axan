@@ -90,6 +90,9 @@ namespace Microsoft.Terminal.Settings.Model
         // src/inc/AxanHoistRule.h (idle / working / blocked / done / error / running, and the
         // blocked kinds permission / question / auth). Unset = ["blocked", "error", "done"].
         INHERITABLE_SETTING(IVector<String>, SidebarHoistStates);
+        // axan #49: a row being previewed (the "Preview state" submenu) is hoisted by its
+        // previewed state instead of its real one. Default false (previews are visual only).
+        INHERITABLE_SETTING(Boolean, SidebarHoistPreview);
         // axan: after a done/error session is seen, keep its last report on the row (muted)
         // or clear it. Default Keep. Either way it stops counting as needing attention.
         INHERITABLE_SETTING(SidebarStatusAfterSeen, SidebarStatusAfterSeen);
@@ -103,17 +106,29 @@ namespace Microsoft.Terminal.Settings.Model
         // axan: an agent shows its session name (record title, else the terminal
         // title) as the row's muted second line. Default true.
         INHERITABLE_SETTING(Boolean, SidebarShowAgentName);
-        // axan: sidebar row sizes. The row title (14; the idle "smaller" effect takes 2 off),
-        // the second line and the state word (11), the node icon box (16; its glyph is drawn
-        // at 3/4 of that) and the right-edge state glyph (12).
+        // axan: sidebar row sizes. The row title (14), the second line and the state word
+        // (11), the node icon box (16; its glyph is drawn at 3/4 of that) and the right-edge
+        // state glyph (12).
         INHERITABLE_SETTING(Double, SidebarLabelFontSize);
         INHERITABLE_SETTING(Double, SidebarStateLineFontSize);
         INHERITABLE_SETTING(Double, SidebarIconSize);
         INHERITABLE_SETTING(Double, SidebarStateGlyphSize);
+        // axan #47: absolute sizes an idle row takes while the "smaller" idle effect is on:
+        // the title's font size (12) and the row's minimum height in px (24).
+        INHERITABLE_SETTING(Double, SidebarIdleLabelFontSize);
+        INHERITABLE_SETTING(Double, SidebarIdleRowHeight);
         // axan: per-font-family icon scale, { "Segoe UI Historic": 1.5 }. A family missing
         // from the map keeps its built-in multiplier (src/inc/AxanGlyphScale.h kFonts); values
         // are clamped to 0.5-3 when read. Unset by default.
         INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA Double>, SidebarIconFontScale);
+        // axan #48: per-font-family icon weight, { "Segoe UI Historic": "bold" }: "normal",
+        // "semibold" or "bold" (src/inc/AxanGlyphWeight.h). A family missing from the map, or
+        // with an unknown value, draws at Normal; a font with no bold face gets a synthesised
+        // one. Unset by default.
+        INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA String>, SidebarIconFontWeight);
+        // axan #48: a glyph scaled past the icon box grows the box to the glyph's full size and
+        // the row gets taller to fit. Default false: the glyph is clipped to the icon box.
+        INHERITABLE_SETTING(Boolean, SidebarLargeIconsGrowRow);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

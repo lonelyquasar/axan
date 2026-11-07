@@ -146,7 +146,7 @@ A row can show a dot on the corner of its icon, a second line under the label, a
 
 Nothing in the sidebar animates.
 
-To see how each state looks without a program, right-click a session row and pick a state under **Preview state**. The row draws as if that report had arrived two minutes ago. It is display only: the hoisted group, section badges and idle handling keep using the real state. **Clear preview**, a new report from the session, or a real state change ends it, and it is never saved.
+To see how each state looks without a program, right-click a session row and pick a state under **Preview state**. The row draws as if that report had arrived two minutes ago. It is display only: the hoisted group, section badges and idle handling keep using the real state. With `sidebar.hoistPreview` on, the hoisted group uses the previewed state instead, so you can try out `sidebar.hoistStates` and a session's own hoist setting. **Clear preview**, a new report from the session, or a real state change ends it, and it is never saved.
 
 ## 6. OSC 133 and the running state
 
@@ -244,15 +244,23 @@ All are in `settings.json` at the root, next to `startupSessions`, and on the **
 | Key | Default | Meaning |
 |---|---|---|
 | `sidebar.idleAfterMinutes` | `15` | Minutes idle, with no input or output, before a row is de-emphasised. `0` turns it off |
-| `sidebar.idleEffects` | `["dim", "smaller"]` | Any of `dim`, `smaller`, `gray` (a coloured row turns gray), `collapse` (a session folds its idle children away). `[]` = no visible effect |
+| `sidebar.idleEffects` | `["dim", "smaller"]` | Any of `dim`, `smaller`, `gray` (a coloured row turns gray), `collapse` (idle rows under an expanded section header or parent row are tucked away while active ones stay; a hollow dot shows in the chevron slot, with the hidden count in the tooltip; clicking cycles idle-collapsed → fully collapsed → expanded, and a manual expand holds the node open until it is collapsed again). `[]` = no visible effect |
 | `sidebar.needsYouGroup` | `false` | Show the hoisted group above the tree |
 | `sidebar.hoistStates` | `["blocked", "error", "done"]` | States that put a row in the hoisted group: `idle`, `working`, `blocked`, `done`, `error`, `running`, `permission`, `question`, `auth` |
+| `sidebar.hoistPreview` | `false` | A previewed row is hoisted by its previewed state instead of its real one (**Preview state** menu) |
 | `sidebar.statusAfterSeen` | `"keep"` | `"keep"` or `"clear"`: what a seen done or error report does |
 | `sidebar.stateGlyphs` | robot, bolt, play for `idle`, `working`, `running`; none for the rest | Per-state slot glyphs |
 | `sidebar.stateLabels` | `true` | Show the slot word |
 | `sidebar.showAgentName` | `true` | Show the agent name as the muted second line |
 | `sidebar.stateGlyphSize` | `12` | Slot glyph size in pixels, 8–48 |
 | `sidebar.stateLineFontSize` | `11` | Font size of the second line and the slot word, 8–32 |
+| `sidebar.labelFontSize` | `14` | Font size of a row's name, 8–32 |
+| `sidebar.iconSize` | `16` | Size of a row's icon box in pixels, 8–48. The glyph is drawn at 3/4 of it |
+| `sidebar.iconFontScale` | unset | Per-font-family icon scale, for example `{ "Segoe UI Historic": 1.5 }`. A family left out keeps its built-in scale. Values are clamped to 0.5–3 |
+| `sidebar.iconFontWeight` | unset | Per-font-family icon weight, `"normal"`, `"semibold"` or `"bold"`, for example `{ "Segoe UI Historic": "bold" }`. A font with no bold face, such as Segoe UI Historic, gets a synthesised one. A family left out, or an unknown value, draws at normal |
+| `sidebar.largeIconsGrowRow` | `false` | A glyph larger than its icon box grows the box to the glyph's full size, and the row gets taller to fit. Off clips the glyph to the icon box. Image icons stay at `sidebar.iconSize` either way |
+| `sidebar.idleLabelFontSize` | `12` | Font size of an idle row's name while the `smaller` idle effect is on, 8–32. This is an absolute size and is not clamped to the active row size |
+| `sidebar.idleRowHeight` | `24` | Minimum height in pixels of an idle row while the `smaller` idle effect is on, 16–64. This is an absolute size and is not clamped to the active row size |
 
 ## 9. Troubleshooting
 
