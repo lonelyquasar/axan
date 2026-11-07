@@ -415,6 +415,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         // axan #30: same deferral for the OSC 133 command lifecycle, plus the ambient
         // activity stamps (winrt::clock ticks; 0 = never).
         std::atomic<bool> _shellCommandChangedPending{ false };
+        void _raiseShellCommandChangedIfPending();
         std::atomic<int64_t> _lastInputTicks{ 0 };
         std::atomic<int64_t> _lastOutputTicks{ 0 };
 

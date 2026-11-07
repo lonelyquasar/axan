@@ -229,6 +229,9 @@ void Terminal::ProgramStatusDropLive(std::string_view reason)
 void Terminal::ProgramStatusReset()
 {
     _assertLocked();
+    // axan #30: RIS also ends any command the shell had marked running (133;C); the
+    // reset program won't send the matching 133;D.
+    ShellCommandEnded("reset");
     if (_programStatusRecords.empty())
     {
         return;
@@ -294,6 +297,21 @@ void Terminal::ShellCommandMark(const wchar_t mark, const std::optional<unsigned
                      running ? "shell command started" : "shell command ended",
                      { { "mark", std::string(1, static_cast<char>(mark)) },
                        { "exitCode", exitCode ? std::to_string(*exitCode) : std::string{} } });
+    if (_pfnShellCommandChanged)
+    {
+        _pfnShellCommandChanged();
+    }
+}
+
+void Terminal::ShellCommandEnded(std::string_view reason)
+{
+    _assertLocked();
+    if (!_shellCommandRunning)
+    {
+        return;
+    }
+    _shellCommandRunning = false;
+    Axan::Log::Info(LogComponent, "shell command ended: no D mark", { { "reason", std::string{ reason } } });
     if (_pfnShellCommandChanged)
     {
         _pfnShellCommandChanged();

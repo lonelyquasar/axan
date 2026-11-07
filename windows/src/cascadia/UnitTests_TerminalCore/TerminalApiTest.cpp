@@ -702,4 +702,22 @@ void TerminalCoreUnitTests::TerminalApiTest::ShellCommandRunning()
     Log::Comment(L"Repeated marks don't re-notify");
     stateMachine.ProcessString(L"\x1b]133;D\x07\x1b]133;A\x07");
     VERIFY_ARE_EQUAL(4u, notifications);
+
+    Log::Comment(L"The shell exiting mid-command (connection closed, no D) ends it");
+    stateMachine.ProcessString(L"\x1b]133;C\x07");
+    VERIFY_IS_TRUE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(5u, notifications);
+    term.ShellCommandEnded("test");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(6u, notifications);
+    term.ShellCommandEnded("test");
+    VERIFY_ARE_EQUAL(6u, notifications);
+
+    Log::Comment(L"RIS ends a running command too");
+    stateMachine.ProcessString(L"\x1b]133;C\x07");
+    VERIFY_IS_TRUE(term.IsShellCommandRunning());
+    stateMachine.ProcessString(L"\x1b"
+                               L"c");
+    VERIFY_IS_FALSE(term.IsShellCommandRunning());
+    VERIFY_ARE_EQUAL(8u, notifications);
 }

@@ -324,14 +324,18 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             _connectionStateChangedRevoker = newConnection.StateChanged(winrt::auto_revoke, [this](auto&& s, auto&& /*v*/) {
                 // axan #29: the process is gone, so its working/blocked OSC 7501 records
                 // are stale (spec: drop them on process exit). done/error stay.
+                // axan #30: likewise a shell that exited mid-command (133;C with no
+                // 133;D) will never end that command, so clear the running flag.
                 if (s.State() >= TerminalConnection::ConnectionState::Closed)
                 {
                     _connectionEnded.store(true, std::memory_order_relaxed);
                     {
                         const auto lock = _terminal->LockForWriting();
                         _terminal->ProgramStatusDropLive("connection-closed");
+                        _terminal->ShellCommandEnded("connection-closed");
                     }
                     _raiseProgramStatusChangedIfPending();
+                    _raiseShellCommandChangedIfPending();
                 }
                 ConnectionStateChanged.raise(*this, nullptr);
             });
@@ -372,6 +376,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             _terminal->HardResetWithoutErase();
         }
         _raiseProgramStatusChangedIfPending(); // axan #29: the reset clears OSC 7501 records
+        _raiseShellCommandChangedIfPending(); // axan #30: and the shell-running flag
     }
 
     bool ControlCore::Initialize(const float actualWidth,
@@ -2249,6 +2254,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
                 if (_connectionEnded.load(std::memory_order_relaxed))
                 {
                     _terminal->ProgramStatusDropLive("output-after-close");
+                    _terminal->ShellCommandEnded("output-after-close");
                 }
             }
 
@@ -2259,10 +2265,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             }
 
             _raiseProgramStatusChangedIfPending(); // axan #29: outside the lock
-            if (_shellCommandChangedPending.exchange(false, std::memory_order_relaxed)) // axan #30
-            {
-                ShellCommandChanged.raise(*this, nullptr);
-            }
+            _raiseShellCommandChangedIfPending(); // axan #30
 
             // Start the throttled update of where our hyperlinks are.
             const auto shared = _shared.lock_shared();
@@ -2741,6 +2744,14 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         if (_programStatusChangedPending.exchange(false, std::memory_order_relaxed))
         {
             ProgramStatusChanged.raise(*this, nullptr);
+        }
+    }
+
+    void ControlCore::_raiseShellCommandChangedIfPending()
+    {
+        if (_shellCommandChangedPending.exchange(false, std::memory_order_relaxed))
+        {
+            ShellCommandChanged.raise(*this, nullptr);
         }
     }
 

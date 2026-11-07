@@ -59,8 +59,11 @@ if ((Test-Path function:PSConsoleHostReadLine) -and -not (Test-Path variable:glo
     $global:__axanOriginalReadLine = $function:PSConsoleHostReadLine
     function global:PSConsoleHostReadLine {
         $line = & $global:__axanOriginalReadLine
-        $global:__axanCommandRan = $true
-        [Console]::Write("$([char]27)]133;C$([char]27)\")
+        # An empty/whitespace line runs nothing, so it isn't a command (no C, no D).
+        if (-not [string]::IsNullOrWhiteSpace($line)) {
+            $global:__axanCommandRan = $true
+            [Console]::Write("$([char]27)]133;C$([char]27)\")
+        }
         $line
     }
 }

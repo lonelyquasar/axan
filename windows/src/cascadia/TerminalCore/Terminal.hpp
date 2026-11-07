@@ -297,6 +297,9 @@ public:
     // (finished) or A (prompt). The callback runs under the write lock, like the 7501 one.
     bool IsShellCommandRunning() const noexcept;
     void SetShellCommandChangedCallback(std::function<void()> pfn) noexcept;
+    // Force the running flag off when no D/A will ever arrive (connection closed, RIS).
+    // Caller holds the write lock. Fires the changed callback if the flag was set.
+    void ShellCommandEnded(std::string_view reason);
 
     // axan M11: public accessor for the alt-screen-buffer state, so the input-safety
     // guard can exclude full-screen TUI apps (vim/less/htop). Caller must hold the lock.
