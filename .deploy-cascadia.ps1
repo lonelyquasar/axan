@@ -20,15 +20,37 @@ param([switch]$Rebuild, [switch]$Launch)
 # this script's own console is hosted by axan (a Claude Code session or a plain shell in an
 # axan tab), that kill takes the script down with it: the build never starts and the
 # driving session dies mid-turn. Happened 2026-09-17. Walk the parent chain and bail early.
-$ancestor = Get-CimInstance Win32_Process -Filter "ProcessId=$PID"
-while ($ancestor) {
-  if ($ancestor.Name -match '^axan(-cli)?\.exe$') {
-    Write-Error ("refusing to deploy: this shell is hosted by {0} (pid {1}). Deploying kills every axan " +
-      "instance, including the one running this script. Run the deploy from stock Windows Terminal " +
-      "or another non-axan console.") -f $ancestor.Name, $ancestor.ProcessId
-    exit 3
+#
+# One Win32_Process query, then the walk runs over a PID map. A visited set and a 64-hop
+# cap bound it: ParentProcessId is never cleared when a parent exits, so PID reuse can
+# form a cycle. A "parent" created after its child is such a reused PID, not a real
+# ancestor, so the walk stops there instead of following an unrelated process.
+function Find-AxanAncestor([int]$StartPid) {
+  $procs = @{}
+  foreach ($p in Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, CreationDate) {
+    $procs[[int]$p.ProcessId] = $p
   }
-  $ancestor = if ($ancestor.ParentProcessId) { Get-CimInstance Win32_Process -Filter "ProcessId=$($ancestor.ParentProcessId)" } else { $null }
+  $visited = @{}
+  $id = $StartPid
+  $child = $null
+  for ($hop = 0; $hop -lt 64; $hop++) {
+    if (-not $id -or $visited.ContainsKey($id) -or -not $procs.ContainsKey($id)) { break }
+    $p = $procs[$id]
+    if ($child -and $p.CreationDate -and $child.CreationDate -and $p.CreationDate -gt $child.CreationDate) { break }
+    if ($p.Name -match '^axan(-cli)?\.exe$') { return $p }
+    $visited[$id] = $true
+    $child = $p
+    $id = [int]$p.ParentProcessId
+  }
+  return $null
+}
+
+$ancestor = Find-AxanAncestor $PID
+if ($ancestor) {
+  Write-Error (("refusing to deploy: this shell is hosted by {0} (pid {1}). Deploying kills every axan " +
+    "instance, including the one running this script. Run the deploy from stock Windows Terminal " +
+    "or another non-axan console.") -f $ancestor.Name, $ancestor.ProcessId)
+  exit 3
 }
 
 $root = Join-Path $PSScriptRoot 'windows'

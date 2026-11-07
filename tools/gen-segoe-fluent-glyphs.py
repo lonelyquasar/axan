@@ -16,7 +16,9 @@ adding it to EXTRA_KEYS below rather than letting it drop out.
 Usage (from the repo root, no arguments):
     python tools/gen-segoe-fluent-glyphs.py
 The script fails on a duplicate key or codepoint. Output is LF, sorted by key (the lookup
-binary-searches it, and alphabetical is the picker's browse order).
+binary-searches it, and alphabetical is the picker's browse order). A display name must be
+plain ASCII (it is written verbatim into a C++ literal); anything else is reported as an
+unusable name.
 """
 
 import pathlib
@@ -48,7 +50,9 @@ def main() -> int:
     for hexcp, name in pairs:
         cp = int(hexcp, 16)
         key = key_of(name)
-        if not key or not key.isascii():
+        # The key is ASCII by construction; the display name is emitted verbatim into a
+        # C++ wide literal, so keep it plain ASCII with no escape character.
+        if not key or not name.isascii() or "\\" in name:
             print(f"unusable name {name!r}", file=sys.stderr)
             return 1
         if key in seen_keys:
@@ -96,7 +100,7 @@ def main() -> int:
     out.append("    } };")
     out.append("}")
     out.append("")
-    OUTPUT.write_bytes("\n".join(out).encode("ascii"))
+    OUTPUT.write_bytes("\n".join(out).encode("utf-8"))
     print(f"wrote {len(rows)} glyphs to {OUTPUT.relative_to(ROOT)}")
     return 0
 
