@@ -40,8 +40,9 @@
 
         <!--
             axan: sidebar row sizes. Inline spin buttons (the Compact hover popout is not
-            wanted). Text 8-32, icons 8-48. A non-Segoe-Fluent glyph (hieroglyph, rune) also
-            gets its per-font scale (src/inc/AxanGlyphScale.h) on top of the icon size.
+            wanted). Text 8-32, icons 8-48. A one-character icon also gets its font family's
+            scale (sidebar.iconFontScale over src/inc/AxanGlyphScale.h) on top of the icon
+            size; the Icon fonts rows below set it.
         -->
         <TextBlock x:Uid="Sidebar_TextAndIconsHeader"
                    Style="{StaticResource TextBlockSubHeaderStyle}" />
@@ -80,6 +81,17 @@
                             SpinButtonPlacementMode="Inline"
                             Style="{StaticResource NumberBoxSettingStyle}"
                             Value="{x:Bind ViewModel.SidebarStateGlyphSize, Mode=TwoWay}" />
+        </local:SettingContainer>
+        <!--
+            axan: sidebar.iconFontScale. One row per font family the sidebar's icons come
+            from (name, an inline 0.5-3 spin box, Reset when it differs from the default),
+            built in code-behind (Sidebar::_BuildIconFontRows).
+        -->
+        <local:SettingContainer x:Uid="Globals_SidebarIconFontScale"
+                                StartExpanded="True"
+                                Style="{StaticResource ExpanderSettingContainerStyle}">
+            <StackPanel x:Name="IconFontsPanel"
+                        Spacing="8" />
         </local:SettingContainer>
 
         <TextBlock x:Uid="Sidebar_SessionStateHeader"

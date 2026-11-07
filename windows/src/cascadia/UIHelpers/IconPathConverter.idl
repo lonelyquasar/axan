@@ -8,6 +8,10 @@ namespace Microsoft.Terminal.UI
         static Windows.UI.Xaml.Controls.IconElement IconWUX(String path);
         static Windows.UI.Xaml.Controls.IconSource IconSourceWUX(String path);
         static Microsoft.UI.Xaml.Controls.IconSource IconSourceMUX(String path, Boolean convertToGrayscale);
+        // axan: sidebar.iconFontScale (font family -> multiplier for one-character icons,
+        // over the built-in table in src/inc/AxanGlyphScale.h). Process-wide; null clears it.
+        // Icons already rendered keep their size until they are rebuilt.
+        static void SetIconFontScales(Windows.Foundation.Collections.IMap<String, Double> scales);
     };
 
 }

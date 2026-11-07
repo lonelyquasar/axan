@@ -71,8 +71,22 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarIconSize);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateGlyphSize);
 
+        // axan: sidebar.iconFontScale (see the idl)
+        winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> SidebarIconFontFamilies() const;
+        double SidebarIconFontScale(const winrt::hstring& family) const;
+        double SidebarIconFontScaleDefault(const winrt::hstring& family) const;
+        bool IsSidebarIconFontScaleSet(const winrt::hstring& family) const;
+        void SetSidebarIconFontScale(const winrt::hstring& family, double value);
+        void ResetSidebarIconFontScale(const winrt::hstring& family);
+        // Not projected: icon strings in use outside the globals (the live sidebar's icon
+        // overrides, every profile's icon), whose families the list also shows. MainPage sets
+        // it before navigating.
+        void ExtraIconSources(std::vector<winrt::hstring> icons) { _extraIconSources = std::move(icons); }
+
     private:
         Model::GlobalAppSettings _GlobalSettings;
+        std::vector<winrt::hstring> _extraIconSources;
+        void _StoreIconFontScales(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>& map);
 
         // sidebar.stateGlyphs helpers. nullopt = the key is absent (default glyph).
         std::optional<std::wstring> _StateGlyphConfigured(std::wstring_view key) const;

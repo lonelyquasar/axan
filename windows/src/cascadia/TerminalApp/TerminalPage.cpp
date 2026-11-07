@@ -295,6 +295,10 @@ namespace winrt::TerminalApp::implementation
             p.SetActionMap(_settings.ActionMap());
         }
 
+        // axan: sidebar.iconFontScale, on first load and every reload, before anything
+        // renders an icon with the new settings.
+        _ApplyIconFontScales();
+
         if (needRefreshUI)
         {
             _RefreshUIForSettingsReload();

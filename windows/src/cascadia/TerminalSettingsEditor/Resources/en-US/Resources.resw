@@ -928,6 +928,22 @@
     <value>Size of the status glyph at the right edge of a session's row. Default 12.</value>
     <comment>axan: A description for the "status glyph size" setting. Presented near "Globals_SidebarStateGlyphSize.Header".</comment>
   </data>
+  <data name="Globals_SidebarIconFontScale.Header" xml:space="preserve">
+    <value>Icon fonts</value>
+    <comment>axan: Header for a list of font families, each with a number box: how big each font's glyphs draw as sidebar icons.</comment>
+  </data>
+  <data name="Globals_SidebarIconFontScale.HelpText" xml:space="preserve">
+    <value>Fonts the sidebar's icons are drawn from. 1.00 is the icon size above; raise a family whose glyphs come in small.</value>
+    <comment>axan: A description for the "icon fonts" setting. Presented near "Globals_SidebarIconFontScale.Header".</comment>
+  </data>
+  <data name="Globals_SidebarIconFontScaleReset" xml:space="preserve">
+    <value>Reset</value>
+    <comment>axan: Button beside a font family's number box that puts the family's icon scale back to its default.</comment>
+  </data>
+  <data name="Globals_SidebarIconFontScaleResetName" xml:space="preserve">
+    <value>Reset {0}</value>
+    <comment>axan: Accessible name of the reset button for a font family's icon scale. {0} is the font family name, e.g. "Segoe UI Historic".</comment>
+  </data>
   <data name="Sidebar_GlyphsHeader.Text" xml:space="preserve">
     <value>Status glyphs</value>
     <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page. The right-edge icons a sidebar row shows for its session's state.</comment>

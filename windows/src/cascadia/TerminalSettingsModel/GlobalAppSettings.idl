@@ -110,6 +110,10 @@ namespace Microsoft.Terminal.Settings.Model
         INHERITABLE_SETTING(Double, SidebarStateLineFontSize);
         INHERITABLE_SETTING(Double, SidebarIconSize);
         INHERITABLE_SETTING(Double, SidebarStateGlyphSize);
+        // axan: per-font-family icon scale, { "Segoe UI Historic": 1.5 }. A family missing
+        // from the map keeps its built-in multiplier (src/inc/AxanGlyphScale.h kFonts); values
+        // are clamped to 0.5-3 when read. Unset by default.
+        INHERITABLE_SETTING(Windows.Foundation.Collections.IMap<String COMMA Double>, SidebarIconFontScale);
         INHERITABLE_SETTING(Boolean, ShowTabsInTitlebar);
         INHERITABLE_SETTING(String, WordDelimiters);
         INHERITABLE_SETTING(Boolean, CopyOnSelect);

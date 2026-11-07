@@ -81,8 +81,15 @@ All notable changes to axan are documented here.
   (`sidebar.labelFontSize`, default 14), the status line and state word
   (`sidebar.stateLineFontSize`, 11), the session icon (`sidebar.iconSize`, 16)
   and the right-edge status glyph (`sidebar.stateGlyphSize`, 12). Windows only.
-- Egyptian hieroglyphs and runes used as icons are drawn larger, so they match
-  emoji and Segoe Fluent glyphs instead of looking undersized. Windows only.
+- Egyptian hieroglyphs, runes and the other historic scripts used as icons are
+  drawn larger, so they match emoji and Segoe Fluent glyphs instead of looking
+  undersized. Windows only.
+- The Sidebar page's "Text and icons" group lists the fonts the sidebar's icons
+  are drawn from under "Icon fonts", each with a size factor (0.5–3) and a
+  Reset button. The list covers the built-in fonts, the startup entries', live
+  sessions' and profiles' icons, and any font already set; it writes
+  `sidebar.iconFontScale`, e.g. `{ "Segoe UI Historic": 1.5 }`. Segoe UI
+  Historic defaults to 1.35, every other font to 1.0. Windows only.
 - A session's right-click menu has a "Preview state" submenu that shows the row
   as if it were in any state (needs answer, done, error, ...), for checking how
   sizes and glyphs look. It is purely visual, marked "Preview" in the tooltip,

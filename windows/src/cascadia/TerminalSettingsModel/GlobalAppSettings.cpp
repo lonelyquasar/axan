@@ -115,6 +115,16 @@ winrt::com_ptr<GlobalAppSettings> GlobalAppSettings::Copy() const
         }
         globals->_SidebarStateGlyphs = glyphs;
     }
+    // axan: sidebar.iconFontScale is a map too.
+    if (_SidebarIconFontScale && *_SidebarIconFontScale)
+    {
+        auto scales = winrt::single_threaded_map<winrt::hstring, double>();
+        for (const auto& kv : *_SidebarIconFontScale)
+        {
+            scales.Insert(kv.Key(), kv.Value());
+        }
+        globals->_SidebarIconFontScale = scales;
+    }
     // axan #34: sidebar.hoistStates is a vector; copy it so a settings clone never shares it.
     if (_SidebarHoistStates && *_SidebarHoistStates)
     {

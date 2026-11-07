@@ -254,6 +254,8 @@ namespace winrt::TerminalApp::implementation
         double IconSize() const noexcept { return _iconSize; }
         // Returns true if any size changed (and raised what depends on it).
         bool SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize);
+        // Re-raise Icon and StateGlyphIcon so both are rebuilt (sidebar.iconFontScale changed).
+        void RefreshIcons();
         double RowOpacity() const noexcept { return _idleEffect(Axan::IdleEffects::kDim) ? 0.55 : 1.0; }
         double RowMinHeight() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? std::round(_rowHeightPx * 0.75) : _rowHeightPx; }
         // Returns true if the mask changed.

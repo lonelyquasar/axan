@@ -35,6 +35,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     private:
         void _BuildHoistStateBoxes();
         void _BuildIdleEffectBoxes();
+        void _BuildIconFontRows();
         safe_void_coroutine _PickStateGlyphImage(winrt::hstring key, winrt::weak_ref<winrt::Windows::UI::Xaml::Controls::Flyout> weakFlyout);
     };
 }

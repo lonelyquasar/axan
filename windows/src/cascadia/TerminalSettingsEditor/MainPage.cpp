@@ -488,7 +488,34 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         else if (clickedItemTag == sidebarTag)
         {
             // axan #38: the sidebar.* globals, moved here from Appearance.
-            contentFrame().Navigate(xaml_typename<Editor::Sidebar>(), winrt::make<SidebarViewModel>(_settingsClone.GlobalSettings()));
+            // axan: the Icon fonts list also shows the families of icons in use outside the
+            // globals: the live sidebar's icon overrides (through the same provider "Save
+            // current as startup" uses) and every profile's icon.
+            auto sidebarVM = winrt::make_self<SidebarViewModel>(_settingsClone.GlobalSettings());
+            std::vector<winrt::hstring> icons;
+            if (_liveStartupEntriesProvider)
+            {
+                try
+                {
+                    if (const auto live = _liveStartupEntriesProvider())
+                    {
+                        for (const auto& entry : live)
+                        {
+                            icons.emplace_back(entry.Icon());
+                        }
+                    }
+                }
+                CATCH_LOG();
+            }
+            for (const auto& profile : _settingsClone.AllProfiles())
+            {
+                if (const auto icon = profile.Icon())
+                {
+                    icons.emplace_back(icon.Path());
+                }
+            }
+            sidebarVM->ExtraIconSources(std::move(icons));
+            contentFrame().Navigate(xaml_typename<Editor::Sidebar>(), *sidebarVM);
             const auto crumb = winrt::make<Breadcrumb>(box_value(clickedItemTag), RS_(L"Nav_Sidebar/Content"), BreadcrumbSubPage::None);
             _breadcrumbs.Append(crumb);
         }

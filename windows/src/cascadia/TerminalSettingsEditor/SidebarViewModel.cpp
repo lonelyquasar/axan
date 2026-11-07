@@ -12,6 +12,9 @@
 #include <AxanStateGlyphs.h> // sidebar.stateGlyphs keys / defaults / resolution
 #include <AxanHoistRule.h> // axan #34: sidebar.hoistStates
 #include <AxanIdleEffects.h> // axan: sidebar.idleEffects
+#include <AxanGlyphScale.h> // axan: sidebar.iconFontScale defaults, icon -> font family
+
+#include <set>
 
 using namespace winrt;
 using namespace winrt::Windows::UI::Xaml;
@@ -296,6 +299,137 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         bool mapped = false;
         map.Insert(key, winrt::hstring{ Axan::IconRegistry::NativeToPortable(nativeIcon, mapped) });
         _StoreStateGlyphs(map);
+    }
+
+    // ---- axan: sidebar.iconFontScale ----
+
+    IVectorView<winrt::hstring> SidebarViewModel::SidebarIconFontFamilies() const
+    {
+        std::vector<winrt::hstring> builtIn;
+        for (const auto& f : Axan::GlyphScale::kFonts)
+        {
+            builtIn.emplace_back(f.font);
+        }
+        std::sort(builtIn.begin(), builtIn.end());
+        std::set<std::wstring> others;
+        const auto addIcon = [&](const winrt::hstring& icon) {
+            if (auto family = Axan::GlyphScale::FamilyForIcon(icon); !family.empty())
+            {
+                others.emplace(std::move(family));
+            }
+        };
+        if (const auto map = _GlobalSettings.SidebarIconFontScale())
+        {
+            for (const auto& kv : map)
+            {
+                if (!kv.Key().empty())
+                {
+                    others.emplace(kv.Key().c_str());
+                }
+            }
+        }
+        if (const auto entries = _GlobalSettings.StartupSessions())
+        {
+            for (const auto& entry : entries)
+            {
+                addIcon(entry.Icon());
+            }
+        }
+        for (const auto& icon : _extraIconSources)
+        {
+            addIcon(icon);
+        }
+        auto families = single_threaded_vector<winrt::hstring>(std::move(builtIn));
+        for (const auto& family : others)
+        {
+            if (std::none_of(Axan::GlyphScale::kFonts.begin(), Axan::GlyphScale::kFonts.end(), [&](const auto& f) { return f.font == family; }))
+            {
+                families.Append(winrt::hstring{ family });
+            }
+        }
+        return families.GetView();
+    }
+
+    double SidebarViewModel::SidebarIconFontScaleDefault(const winrt::hstring& family) const
+    {
+        return Axan::GlyphScale::FontScaleFor(family);
+    }
+
+    bool SidebarViewModel::IsSidebarIconFontScaleSet(const winrt::hstring& family) const
+    {
+        const auto map = _GlobalSettings.SidebarIconFontScale();
+        return map && map.HasKey(family);
+    }
+
+    double SidebarViewModel::SidebarIconFontScale(const winrt::hstring& family) const
+    {
+        const auto map = _GlobalSettings.SidebarIconFontScale();
+        return Axan::GlyphScale::FontScaleFor(family, [&](std::wstring_view) -> std::optional<double> {
+            if (map && map.HasKey(family))
+            {
+                return map.Lookup(family);
+            }
+            return std::nullopt;
+        });
+    }
+
+    // Always a fresh map, for the same reason as _copyStateGlyphs.
+    static IMap<winrt::hstring, double> _copyIconFontScales(const IMap<winrt::hstring, double>& source)
+    {
+        auto copy = single_threaded_map<winrt::hstring, double>();
+        if (source)
+        {
+            for (const auto& kv : source)
+            {
+                copy.Insert(kv.Key(), kv.Value());
+            }
+        }
+        return copy;
+    }
+
+    void SidebarViewModel::_StoreIconFontScales(const IMap<winrt::hstring, double>& map)
+    {
+        if (map.Size() == 0)
+        {
+            _GlobalSettings.ClearSidebarIconFontScale();
+        }
+        else
+        {
+            _GlobalSettings.SidebarIconFontScale(map);
+        }
+    }
+
+    void SidebarViewModel::SetSidebarIconFontScale(const winrt::hstring& family, double value)
+    {
+        if (family.empty() || !(value == value))
+        {
+            return;
+        }
+        auto map = _copyIconFontScales(_GlobalSettings.SidebarIconFontScale());
+        const auto clamped = Axan::GlyphScale::ClampScale(value);
+        // The built-in value is stored as "no override", so the map only lists real changes.
+        if (std::abs(clamped - Axan::GlyphScale::FontScaleFor(family)) < 1e-9)
+        {
+            if (map.HasKey(family))
+            {
+                map.Remove(family);
+            }
+        }
+        else
+        {
+            map.Insert(family, clamped);
+        }
+        _StoreIconFontScales(map);
+    }
+
+    void SidebarViewModel::ResetSidebarIconFontScale(const winrt::hstring& family)
+    {
+        auto map = _copyIconFontScales(_GlobalSettings.SidebarIconFontScale());
+        if (map.HasKey(family))
+        {
+            map.Remove(family);
+        }
+        _StoreIconFontScales(map);
     }
 
     void SidebarViewModel::ResetSidebarStateGlyph(const winrt::hstring& key)

@@ -3426,6 +3426,44 @@ namespace winrt::TerminalApp::implementation
         });
     }
 
+    // axan: sidebar.iconFontScale. IconPathConverter keeps one process-wide copy (every
+    // window's icons, the Settings UI's previews included, render through it); each page
+    // tracks what it last applied so every window rebuilds its own node icons after a change,
+    // whichever window's reload pushed the new map first. Icons are only rebuilt on a change.
+    void TerminalPage::_ApplyIconFontScales()
+    {
+        std::map<std::wstring, double> next;
+        winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double> map{ nullptr };
+        if (_settings)
+        {
+            map = _settings.GlobalSettings().SidebarIconFontScale();
+        }
+        if (map)
+        {
+            for (const auto& kv : map)
+            {
+                next.emplace(kv.Key().c_str(), kv.Value());
+            }
+        }
+        if (_appliedIconFontScales && *_appliedIconFontScales == next)
+        {
+            return;
+        }
+        const bool firstApply = !_appliedIconFontScales;
+        winrt::Microsoft::Terminal::UI::IconPathConverter::SetIconFontScales(map);
+        _appliedIconFontScales = std::move(next);
+        Axan::Log::Debug("TerminalPage", "icon font scales applied", { { "families", std::to_string(_appliedIconFontScales->size()) } });
+        if (!firstApply && SessionTree())
+        {
+            _forEachSessionNode(SessionTree().RootNodes(), [&](const MUX::Controls::TreeViewNode& node) {
+                if (const auto vm = _nodeVM(node))
+                {
+                    vm->RefreshIcons();
+                }
+            });
+        }
+    }
+
     void TerminalPage::_AcknowledgeFocusedNode(const char* reason)
     {
         if (const auto tab = _GetFocusedTab())

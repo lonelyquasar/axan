@@ -18,6 +18,8 @@ Author(s):
 // axan: a string -> string map setting type (sidebar.stateGlyphs). An alias because a
 // template argument list's comma would split the X-macro's arguments.
 using IAxanStringMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring>;
+// axan: a string -> number map (sidebar.iconFontScale), aliased for the same reason.
+using IAxanDoubleMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>;
 
 // Macro format (defaultArgs are optional):
 // (type, name, jsonKey, defaultArgs)
@@ -59,6 +61,7 @@ using IAxanStringMap = winrt::Windows::Foundation::Collections::IMap<winrt::hstr
     X(double, SidebarStateLineFontSize, "sidebar.stateLineFontSize", 11.0)                                                                                                                          \
     X(double, SidebarIconSize, "sidebar.iconSize", 16.0)                                                                                                                                            \
     X(double, SidebarStateGlyphSize, "sidebar.stateGlyphSize", 12.0)                                                                                                                                \
+    X(IAxanDoubleMap, SidebarIconFontScale, "sidebar.iconFontScale", nullptr)                                                                                                                       \
     X(bool, ShowTabsInTitlebar, "showTabsInTitlebar", true)                                                                                                                                           \
     X(bool, InputServiceWarning, "warning.inputService", true)                                                                                                                                        \
     X(winrt::Microsoft::Terminal::Control::CopyFormat, CopyFormatting, "copyFormatting", 0)                                                                                                           \

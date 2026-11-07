@@ -230,6 +230,14 @@ namespace winrt::TerminalApp::implementation
         return changed;
     }
 
+    void SessionNodeViewModel::RefreshIcons()
+    {
+        for (const auto name : { L"Icon", L"StateGlyphIcon" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+    }
+
     // Multiply a glyph icon's font size (an IconWUX IconSourceElement over a FontIconSource,
     // whose size already carries the AxanGlyphScale per-font factor). False for an image.
     static bool _scaleGlyphIcon(const winrt::Windows::UI::Xaml::Controls::IconElement& icon, double factor)

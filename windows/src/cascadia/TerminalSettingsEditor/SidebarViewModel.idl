@@ -72,5 +72,18 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarStateLineFontSize);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarIconSize);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarStateGlyphSize);
+
+        // axan: sidebar.iconFontScale, font family -> multiplier for one-character icons
+        // (src/inc/AxanGlyphScale.h). Families: the built-in table's families, then (each
+        // part sorted) those in the user's map and those the startup entries', live sessions'
+        // and profiles' icons are drawn from. Scale = the effective value, Default = the
+        // built-in one. Set writes the map (the default value removes the key); Reset
+        // removes the key.
+        Windows.Foundation.Collections.IVectorView<String> SidebarIconFontFamilies { get; };
+        Double SidebarIconFontScale(String family);
+        Double SidebarIconFontScaleDefault(String family);
+        Boolean IsSidebarIconFontScaleSet(String family);
+        void SetSidebarIconFontScale(String family, Double value);
+        void ResetSidebarIconFontScale(String family);
     }
 }

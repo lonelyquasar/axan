@@ -166,7 +166,7 @@ Common guesses that do **not** exist: `rocket`, `database`, `server`, `terminal`
 
 **Segoe UI Symbol** (`seguisym.ttf`; [Microsoft docs](https://learn.microsoft.com/en-us/typography/font-list/segoe-ui-symbol)). Monochrome symbols. Characters found only here take the tint: ⌘ U+2318, ⎇ U+2387 (alternative key, a branch-like mark), ★ U+2605, ♔ U+2654, ♞ U+265E, 𝄞 U+1D11E, ䷀ U+4DC0 (I Ching hexagrams U+4DC0–4DFF), 🜁 U+1F701 (alchemical symbols U+1F700–1F77F). Braille (U+2800–28FF), musical symbols (U+1D100–1D1FF), mahjong, domino and playing-card blocks (U+1F000–1F0FF) and Deseret (U+10400–1044F) are here too. Characters also in Segoe UI Emoji, such as ⚙ U+2699 or ⚡ U+26A1, may come out in colour; check them after import.
 
-**Segoe UI Historic** (`seguihis.ttf`; [Microsoft docs](https://learn.microsoft.com/en-us/typography/font-list/segoe-ui-historic), which lists the scripts by tag). Monochrome, takes the tint. Runes and hieroglyphs are scaled up 1.35× by axan to match other icons; the other scripts draw at normal size and may look small.
+**Segoe UI Historic** (`seguihis.ttf`; [Microsoft docs](https://learn.microsoft.com/en-us/typography/font-list/segoe-ui-historic), which lists the scripts by tag). Monochrome, takes the tint. Its glyphs sit small in the em, so axan draws every script below, and the ones listed after the table, 1.35× larger by default to match other icons. **Settings → Sidebar → Icon fonts** adjusts that factor, and the size of every other font the sidebar's icons come from (`sidebar.iconFontScale` in `settings.json`).
 
 | Block | Range | Examples |
 |---|---|---|
@@ -183,7 +183,7 @@ Common guesses that do **not** exist: `rocket`, `database`, `server`, `terminal`
 | Old South Arabian | U+10A60–10A7F | 𐩠 U+10A60 he |
 | Shavian | U+10450–1047F | 𐑐 U+10450 peep |
 
-The font also covers Syriac, Lycian, Carian, Lydian, Cypriot, Imperial Aramaic, Meroitic Cursive, Kharoshthi, Inscriptional Parthian and Pahlavi, Old Turkic and Brahmi.
+The font also covers Syriac, Lycian, Carian, Lydian, Cypriot, Imperial Aramaic, Meroitic Cursive, Kharoshthi, Inscriptional Parthian and Pahlavi, Old Turkic and Brahmi. All of these except Syriac get the Segoe UI Historic factor; Syriac is a living script with other fonts of its own and draws at normal size.
 
 **Avoid Linear B** (U+10000–100FF). It is not in any of the Segoe fonts. On the checked machine only `SansSerifCollection.ttf` covered it, which has not been tested with axan.
 

@@ -10,7 +10,9 @@
 #include <AxanGlyphScale.h> // axan: per-font size multiplier (hieroglyphs, runes)
 #include <AxanLog.h> // axan #44: warn once per unknown glyph name
 
+#include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 
 #include <Shlobj.h>
@@ -147,6 +149,41 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         Axan::Log::Warn("IconPathConverter", "unknown glyph name; rendering the placeholder (see AxanSegoeFluentGlyphs.h for valid names)", { { "icon", winrt::to_string(icon) } });
     }
 
+    // axan: sidebar.iconFontScale, the user's per-font-family multipliers (AxanGlyphScale.h
+    // keeps the built-in ones). The app sets it on every settings load; every window's UI
+    // thread reads it on each glyph render, hence the lock. A family absent here keeps its
+    // built-in scale.
+    static std::mutex s_fontScaleLock;
+    static std::map<std::wstring, double, std::less<>> s_fontScales;
+
+    void IconPathConverter::SetIconFontScales(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>& scales)
+    {
+        std::map<std::wstring, double, std::less<>> next;
+        if (scales)
+        {
+            for (const auto& kv : scales)
+            {
+                next.emplace(kv.Key().c_str(), kv.Value());
+            }
+        }
+        const std::lock_guard guard{ s_fontScaleLock };
+        s_fontScales.swap(next);
+    }
+
+    // The FontIcon size multiplier for a glyph: the user's value for the font it is drawn
+    // from (clamped), else the built-in one.
+    static double _glyphScale(std::wstring_view glyph)
+    {
+        const std::lock_guard guard{ s_fontScaleLock };
+        return Axan::GlyphScale::ScaleFor(glyph, [](std::wstring_view font) -> std::optional<double> {
+            if (const auto it = s_fontScales.find(font); it != s_fontScales.end())
+            {
+                return it->second;
+            }
+            return std::nullopt;
+        });
+    }
+
     template<typename TIconSource>
     TIconSource _getIconSource(const winrt::hstring& rawIconPath, bool monochrome)
     {
@@ -189,9 +226,10 @@ namespace winrt::Microsoft::Terminal::UI::implementation
                         icon.FontFamily(winrt::Windows::UI::Xaml::Media::FontFamily{ L"Segoe UI" });
                     }
                     // axan: a glyph whose fallback font draws it small (Segoe UI
-                    // Historic's hieroglyphs and runes) is scaled up to match the rest;
-                    // 1.0 for everything else. See src/inc/AxanGlyphScale.h.
-                    icon.FontSize(12 * Axan::GlyphScale::ScaleFor(iconPath));
+                    // Historic's hieroglyphs and runes) is scaled up to match the rest,
+                    // per font family; sidebar.iconFontScale overrides the built-in
+                    // factors. See src/inc/AxanGlyphScale.h.
+                    icon.FontSize(12 * _glyphScale(iconPath));
                     icon.Glyph(iconPath);
                     iconSource = icon;
                 }

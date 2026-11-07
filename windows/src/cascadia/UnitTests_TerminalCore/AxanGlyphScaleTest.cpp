@@ -9,6 +9,9 @@
 
 #include <AxanGlyphScale.h>
 
+#include <limits>
+#include <optional>
+
 using namespace WEX::Logging;
 namespace S = Axan::GlyphScale;
 
@@ -36,6 +39,11 @@ namespace TerminalCoreUnitTests
             Log::Comment(L"U+16A0 RUNIC LETTER FEHU and U+16FF, the end of the block");
             VERIFY_ARE_EQUAL(S::ScaleFor(L"\x16A0"), historic);
             VERIFY_ARE_EQUAL(S::ScaleFor(L"\x16FF"), historic);
+            Log::Comment(L"The other Segoe UI Historic scripts: U+1681 OGHAM BEITH, U+2C00 GLAGOLITIC AZU, U+1202D CUNEIFORM DINGIR, U+10330 GOTHIC AHSA");
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\x1681"), historic);
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\x2C00"), historic);
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\xD808\xDC2D"), historic);
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\xD800\xDF30"), historic);
         }
 
         TEST_METHOD(EverythingElseIsOne)
@@ -46,11 +54,77 @@ namespace TerminalCoreUnitTests
             VERIFY_ARE_EQUAL(S::ScaleFor(L"C:\\icons\\x.png"), 1.0);
             Log::Comment(L"A Segoe Fluent private-use glyph");
             VERIFY_ARE_EQUAL(S::ScaleFor(L"\xE99A"), 1.0);
+            VERIFY_ARE_EQUAL(std::wstring{ S::FontForGlyph(L"\xE99A") }, std::wstring{ L"Segoe Fluent Icons" });
             Log::Comment(L"U+1F680 ROCKET, an emoji");
             VERIFY_ARE_EQUAL(S::ScaleFor(L"\xD83D\xDE80"), 1.0);
-            Log::Comment(L"Just outside the Runic block");
-            VERIFY_ARE_EQUAL(S::ScaleFor(L"\x169F"), 1.0);
+            Log::Comment(L"Just outside the Ogham + Runic run (U+1680-16FF)");
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\x167F"), 1.0);
             VERIFY_ARE_EQUAL(S::ScaleFor(L"\x1700"), 1.0);
+        }
+
+        TEST_METHOD(OverridesWinAndAreClamped)
+        {
+            // A lookup standing in for sidebar.iconFontScale.
+            const auto lookup = [](std::wstring_view font) -> std::optional<double> {
+                if (font == L"Segoe UI Historic")
+                {
+                    return 1.5;
+                }
+                if (font == L"Segoe UI Emoji")
+                {
+                    return 0.1; // below the floor
+                }
+                if (font == L"Segoe Fluent Icons")
+                {
+                    return 9.0; // above the ceiling
+                }
+                if (font == L"Segoe UI")
+                {
+                    return std::numeric_limits<double>::quiet_NaN();
+                }
+                return std::nullopt;
+            };
+            Log::Comment(L"A user value replaces the built-in one");
+            VERIFY_ARE_EQUAL(S::FontScaleFor(L"Segoe UI Historic", lookup), 1.5);
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\xD80C\xDDA3", lookup), 1.5);
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\x16A0", lookup), 1.5);
+            Log::Comment(L"Out-of-range values clamp to [0.5, 3]; NaN reads as 1");
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\xD83D\xDE80", lookup), S::kMinScale);
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\xE99A", lookup), S::kMaxScale);
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"a", lookup), 1.0);
+            Log::Comment(L"No user value: the built-in table");
+            const auto none = [](std::wstring_view) -> std::optional<double> { return std::nullopt; };
+            VERIFY_ARE_EQUAL(S::ScaleFor(L"\xD80C\xDDA3", none), 1.35);
+            VERIFY_ARE_EQUAL(S::FontScaleFor(L"No Such Font", none), 1.0);
+            VERIFY_ARE_EQUAL(S::ClampScale(0.5), 0.5);
+            VERIFY_ARE_EQUAL(S::ClampScale(3.0), 3.0);
+            VERIFY_ARE_EQUAL(S::ClampScale(1.25), 1.25);
+        }
+
+        TEST_METHOD(FamilyForIcon)
+        {
+            Log::Comment(L"Glyph names, builtin aliases and private-use glyphs: Segoe Fluent Icons");
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"robot"), std::wstring{ L"Segoe Fluent Icons" });
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"git"), std::wstring{ L"Segoe Fluent Icons" });
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\xE756"), std::wstring{ L"Segoe Fluent Icons" });
+            Log::Comment(L"Emoji, with and without a presentation selector or joiners");
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\xD83D\xDE80"), std::wstring{ L"Segoe UI Emoji" });
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\x2764\xFE0F"), std::wstring{ L"Segoe UI Emoji" });
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\x2122\xFE0F"), std::wstring{ L"Segoe UI Emoji" });
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\xD83D\xDC68\x200D\xD83D\xDCBB"), std::wstring{ L"Segoe UI Emoji" });
+            Log::Comment(L"Hieroglyphs (literal and as code-point text) and runes: Segoe UI Historic");
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\xD80C\xDDA3"), std::wstring{ L"Segoe UI Historic" });
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"U+131A3"), std::wstring{ L"Segoe UI Historic" });
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\x16A0"), std::wstring{ L"Segoe UI Historic" });
+            Log::Comment(L"Other single characters: Segoe UI");
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"a"), std::wstring{ L"Segoe UI" });
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\x03BB"), std::wstring{ L"Segoe UI" });
+            Log::Comment(L"Image paths, unknown names and empty: none");
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L""), std::wstring{});
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"C:\\icons\\x.png"), std::wstring{});
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"ms-appx:///ProfileIcons/pwsh.png"), std::wstring{});
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"no-such-glyph-name"), std::wstring{});
+            VERIFY_ARE_EQUAL(S::FamilyForIcon(L"\x00E9.png"), std::wstring{});
         }
 
         TEST_METHOD(LoneSurrogatesAreOne)

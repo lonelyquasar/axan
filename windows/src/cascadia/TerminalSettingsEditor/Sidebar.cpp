@@ -15,6 +15,7 @@
 #include <AxanCheckBoxWrap.h> // full-label columns for the hoist-state checkboxes
 #include <AxanHoistRule.h> // axan #34: sidebar.hoistStates vocabulary
 #include <AxanIdleEffects.h> // axan: sidebar.idleEffects vocabulary
+#include <AxanGlyphScale.h> // axan: sidebar.iconFontScale range
 
 using namespace winrt;
 using namespace winrt::Windows::UI::Xaml;
@@ -35,6 +36,92 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         _ViewModel = e.Parameter().as<Editor::SidebarViewModel>();
         _BuildHoistStateBoxes(); // axan #34
         _BuildIdleEffectBoxes();
+        _BuildIconFontRows();
+    }
+
+    // axan: sidebar.iconFontScale. One row per family: its name, an inline spin box (0.5-3,
+    // steps of 0.05, two decimals) and a Reset button shown while the family has an override.
+    // Each change writes the map at once, like the rest of the page.
+    void Sidebar::_BuildIconFontRows()
+    {
+        namespace MUXC = winrt::Microsoft::UI::Xaml::Controls;
+        namespace WUX = winrt::Windows::UI::Xaml;
+        using namespace winrt::Windows::Globalization::NumberFormatting;
+        const auto panel = IconFontsPanel();
+        const auto vm = _ViewModel;
+        if (!panel || !vm)
+        {
+            return;
+        }
+        panel.Children().Clear();
+        for (const auto& family : vm.SidebarIconFontFamilies())
+        {
+            Grid row;
+            row.ColumnSpacing(12);
+            for (const auto width : { WUX::GridLength{ 1, WUX::GridUnitType::Star }, WUX::GridLength{ 1, WUX::GridUnitType::Auto }, WUX::GridLength{ 1, WUX::GridUnitType::Auto } })
+            {
+                ColumnDefinition column;
+                column.Width(width);
+                row.ColumnDefinitions().Append(column);
+            }
+
+            TextBlock name;
+            name.Text(family);
+            name.VerticalAlignment(WUX::VerticalAlignment::Center);
+            name.TextTrimming(WUX::TextTrimming::CharacterEllipsis);
+            row.Children().Append(name);
+
+            MUXC::NumberBox box;
+            box.Minimum(Axan::GlyphScale::kMinScale);
+            box.Maximum(Axan::GlyphScale::kMaxScale);
+            box.SmallChange(0.05);
+            box.LargeChange(0.25);
+            box.SpinButtonPlacementMode(MUXC::NumberBoxSpinButtonPlacementMode::Inline);
+            DecimalFormatter formatter;
+            formatter.IntegerDigits(1);
+            formatter.FractionDigits(2);
+            IncrementNumberRounder rounder;
+            rounder.Increment(0.01);
+            formatter.NumberRounder(rounder);
+            box.NumberFormatter(formatter);
+            box.Value(vm.SidebarIconFontScale(family));
+            Automation::AutomationProperties::SetName(box, family);
+            Grid::SetColumn(box, 1);
+            row.Children().Append(box);
+
+            Button reset;
+            reset.Content(winrt::box_value(RS_(L"Globals_SidebarIconFontScaleReset")));
+            reset.VerticalAlignment(WUX::VerticalAlignment::Center);
+            reset.Visibility(vm.IsSidebarIconFontScaleSet(family) ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+            Automation::AutomationProperties::SetName(reset, RS_fmt(L"Globals_SidebarIconFontScaleResetName", std::wstring_view{ family }));
+            Grid::SetColumn(reset, 2);
+            row.Children().Append(reset);
+
+            box.ValueChanged([vm, family, weakReset = winrt::make_weak(reset)](const MUXC::NumberBox&, const MUXC::NumberBoxValueChangedEventArgs& args) {
+                const auto value = args.NewValue();
+                if (!(value == value))
+                {
+                    return; // a cleared box; NumberBox puts the last value back
+                }
+                vm.SetSidebarIconFontScale(family, value);
+                if (const auto r = weakReset.get())
+                {
+                    r.Visibility(vm.IsSidebarIconFontScaleSet(family) ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+                }
+            });
+            reset.Click([vm, family, weakBox = winrt::make_weak(box)](const IInspectable& sender, const RoutedEventArgs&) {
+                vm.ResetSidebarIconFontScale(family);
+                if (const auto b = weakBox.get())
+                {
+                    b.Value(vm.SidebarIconFontScale(family));
+                }
+                if (const auto r = sender.try_as<Button>())
+                {
+                    r.Visibility(WUX::Visibility::Collapsed);
+                }
+            });
+            panel.Children().Append(row);
+        }
     }
 
     // axan: one checkbox per idle effect, canonical order, each with its help as the tooltip
