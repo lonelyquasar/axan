@@ -8,6 +8,7 @@
 #include <LibraryResources.h>
 #include "..\WinRTUtils\inc\Utils.h"
 #include "../../types/inc/utils.hpp" // GuidToString
+#include <AxanCheckBoxWrap.h> // full-label columns for the hoist-state checkboxes
 #include <AxanEntryIdentityEditor.h> // axan #38: the identity section shared with the sidebar's node card
 #include <AxanHoistRule.h> // axan #34: the per-entry hoist override
 #include <AxanIconRegistry.h> // builtin:NAME <-> glyph for the icon text box
@@ -660,14 +661,14 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         for (const auto name : Axan::HoistRule::kDisplayOrder)
         {
             CheckBox box;
-            box.MinWidth(0);
-            box.Margin(Thickness{ 0, 0, 16, 0 });
             box.Tag(winrt::box_value(winrt::hstring{ name }));
             box.Content(winrt::box_value(winrt::hstring{ Axan::HoistRule::DisplayName(name) }));
             // Click, not Checked/Unchecked: it fires only for the user, never for _syncHoist.
             box.Click({ get_weak(), &StartupSessions::_hoistStateBox_Click });
             panel.Children().Append(box);
         }
+        // Columns as wide as the longest label; the boxes wrap onto more rows as needed.
+        Axan::Ui::CheckBoxWrap::FitItemWidth(panel);
     }
 
     // The boxes show the row's own list (none checked unless it is Custom); the card shows

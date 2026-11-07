@@ -11,6 +11,7 @@
 #include "..\WinRTUtils\inc\Utils.h" // OpenImagePicker
 #include <AxanIconPicker.h> // the shared icon picker flyout body
 #include <AxanStateGlyphs.h> // sidebar.stateGlyphs defaults
+#include <AxanCheckBoxWrap.h> // full-label columns for the hoist-state checkboxes
 #include <AxanHoistRule.h> // axan #34: sidebar.hoistStates vocabulary
 
 using namespace winrt;
@@ -47,8 +48,6 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         for (const auto name : Axan::HoistRule::kDisplayOrder)
         {
             CheckBox box;
-            box.MinWidth(0);
-            box.Margin(Thickness{ 0, 0, 16, 0 });
             const winrt::hstring key{ name };
             box.Content(winrt::box_value(winrt::hstring{ Axan::HoistRule::DisplayName(name) }));
             box.IsChecked(vm.SidebarHoistStateEnabled(key));
@@ -60,6 +59,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             });
             panel.Children().Append(box);
         }
+        // Columns as wide as the longest label; the boxes wrap onto more rows as needed.
+        Axan::Ui::CheckBoxWrap::FitItemWidth(panel);
     }
 
     void Sidebar::HoistStatesReset_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
