@@ -6,6 +6,8 @@
 
 #include "../types/inc/utils.hpp"
 
+#include <AxanGlyphNames.h> // axan #39: glyph names -> Segoe Fluent codepoints
+
 #include <Shlobj.h>
 #include <Shlobj_core.h>
 #include <wincodec.h>
@@ -123,9 +125,13 @@ namespace winrt::Microsoft::Terminal::UI::implementation
     // Return Value:
     // - An IconElement with its IconSource set, if possible.
     template<typename TIconSource>
-    TIconSource _getIconSource(const winrt::hstring& iconPath, bool monochrome)
+    TIconSource _getIconSource(const winrt::hstring& rawIconPath, bool monochrome)
     {
         TIconSource iconSource{ nullptr };
+
+        // axan #39: a Segoe Fluent glyph NAME ("robot", or a builtin alias like "git") renders
+        // as its glyph; everything else (paths, emoji, literal glyphs) passes through unchanged.
+        const winrt::hstring iconPath{ Axan::GlyphNames::ResolveIcon(rawIconPath) };
 
         if (iconPath.size() != 0)
         {

@@ -83,6 +83,7 @@
 #include <string>
 #include <string_view>
 
+#include <AxanGlyphNames.h>
 #include <AxanIconRegistry.h>
 
 namespace Axan::LaunchEntryWire
@@ -477,10 +478,22 @@ namespace Axan::LaunchEntryWire
 
     // Export-direction icon mapping (native M13 -> portable): a known Segoe glyph becomes
     // builtin:NAME; anything else (emoji, path, unmapped glyph) carries verbatim, which is
-    // the D18 v1 contract for non-portable icons.
+    // the D18 v1 contract for non-portable icons. #39: a glyph NAME counts too, so a picked
+    // "command-prompt" (or a bare "terminal") exports as builtin:terminal; any other name
+    // carries verbatim, readable but Windows-only.
     inline std::wstring ExportIcon(std::wstring_view nativeIcon)
     {
         bool mapped = false;
+        if (nativeIcon.size() > 1)
+        {
+            if (const auto cp = Axan::GlyphNames::ResolveCodepoint(nativeIcon))
+            {
+                if (const auto alias = Axan::GlyphNames::AliasFor(*cp); !alias.empty())
+                {
+                    return std::wstring{ Axan::IconRegistry::kBuiltinPrefix } + std::wstring{ alias };
+                }
+            }
+        }
         return Axan::IconRegistry::NativeToPortable(nativeIcon, mapped);
     }
 }
