@@ -680,7 +680,8 @@ namespace winrt::TerminalApp::implementation
         void _AddChildSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         void _DuplicateNodeSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
         void _CloseNodeSession(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
-        void _OpenNodeProfileSettings(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        // axan: the Settings item shared by the sidebar's empty-area and session node menus.
+        winrt::Windows::UI::Xaml::Controls::MenuFlyoutItem _MakeSettingsMenuItem();
 
         // axan: the titlebar app menu (the "axan" dropdown in the upper-left).
         // Mirrors the per-node context menu, targeting the ACTIVE session — each item

@@ -1794,11 +1794,9 @@ namespace winrt::TerminalApp::implementation
             flyout.Items().Append(mi);
         }
         flyout.Items().Append(MenuFlyoutSeparator{});
-        {
-            auto mi = makeItem(RS_(L"AxanMenuOpenProfileSettings"), L"");
-            mi.Click([node, weakThis{ get_weak() }](auto&&, auto&&) { if (auto p{ weakThis.get() }) p->_OpenNodeProfileSettings(node); });
-            flyout.Items().Append(mi);
-        }
+        // axan: plain Settings (the profile is WT-owned and SettingsTarget cannot deep-link
+        // to it), the same item as the empty-area menu.
+        flyout.Items().Append(_MakeSettingsMenuItem());
         {
             auto mi = makeItem(RS_(L"AxanMenuCloseSession"), L"");
             mi.Click([node, weakThis{ get_weak() }](auto&&, auto&&) { if (auto p{ weakThis.get() }) p->_CloseNodeSession(node); });
@@ -1828,6 +1826,28 @@ namespace winrt::TerminalApp::implementation
         Axan::Log::Debug("TerminalPage", "showed session-node context menu");
     }
 
+    // axan: the sidebar menus' Settings item, the same entry point as the titlebar app menu's
+    // Settings item (_SettingsButtonOnClick honours Alt/Shift the same way there), with its
+    // key binding shown. Used by the empty-area menu and the session node menu.
+    MenuFlyoutItem TerminalPage::_MakeSettingsMenuItem()
+    {
+        MenuFlyoutItem settingsItem{};
+        settingsItem.Text(RS_(L"SettingsMenuItem"));
+        FontIcon fi{};
+        fi.FontFamily(WUX::Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" });
+        fi.Glyph(winrt::hstring{ L"\xE713" });
+        settingsItem.Icon(fi);
+        settingsItem.Click({ this, &TerminalPage::_SettingsButtonOnClick });
+        if (_settings)
+        {
+            if (const auto keyChord{ _settings.ActionMap().GetKeyBindingForAction(L"Terminal.OpenSettingsUI") })
+            {
+                _SetAcceleratorForMenuItem(settingsItem, keyChord);
+            }
+        }
+        return settingsItem;
+    }
+
     // axan #12: the menu for a right-tap on empty sidebar space (below the last row) —
     // no target node, so just the New session split row, anchored at the pointer.
     // Reuses _sessionNodeMenu's double-open guard: a gesture that raises both RightTapped
@@ -1842,26 +1862,9 @@ namespace winrt::TerminalApp::implementation
         _AppendNewSessionSplitItem(flyout, L"Segoe MDL2 Assets");
         _AppendNeedsYouGroupToggle(flyout); // axan #34
 
-        // axan: Settings at the bottom, the same entry point as the titlebar app menu's
-        // Settings item (_SettingsButtonOnClick honours Alt/Shift the same way there).
-        {
-            MenuFlyoutItem settingsItem{};
-            settingsItem.Text(RS_(L"SettingsMenuItem"));
-            FontIcon fi{};
-            fi.FontFamily(WUX::Media::FontFamily{ L"Segoe Fluent Icons, Segoe MDL2 Assets" });
-            fi.Glyph(winrt::hstring{ L"\xE713" });
-            settingsItem.Icon(fi);
-            settingsItem.Click({ this, &TerminalPage::_SettingsButtonOnClick });
-            if (_settings)
-            {
-                if (const auto keyChord{ _settings.ActionMap().GetKeyBindingForAction(L"Terminal.OpenSettingsUI") })
-                {
-                    _SetAcceleratorForMenuItem(settingsItem, keyChord);
-                }
-            }
-            flyout.Items().Append(MenuFlyoutSeparator{});
-            flyout.Items().Append(settingsItem);
-        }
+        // axan: Settings at the bottom (see _MakeSettingsMenuItem).
+        flyout.Items().Append(MenuFlyoutSeparator{});
+        flyout.Items().Append(_MakeSettingsMenuItem());
 
         _sessionNodeMenu = flyout;
         flyout.Closed([weak = get_weak()](auto&&, auto&&) {
@@ -2024,7 +2027,6 @@ namespace winrt::TerminalApp::implementation
         addSessionItem(RS_(L"AxanMenuAddChildSession"), L"", &TerminalPage::_AddChildSession);
         addSessionItem(RS_(L"AxanMenuDuplicateSession"), L"", &TerminalPage::_DuplicateNodeSession);
         flyout.Items().Append(MenuFlyoutSeparator{});
-        addSessionItem(RS_(L"AxanMenuOpenProfileSettings"), L"", &TerminalPage::_OpenNodeProfileSettings);
         addSessionItem(RS_(L"AxanMenuCloseSession"), L"", &TerminalPage::_CloseNodeSession);
 
         flyout.Items().Append(MenuFlyoutSeparator{});
@@ -2747,15 +2749,6 @@ namespace winrt::TerminalApp::implementation
             Axan::Log::Info("TerminalPage", "closing node session from context menu");
             _RemoveTab(tab);
         }
-    }
-
-    // axan M13: open WT's Settings UI for the node's profile. Deep-linking to the specific
-    // profile page isn't exposed by SettingsTarget, so we open the editor and let the user
-    // navigate — the profile is WT-owned (Divergence 1). A deep link is a future enhancement.
-    void TerminalPage::_OpenNodeProfileSettings(const MUX::Controls::TreeViewNode& /*node*/)
-    {
-        Axan::Log::Info("TerminalPage", "opening WT Settings for node profile");
-        _LaunchSettings(Settings::Model::SettingsTarget::SettingsUI);
     }
 
     // Method Description:
