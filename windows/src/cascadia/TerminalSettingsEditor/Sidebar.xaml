@@ -103,6 +103,7 @@
                             Maximum="1440"
                             Minimum="0"
                             SmallChange="1"
+                            SpinButtonPlacementMode="Inline"
                             Style="{StaticResource NumberBoxSettingStyle}"
                             Value="{x:Bind ViewModel.SidebarIdleAfterMinutes, Mode=TwoWay}" />
         </local:SettingContainer>

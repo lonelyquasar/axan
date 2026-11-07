@@ -611,7 +611,7 @@
                                                 Maximum="10"
                                                 Minimum="0.1"
                                                 SmallChange="0.5"
-                                                SpinButtonPlacementMode="Compact"
+                                                SpinButtonPlacementMode="Inline"
                                                 Value="{x:Bind ViewModel.SelectedEntry.Height, Mode=TwoWay}" />
                             </local:SettingContainer>
                             <local:SettingContainer Header="Placement"
