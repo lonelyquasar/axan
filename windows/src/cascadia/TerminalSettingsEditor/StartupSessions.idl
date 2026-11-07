@@ -24,8 +24,12 @@ namespace Microsoft.Terminal.Settings.Editor
         static String SeparatorChevron(String name, Boolean collapsed);
         // The rule after a separator's caption: drawn for line separators, not for spaces.
         static Windows.UI.Xaml.Visibility SeparatorRuleVisibility(String separatorStyle);
-        // Narrator: "<name>, level <n>" for sessions, "Separator: <label>" for separators.
-        static String RowAccessibleName(String name, Boolean isSeparator, Int32 depth);
+        // A session row's muted suffix: a middle dot and the directory's leaf folder, or "" when the
+        // directory is empty or its leaf equals the name. String-only; never touches disk.
+        static String RowFolderSuffix(String name, String directory);
+        // Narrator: "<name>, <folder>, level <n>" for sessions (the folder only when the
+        // suffix shows), "Separator: <label>" for separators.
+        static String RowAccessibleName(String name, Boolean isSeparator, Int32 depth, String directory);
         static Windows.UI.Xaml.Automation.Peers.AutomationHeadingLevel RowHeadingLevel(Boolean isSeparator);
     }
 }

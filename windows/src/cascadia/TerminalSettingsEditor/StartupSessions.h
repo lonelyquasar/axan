@@ -75,7 +75,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         static Windows::UI::Text::FontWeight RowLabelWeight(const hstring& name, bool isSeparator);
         static hstring SeparatorChevron(const hstring& name, bool collapsed);
         static Windows::UI::Xaml::Visibility SeparatorRuleVisibility(const hstring& separatorStyle);
-        static hstring RowAccessibleName(const hstring& name, bool isSeparator, int32_t depth);
+        static hstring RowFolderSuffix(const hstring& name, const hstring& directory);
+        static hstring RowAccessibleName(const hstring& name, bool isSeparator, int32_t depth, const hstring& directory);
         static Windows::UI::Xaml::Automation::Peers::AutomationHeadingLevel RowHeadingLevel(bool isSeparator);
 
         til::property_changed_event PropertyChanged;

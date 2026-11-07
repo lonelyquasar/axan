@@ -254,7 +254,7 @@
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="local:LaunchEntryViewModel">
                             <Grid AutomationProperties.HeadingLevel="{x:Bind local:StartupSessions.RowHeadingLevel(IsSeparator), Mode=OneWay}"
-                                  AutomationProperties.Name="{x:Bind local:StartupSessions.RowAccessibleName(Name, IsSeparator, Depth), Mode=OneWay}"
+                                  AutomationProperties.Name="{x:Bind local:StartupSessions.RowAccessibleName(Name, IsSeparator, Depth, Directory), Mode=OneWay}"
                                   ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -293,11 +293,15 @@
                                              Height="8"
                                              VerticalAlignment="Center"
                                              Fill="{x:Bind ColorPreviewBrush, Mode=OneWay}" />
+                                    <!--
+                                        The name, then the directory's leaf folder, muted, so rows
+                                        sharing a label template ("$repo") tell apart. The Runs sit
+                                        on one line: whitespace between them would render a space.
+                                    -->
                                     <TextBlock Grid.Column="2"
                                                VerticalAlignment="Center"
                                                Opacity="{x:Bind local:StartupSessions.RowLabelOpacity(Name), Mode=OneWay}"
-                                               Text="{x:Bind local:StartupSessions.RowLabel(Name, IsSeparator, SeparatorStyle, Height), Mode=OneWay}"
-                                               TextTrimming="CharacterEllipsis" />
+                                               TextTrimming="CharacterEllipsis"><Run Text="{x:Bind local:StartupSessions.RowLabel(Name, IsSeparator, SeparatorStyle, Height), Mode=OneWay}" /><Run Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{x:Bind local:StartupSessions.RowFolderSuffix(Name, Directory), Mode=OneWay}" /></TextBlock>
                                 </Grid>
 
                                 <!--

@@ -720,14 +720,59 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         return separatorStyle == L"space" ? Visibility::Collapsed : Visibility::Visible;
     }
 
-    hstring StartupSessions::RowAccessibleName(const hstring& name, bool isSeparator, int32_t depth)
+    // The last segment of a directory as typed ("~/src/axan" -> "axan", "C:\\" -> "C:",
+    // "~" -> "~"), trailing separators, blanks and quotes trimmed. String-only: nothing is
+    // read from disk, so a missing folder still labels its row.
+    static std::wstring_view _leafFolder(std::wstring_view dir) noexcept
+    {
+        const auto last = dir.find_last_not_of(L" \t\"\\/");
+        if (last == std::wstring_view::npos)
+        {
+            return {};
+        }
+        dir = dir.substr(0, last + 1);
+        const auto first = dir.find_first_not_of(L" \t\"");
+        dir.remove_prefix(first == std::wstring_view::npos ? dir.size() : first);
+        const auto cut = dir.find_last_of(L"\\/");
+        return cut == std::wstring_view::npos ? dir : dir.substr(cut + 1);
+    }
+
+    // The folder a session row adds after its name, or "" when there is none or it would
+    // only repeat the name (compared case-insensitively, like Windows paths).
+    static std::wstring_view _rowFolder(const hstring& name, const hstring& directory) noexcept
+    {
+        const auto leaf = _leafFolder(directory);
+        if (leaf.empty())
+        {
+            return {};
+        }
+        if (!name.empty() &&
+            ::CompareStringOrdinal(name.c_str(), gsl::narrow_cast<int>(name.size()), leaf.data(), gsl::narrow_cast<int>(leaf.size()), TRUE) == CSTR_EQUAL)
+        {
+            return {};
+        }
+        return leaf;
+    }
+
+    hstring StartupSessions::RowFolderSuffix(const hstring& name, const hstring& directory)
+    {
+        const auto folder = _rowFolder(name, directory);
+        return folder.empty() ? hstring{} : hstring{ fmt::format(FMT_COMPILE(L" \u00B7 {}"), folder) };
+    }
+
+    hstring StartupSessions::RowAccessibleName(const hstring& name, bool isSeparator, int32_t depth, const hstring& directory)
     {
         if (isSeparator)
         {
             return name.empty() ? hstring{ L"Separator" } : hstring{ L"Separator: " + std::wstring{ name } };
         }
         const std::wstring_view shown = name.empty() ? std::wstring_view{ L"Session with the default name" } : std::wstring_view{ name };
-        return hstring{ fmt::format(FMT_COMPILE(L"{}, level {}"), shown, depth + 1) };
+        const auto folder = _rowFolder(name, directory);
+        if (folder.empty())
+        {
+            return hstring{ fmt::format(FMT_COMPILE(L"{}, level {}"), shown, depth + 1) };
+        }
+        return hstring{ fmt::format(FMT_COMPILE(L"{}, {}, level {}"), shown, folder, depth + 1) };
     }
 
     Automation::Peers::AutomationHeadingLevel StartupSessions::RowHeadingLevel(bool isSeparator)
