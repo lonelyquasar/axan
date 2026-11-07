@@ -19,7 +19,8 @@
 // line in Sets(); the grid and its hosts pick it up without changes.
 //
 // Code points: the search box also takes a Unicode scalar value, as U+131A3, u+131a3,
-// 0x131A3 or a bare 131A3 (4-6 hex digits; ParseCodepoint). The grid filters to it when the
+// 0x131A3 or a bare 131A3 (4-6 hex digits, the bare form with at least one of 0-9, so "face"
+// is a name search, not U+FACE; ParseCodepoint). The grid filters to it when the
 // selected set has it, and otherwise offers one "direct" cell that stores the literal
 // character (UTF-16) and leaves the drawing to DirectWrite's font fallback (Segoe UI
 // Historic draws U+131A3 on Windows 11). Surrogates, non-characters and C0/C1 controls

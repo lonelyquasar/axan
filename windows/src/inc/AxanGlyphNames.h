@@ -15,7 +15,8 @@
 //     win over a font key of the same spelling so "git" and "builtin:git" agree
 //   * a "builtin:NAME" token
 // Code-point text resolves too (#44): "U+131A3", "u+131a3", "0x131A3" or a bare "131A3"
-// (4-6 hex digits, the picker search's grammar; surrogates, non-characters and controls
+// (4-6 hex digits, the picker search's grammar; the bare form needs a decimal digit, so an
+// all-letter word like "face" is a name, not U+FACE; surrogates, non-characters and controls
 // rejected) renders as that character. A name of the same spelling wins.
 //
 // Pure (no WinRT) and header-only in the shared src/inc, like AxanIconRegistry.h, so the
@@ -27,6 +28,7 @@
 #include <AxanSegoeFluentGlyphs.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -103,33 +105,56 @@ namespace Axan::GlyphNames
         return !(cp < 0x20 || (cp >= 0x7F && cp <= 0x9F));
     }
 
-    // "U+131A3", "u+131a3", "0x131A3" or a bare "131A3" (blanks around it ignored): 4 to 6
-    // hex digits naming a pickable scalar value. Anything else is nullopt.
-    inline std::optional<char32_t> ParseCodepoint(std::wstring_view query) noexcept
+    // How a string reads as code-point text: not code-point text at all, code-point text that
+    // names no pickable scalar (a surrogate, a non-character, a control, past U+10FFFF, or the
+    // wrong digit count after a prefix), or a valid one.
+    enum class CodepointTextKind
+    {
+        NotCodepoint,
+        Invalid,
+        Valid,
+    };
+
+    struct CodepointText
+    {
+        CodepointTextKind kind = CodepointTextKind::NotCodepoint;
+        char32_t value = 0;
+    };
+
+    // The grammar ParseCodepoint accepts (blanks around it ignored): "U+131A3", "u+131a3",
+    // "0x131A3" with 4 to 6 hex digits, or a bare "131A3": 4 to 6 hex digits with at least one
+    // decimal digit among them. An all-letter word ("face", "decade") is never code-point text
+    // bare; write "U+FACE". A prefix with 1 to 8 hex digits is code-point text even when the
+    // count is wrong, so "U+41" reads as an invalid code point rather than a name.
+    inline CodepointText ClassifyCodepoint(std::wstring_view query) noexcept
     {
         const auto first = query.find_first_not_of(L" \t");
         if (first == std::wstring_view::npos)
         {
-            return std::nullopt;
+            return {};
         }
         query = query.substr(first, query.find_last_not_of(L" \t") - first + 1);
+        bool prefixed = false;
         if (query.size() > 2 &&
             (((query[0] == L'U' || query[0] == L'u') && query[1] == L'+') ||
              (query[0] == L'0' && (query[1] == L'x' || query[1] == L'X'))))
         {
             query.remove_prefix(2);
+            prefixed = true;
         }
-        if (query.size() < 4 || query.size() > 6)
+        if (query.empty() || query.size() > (prefixed ? 8u : 6u))
         {
-            return std::nullopt;
+            return {};
         }
-        char32_t value = 0;
+        uint64_t value = 0;
+        bool anyDecimal = false;
         for (const auto ch : query)
         {
             unsigned digit;
             if (ch >= L'0' && ch <= L'9')
             {
                 digit = static_cast<unsigned>(ch - L'0');
+                anyDecimal = true;
             }
             else if (ch >= L'a' && ch <= L'f')
             {
@@ -141,11 +166,26 @@ namespace Axan::GlyphNames
             }
             else
             {
-                return std::nullopt;
+                return {};
             }
-            value = static_cast<char32_t>(value * 16 + digit);
+            value = value * 16 + digit;
         }
-        return IsPickableScalar(value) ? std::optional<char32_t>{ value } : std::nullopt;
+        if (!prefixed && (query.size() < 4 || !anyDecimal))
+        {
+            return {};
+        }
+        if (query.size() < 4 || query.size() > 6 || value > 0x10FFFF || !IsPickableScalar(static_cast<char32_t>(value)))
+        {
+            return { CodepointTextKind::Invalid, static_cast<char32_t>(value) };
+        }
+        return { CodepointTextKind::Valid, static_cast<char32_t>(value) };
+    }
+
+    // The pickable scalar code-point text names (ClassifyCodepoint's grammar), else nullopt.
+    inline std::optional<char32_t> ParseCodepoint(std::wstring_view query) noexcept
+    {
+        const auto parsed = ClassifyCodepoint(query);
+        return parsed.kind == CodepointTextKind::Valid ? std::optional<char32_t>{ parsed.value } : std::nullopt;
     }
 
     // The code point as UTF-16 (a surrogate pair above U+FFFF): the stored form.
@@ -205,6 +245,54 @@ namespace Axan::GlyphNames
         return {};
     }
 
+    namespace Detail
+    {
+        // An icon string split into its name key: "builtin:" stripped (prefixed = true), then
+        // NormalizeName'd. key is "" when the string is not name-shaped.
+        struct NameKey
+        {
+            std::wstring key;
+            bool prefixed = false;
+        };
+
+        inline NameKey SplitName(std::wstring_view icon)
+        {
+            auto name = icon;
+            const auto prefix = Axan::IconRegistry::kBuiltinPrefix;
+            const bool prefixed = name.size() > prefix.size() && name.substr(0, prefix.size()) == prefix;
+            if (prefixed)
+            {
+                name.remove_prefix(prefix.size());
+            }
+            return { NormalizeName(name), prefixed };
+        }
+
+        // The glyph a name key denotes: a builtin name, or (unprefixed only) a font key.
+        inline std::optional<wchar_t> GlyphForKey(const NameKey& name)
+        {
+            if (name.key.empty())
+            {
+                return std::nullopt;
+            }
+            for (const auto& b : Axan::IconRegistry::Builtins())
+            {
+                if (name.key == b.name)
+                {
+                    return b.glyph;
+                }
+            }
+            if (name.prefixed)
+            {
+                return std::nullopt; // builtin: is the eleven-name vocabulary only
+            }
+            if (const auto g = FindByKey(name.key))
+            {
+                return g->codepoint;
+            }
+            return std::nullopt;
+        }
+    }
+
     // The glyph an icon string denotes, if it denotes one: a single symbol-range character,
     // a builtin:NAME token, a bare builtin name, or a font key. Emoji, image paths and
     // unknown names yield nullopt.
@@ -214,76 +302,68 @@ namespace Axan::GlyphNames
         {
             return icon.front();
         }
-        auto name = icon;
-        if (name.size() > Axan::IconRegistry::kBuiltinPrefix.size() &&
-            name.substr(0, Axan::IconRegistry::kBuiltinPrefix.size()) == Axan::IconRegistry::kBuiltinPrefix)
-        {
-            name.remove_prefix(Axan::IconRegistry::kBuiltinPrefix.size());
-        }
-        const auto key = NormalizeName(name);
-        if (key.empty())
-        {
-            return std::nullopt;
-        }
-        for (const auto& b : Axan::IconRegistry::Builtins())
-        {
-            if (key == b.name)
-            {
-                return b.glyph;
-            }
-        }
-        if (name.size() != icon.size())
-        {
-            return std::nullopt; // builtin: is the eleven-name vocabulary only
-        }
-        if (const auto g = FindByKey(key))
-        {
-            return g->codepoint;
-        }
-        return std::nullopt;
+        return Detail::GlyphForKey(Detail::SplitName(icon));
     }
 
-    // What IconPathConverter renders: a name becomes its glyph character; code-point text
-    // ("U+131A3", "0x131A3", a bare "131A3"; ParseCodepoint's grammar, #44) becomes that
-    // character in UTF-16, exactly what a picker "direct" pick stores, so it draws through
-    // the same single-character FontIcon path (and the same AxanGlyphScale factor). Names
-    // win: a bare hex word that is also a glyph key ("cafe") is the glyph; write "U+CAFE"
-    // for the code point. Anything else (a literal glyph, an emoji, a path, an unknown
-    // name) is returned unchanged.
+    // What Resolve made of an icon string.
+    enum class IconResolution
+    {
+        PassThrough, // not a name or code point: a literal glyph, emoji, path, "none", ""
+        Resolved, // a glyph name or valid code-point text, now its character
+        UnknownName, // name-shaped but denotes nothing: renders as the placeholder
+        InvalidCodepoint, // code-point text naming no pickable scalar: renders as the placeholder
+    };
+
+    struct ResolvedIcon
+    {
+        std::wstring text;
+        IconResolution kind = IconResolution::PassThrough;
+    };
+
+    // What IconPathConverter renders, and why, in one pass: a name becomes its glyph
+    // character; code-point text ("U+131A3", "0x131A3", a bare "131A3"; ClassifyCodepoint's
+    // grammar, #44) becomes that character in UTF-16, exactly what a picker "direct" pick
+    // stores, so it draws through the same single-character FontIcon path (and the same
+    // AxanGlyphScale factor). Names win: a bare hex word that is also a glyph key ("cafe")
+    // is the glyph; write "U+CAFE" for the code point. Anything else (a literal glyph, an
+    // emoji, a path, an unknown name, invalid code-point text) is returned unchanged, and
+    // kind says which of those it was. Paths, URIs, emoji and literal characters are never
+    // UnknownName: a name is [A-Za-z0-9 _-] only, and "none" is WT's "no icon" value.
+    inline ResolvedIcon Resolve(std::wstring_view icon)
+    {
+        if (icon.size() <= 1)
+        {
+            return { std::wstring{ icon }, IconResolution::PassThrough };
+        }
+        const auto name = Detail::SplitName(icon);
+        if (const auto cp = Detail::GlyphForKey(name))
+        {
+            return { std::wstring(1, *cp), IconResolution::Resolved };
+        }
+        const auto parsed = ClassifyCodepoint(icon);
+        if (parsed.kind == CodepointTextKind::Valid)
+        {
+            return { ToUtf16(parsed.value), IconResolution::Resolved };
+        }
+        if (parsed.kind == CodepointTextKind::Invalid)
+        {
+            return { std::wstring{ icon }, IconResolution::InvalidCodepoint };
+        }
+        const bool unknown = !name.key.empty() && name.key != L"none";
+        return { std::wstring{ icon }, unknown ? IconResolution::UnknownName : IconResolution::PassThrough };
+    }
+
+    // Resolve's text alone.
     inline std::wstring ResolveIcon(std::wstring_view icon)
     {
-        if (icon.size() > 1)
-        {
-            if (const auto cp = ResolveCodepoint(icon))
-            {
-                return std::wstring(1, *cp);
-            }
-            if (const auto scalar = ParseCodepoint(icon))
-            {
-                return ToUtf16(*scalar);
-            }
-        }
-        return std::wstring{ icon };
+        return Resolve(icon).text;
     }
 
     // True when an icon string reads as a glyph NAME (or a builtin:NAME token) but denotes
-    // nothing, so it renders as the placeholder (#44: IconPathConverter logs it). Paths,
-    // URIs, emoji and literal characters never qualify: a name is [A-Za-z0-9 _-] only.
-    // "none" is WT's "no icon" value, not a misspelled glyph.
+    // nothing, so it renders as the placeholder (#44).
     inline bool IsUnresolvedName(std::wstring_view icon)
     {
-        if (icon.size() < 2 || ResolveCodepoint(icon) || ParseCodepoint(icon))
-        {
-            return false;
-        }
-        auto name = icon;
-        if (name.size() > Axan::IconRegistry::kBuiltinPrefix.size() &&
-            name.substr(0, Axan::IconRegistry::kBuiltinPrefix.size()) == Axan::IconRegistry::kBuiltinPrefix)
-        {
-            name.remove_prefix(Axan::IconRegistry::kBuiltinPrefix.size());
-        }
-        const auto key = NormalizeName(name);
-        return !key.empty() && key != L"none";
+        return Resolve(icon).kind == IconResolution::UnknownName;
     }
 
     // Indices into All() whose key contains the normalized query, or whose builtin alias

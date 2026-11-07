@@ -216,11 +216,13 @@ namespace TerminalCoreUnitTests
             Log::Comment(L"4 to 6 hex digits, leading zeros allowed");
             VERIFY_IS_TRUE(is(L"U+0041", 0x41));
             VERIFY_IS_TRUE(is(L"E99A", 0xE99A));
-            VERIFY_IS_TRUE(is(L"face", 0xFACE)); // a bare hex word counts
+            VERIFY_IS_TRUE(is(L"U+FACE", 0xFACE)); // an all-letter hex word needs a prefix
+            VERIFY_IS_TRUE(is(L"0xface", 0xFACE));
             VERIFY_IS_TRUE(is(L"U+10FFFD", 0x10FFFD));
             VERIFY_IS_TRUE(is(L"01F916", 0x1F916));
             for (const auto* q : { L"", L"U+", L"U+41", L"123", L"1234567", L"U+1234567", L"U+12G4", L"robot",
-                                   L"x1234", L"U 1234", L"+1234", L"0x", L"U+110000", L"FFFFFF" })
+                                   L"x1234", L"U 1234", L"+1234", L"0x", L"U+110000", L"FFFFFF",
+                                   L"face", L"dead", L"beef", L"fade", L"feed", L"decade", L"facade" })
             {
                 Log::Comment(q);
                 VERIFY_IS_FALSE(S::ParseCodepoint(q).has_value());
@@ -268,9 +270,48 @@ namespace TerminalCoreUnitTests
                 Log::Comment(icon);
                 VERIFY_ARE_EQUAL(std::wstring{ icon }, G::ResolveIcon(icon));
             }
-            Log::Comment(L"A glyph name wins over a bare hex word of the same spelling; U+ forces the code point");
+            Log::Comment(L"A glyph name wins over a hex word of the same spelling; U+ forces the code point");
             VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xEC32 }), G::ResolveIcon(L"cafe"));
             VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xCAFE }), G::ResolveIcon(L"U+CAFE"));
+            Log::Comment(L"A bare all-letter word is never a code point: it stays a (here unknown) name");
+            for (const auto* icon : { L"face", L"dead", L"beef", L"fade", L"feed", L"decade", L"facade" })
+            {
+                Log::Comment(icon);
+                VERIFY_ARE_EQUAL(std::wstring{ icon }, G::ResolveIcon(icon));
+                VERIFY_IS_TRUE(G::IsUnresolvedName(icon));
+            }
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xFACE }), G::ResolveIcon(L"U+FACE"));
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xFACE }), G::ResolveIcon(L"0xFACE"));
+            Log::Comment(L"A bare word with a decimal digit is a code point");
+            VERIFY_ARE_EQUAL(std::wstring(1, wchar_t{ 0xFAC3 }), G::ResolveIcon(L"fac3"));
+        }
+
+        TEST_METHOD(ResolveReportsWhatItMadeOfTheIcon)
+        {
+            using K = G::IconResolution;
+            const auto kind = [](std::wstring_view icon) { return G::Resolve(icon).kind; };
+            Log::Comment(L"Names and valid code-point text resolve");
+            VERIFY_IS_TRUE(kind(L"robot") == K::Resolved);
+            VERIFY_IS_TRUE(kind(L"builtin:git") == K::Resolved);
+            VERIFY_IS_TRUE(kind(L"U+131A3") == K::Resolved);
+            VERIFY_IS_TRUE(kind(L"131A3") == K::Resolved);
+            Log::Comment(L"Code-point text naming no pickable character is an invalid code point, not an unknown name");
+            for (const auto* icon : { L"U+D800", L"U+FFFE", L"U+001F", L"U+110000", L"0x110000", L"U+41", L"0x1234567", L"D800", L"0000" })
+            {
+                Log::Comment(icon);
+                const auto r = G::Resolve(icon);
+                VERIFY_IS_TRUE(r.kind == K::InvalidCodepoint);
+                VERIFY_ARE_EQUAL(std::wstring{ icon }, r.text);
+                VERIFY_IS_FALSE(G::IsUnresolvedName(icon));
+            }
+            Log::Comment(L"Unknown names, and pass-through forms");
+            VERIFY_IS_TRUE(kind(L"no-such-glyph-name") == K::UnknownName);
+            VERIFY_IS_TRUE(kind(L"decade") == K::UnknownName);
+            for (const auto* icon : { L"", L"x", L"none", L"C:\\icons\\robot.png", L"\U0001F916", L"U+12G4" })
+            {
+                Log::Comment(icon);
+                VERIFY_IS_TRUE(kind(icon) == K::PassThrough);
+            }
         }
 
         TEST_METHOD(UnresolvedNamesAreDetected)
