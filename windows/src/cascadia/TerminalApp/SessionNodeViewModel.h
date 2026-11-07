@@ -188,6 +188,11 @@ namespace winrt::TerminalApp::implementation
         // axan #34: the right-edge slot's state (AxanSessionState.h SlotKey; "" = none), the
         // key the hoisted group matches on.
         hstring SlotKey() const noexcept { return _realWhilePreviewing ? _realWhilePreviewing->resting.slotKey : _resting.slotKey; }
+        // axan #49: the state the row SHOWS (the preview while previewing, else the real one),
+        // read by the hoisted group only when sidebar.hoistPreview is on.
+        hstring ShownSlotKey() const noexcept { return _resting.slotKey; }
+        hstring ShownStateKind() const noexcept { return _stateKind; }
+        winrt::Windows::Foundation::DateTime ShownStateSince() const noexcept { return _stateSince; }
         winrt::Windows::Foundation::DateTime LastActivity() const noexcept { return _lastActivity; }
         bool SetSessionState(const hstring& state, const hstring& message, const hstring& kind, winrt::Windows::Foundation::DateTime now, const SessionRestingState& resting = {});
         void SetLastActivity(winrt::Windows::Foundation::DateTime value);
@@ -196,7 +201,8 @@ namespace winrt::TerminalApp::implementation
         // trying out sizes and glyphs). SetPreview makes the row render exactly as if a report
         // with this state / kind / message had arrived at `since`; it is purely visual: the
         // real state keeps updating underneath (State(), SlotKey() etc. return it), so nothing
-        // that hoists, groups, collapses or acknowledges ever sees the preview. A real state
+        // that hoists, groups, collapses or acknowledges ever sees the preview (except the
+        // hoisted group with sidebar.hoistPreview on, via the Shown* getters; axan #49). A real state
         // change (SetSessionState with a different state or kind) clears it, as does
         // ClearPreview; the page also clears it when a new OSC 7501 report arrives. Never
         // persisted. PreviewId is the menu item's id ("" = no preview).
@@ -252,23 +258,30 @@ namespace winrt::TerminalApp::implementation
         // Which of the effects apply is sidebar.idleEffects (src/inc/AxanIdleEffects.h), pushed
         // by the page on every clock tick (SetIdleEffects is a no-op when unchanged).
         // axan: sizes from sidebar.labelFontSize / stateLineFontSize / iconSize /
-        // stateGlyphSize, pushed by the page (SetSizes). "smaller" takes 2 off the title.
-        double LabelFontSize() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? std::max(8.0, _labelFontSize - 2.0) : _labelFontSize; }
+        // stateGlyphSize, pushed by the page (SetSizes). axan #47: "smaller" swaps the title
+        // for sidebar.idleLabelFontSize and the row floor for sidebar.idleRowHeight.
+        double LabelFontSize() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? _idleLabelFontSize : _labelFontSize; }
         double StateLineFontSize() const noexcept { return _stateLineFontSize; }
         double IconSize() const noexcept { return _iconSize; }
         // Returns true if any size changed (and raised what depends on it).
-        bool SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize);
+        bool SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize, double idleLabelFontSize, double idleRowHeight);
         // Re-raise Icon and StateGlyphIcon so both are rebuilt (sidebar.iconFontScale changed).
         void RefreshIcons();
+        // axan #48: sidebar.iconOverflow, pushed by the page like the sizes (see the idl).
+        // Returns true if it changed.
+        bool SetIconOverflow(bool overflow);
+        double IconPresenterSize() const noexcept;
+        winrt::Windows::UI::Xaml::Thickness IconPresenterMargin() const noexcept;
+        bool IconHitTestVisible() const noexcept { return !_iconOverflow; }
         double RowOpacity() const noexcept { return _idleEffect(Axan::IdleEffects::kDim) ? 0.55 : 1.0; }
-        double RowMinHeight() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? std::round(_rowHeightPx * 0.75) : _rowHeightPx; }
+        double RowMinHeight() const noexcept { return _idleEffect(Axan::IdleEffects::kSmaller) ? _idleRowHeight : _rowHeightPx; }
         // Returns true if the mask changed.
         bool SetIdleEffects(Axan::IdleEffects::Mask effects);
-        // axan: idle "collapse" bookkeeping, owned by TerminalPage::_ApplyIdleCollapse.
-        // SubtreeIdle = this node and all its descendants were de-emphasised at the last tick;
-        // AutoCollapsed = the page closed this node's expander for that (so it may re-open it).
-        bool SubtreeIdle{ false };
-        bool AutoCollapsed{ false };
+        // axan #46: idle "collapse" hold, owned by TerminalPage (_RecomputeSections and the
+        // expand/collapse handlers). Set by a manual expand of this section header or session
+        // row; while set, the automatic idle tuck leaves its members/children alone. Cleared
+        // only by a manual collapse or by turning the "collapse" effect off. Memory only.
+        bool IdleHold{ false };
         // The full-size row floor (TreeViewItemMinHeight), pushed by the page at creation.
         void SetRowHeightPx(double px);
         // Re-evaluate against the threshold (0 = off). Returns true if the flag flipped.
@@ -290,6 +303,20 @@ namespace winrt::TerminalApp::implementation
         void SetCollapsed(bool collapsed);
         void SetSectionSummary(const hstring& summary, const hstring& badge);
         bool SetSectionHidden(bool hidden); // returns true if it changed
+        // axan #46: the expander-slot fold indicator (see the idl). IdleTuckedCount is how many
+        // session rows the automatic idle tuck hides under this header / row (0 = not
+        // idle-collapsed); FoldToolTip spells the hidden count out ("" = nothing hidden).
+        // Both pushed by TerminalPage::_RecomputeSections via SetFold.
+        uint32_t IdleTuckedCount() const noexcept { return _idleTucked; }
+        winrt::Windows::UI::Xaml::Visibility IdleTuckVisibility() const noexcept;
+        hstring IdleTuckBadge() const;
+        winrt::Windows::UI::Xaml::Visibility IdleTuckBadgeVisibility() const noexcept;
+        double IdleTuckDotSize() const noexcept;
+        double IdleTuckBadgeFontSize() const noexcept;
+        hstring FoldToolTip() const noexcept { return _foldToolTip; }
+        winrt::Windows::UI::Xaml::Visibility FoldToolTipVisibility() const noexcept;
+        winrt::Windows::Foundation::IInspectable HeaderToolTip() const;
+        bool SetFold(uint32_t idleTucked, const hstring& toolTip); // returns true if it changed
         // Invoked by ActivateSectionBadge; the page sets it on header VMs (expand + select).
         std::function<void()> OnSectionBadgeActivated;
         // axan #30: "seen" bookkeeping. Per TermControl (keyed by its ContentId), the highest
@@ -359,6 +386,10 @@ namespace winrt::TerminalApp::implementation
         bool _sectionHidden{ false };
         hstring _sectionSummary;
         hstring _sectionBadge;
+        // axan #46
+        uint32_t _idleTucked{ 0 };
+        hstring _foldToolTip;
+        bool _idleTuckShowsBadge() const noexcept { return _stateLineFontSize >= 9.0; }
         void _setDeEmphasised(bool value);
         winrt::Windows::UI::Color _textColor() const;
         std::pair<hstring, hstring> _computeSubLabel(winrt::Windows::Foundation::DateTime now) const; // {message, age}
@@ -367,7 +398,10 @@ namespace winrt::TerminalApp::implementation
         double _labelFontSize{ 14.0 };
         double _stateLineFontSize{ 11.0 };
         double _iconSize{ 16.0 };
+        bool _iconOverflow{ false }; // axan #48
         double _stateGlyphSize{ 12.0 };
+        double _idleLabelFontSize{ 12.0 }; // axan #47
+        double _idleRowHeight{ 24.0 }; // axan #47
         // axan: state preview. While previewing, the state members above hold the preview and
         // _realWhilePreviewing the real state, kept current by SetSessionState.
         struct StateFields

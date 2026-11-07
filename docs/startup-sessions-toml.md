@@ -68,7 +68,7 @@ The file has an optional `[meta]` table and one `[[startup-sessions]]` table per
 | `directory` | string | `""` | Starting directory. `"~"` or a path starting `~\` or `~/` expands to `%USERPROFILE%`; `%VAR%` references are expanded by Windows Terminal. `""` means the directory axan was launched from |
 | `command` | string | `""` | A command to run inside the profile's shell. `""` means just the shell. See below |
 | `icon` | string | `""` | The row's icon (section 5). `""` means the profile's icon, else an automatic glyph |
-| `color` | string | `""` | Tint: `red`, `orange`, `yellow`, `green`, `blue`, `purple` (case-insensitive; each has a light-theme and dark-theme shade), or `"#RRGGBB"` / `"#AARRGGBB"`. Any other name means no tint |
+| `color` | string | `""` | Tint: `red`, `orange`, `yellow`, `green`, `blue`, `purple` (case-insensitive; each has a light-theme and dark-theme shade), or a literal hex `"#RRGGBB"` (`"#AARRGGBB"` is also read). Any other name means no tint. The editor's custom swatch accepts `#RRGGBB`, `RRGGBB`, `#RGB` or `rgb(r, g, b)` but always stores lowercase `"#rrggbb"`, so a hex survives export and import unchanged |
 | `color-target` | string | `"both"` | What `color` tints: `"icon"`, `"text"` or `"both"`. Lowercase only |
 | `hoist` | string or array | follow the global `sidebar.hoistStates` | `"never"`, or a list of state names (lowercase only): `idle`, `working`, `blocked`, `done`, `error`, `running`, `permission`, `question`, `auth`. An empty list `[]` means `"never"` |
 

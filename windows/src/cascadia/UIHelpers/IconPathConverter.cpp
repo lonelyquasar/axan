@@ -8,6 +8,7 @@
 
 #include <AxanGlyphNames.h> // axan #39: glyph names -> Segoe Fluent codepoints
 #include <AxanGlyphScale.h> // axan: per-font size multiplier (hieroglyphs, runes)
+#include <AxanGlyphWeight.h> // axan #48: per-font weight (synthesised bold for thin fonts)
 #include <AxanLog.h> // axan #44: warn once per unknown glyph name
 
 #include <map>
@@ -222,6 +223,74 @@ namespace winrt::Microsoft::Terminal::UI::implementation
         });
     }
 
+    // axan #48: sidebar.iconFontWeight, the user's per-font-family weights (AxanGlyphWeight.h),
+    // kept and guarded like the scales. Only SemiBold/Bold entries are stored: Normal is what
+    // a family without an entry draws at, so "normal" and an absent family compare equal and
+    // do not bump the generation. Shares s_fontScaleGeneration with the scales so one counter
+    // tells a window that either map changed.
+    using FontWeightMap = std::map<std::wstring, uint16_t, Axan::GlyphScale::FamilyLess>;
+    static FontWeightMap s_fontWeights;
+
+    uint64_t IconPathConverter::SetIconFontWeights(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring>& weights)
+    {
+        FontWeightMap next;
+        if (weights)
+        {
+            for (const auto& kv : weights)
+            {
+                const std::wstring_view family{ kv.Key() };
+                const std::wstring_view value{ kv.Value() };
+                const auto weight = Axan::GlyphWeight::ParseWeight(value);
+                if (!weight)
+                {
+                    if (_firstSighting(L"iconFontWeight:" + std::wstring{ family } + L"=" + std::wstring{ value }))
+                    {
+                        Axan::Log::Warn("IconPathConverter", "sidebar.iconFontWeight value is not normal, semibold or bold; the family draws at normal", { { "family", winrt::to_string(family) }, { "value", winrt::to_string(value) } });
+                    }
+                    continue;
+                }
+                if (Axan::GlyphScale::KnownFamily(family).empty() && _firstSighting(L"iconFontWeight:" + std::wstring{ family }))
+                {
+                    Axan::Log::Warn("IconPathConverter", "sidebar.iconFontWeight names a font family no icon is drawn from; it has no effect", { { "family", winrt::to_string(family) } });
+                }
+                if (*weight != Axan::GlyphWeight::kNormal)
+                {
+                    next.emplace(Axan::GlyphScale::CanonicalFamily(family), *weight);
+                }
+            }
+        }
+        const auto families = next.size();
+        uint64_t generation = 0;
+        bool changed = false;
+        {
+            const std::lock_guard guard{ s_fontScaleLock };
+            if (next != s_fontWeights)
+            {
+                s_fontWeights.swap(next);
+                ++s_fontScaleGeneration;
+                changed = true;
+            }
+            generation = s_fontScaleGeneration;
+        }
+        if (changed)
+        {
+            Axan::Log::Debug("IconPathConverter", "icon font weights changed", { { "families", std::to_string(families) }, { "generation", std::to_string(generation) } });
+        }
+        return generation;
+    }
+
+    // The weight override for the font a glyph is drawn from, nullopt when it draws at Normal.
+    static std::optional<uint16_t> _glyphWeight(std::wstring_view glyph)
+    {
+        const auto font = Axan::GlyphScale::FontForGlyph(glyph);
+        const std::lock_guard guard{ s_fontScaleLock };
+        if (const auto it = s_fontWeights.find(font); it != s_fontWeights.end())
+        {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+
     template<typename TIconSource>
     TIconSource _getIconSource(const winrt::hstring& rawIconPath, bool monochrome)
     {
@@ -266,6 +335,13 @@ namespace winrt::Microsoft::Terminal::UI::implementation
                     // per font family; sidebar.iconFontScale overrides the built-in
                     // factors. See src/inc/AxanGlyphScale.h.
                     icon.FontSize(12 * _glyphScale(iconPath));
+                    // axan #48: sidebar.iconFontWeight. The weight applies to the fallback
+                    // font too; DirectWrite synthesises bold for a family with no bold face
+                    // (Segoe UI Historic), which thickens thin strokes at large scales.
+                    if (const auto weight = _glyphWeight(iconPath))
+                    {
+                        icon.FontWeight(winrt::Windows::UI::Text::FontWeight{ *weight });
+                    }
                     icon.Glyph(iconPath);
                     iconSource = icon;
                 }

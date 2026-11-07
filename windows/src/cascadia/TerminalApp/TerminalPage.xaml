@@ -85,16 +85,69 @@
                                        Text="{x:Bind ((local:SessionNodeViewModel)Content).StateToolTip, Mode=OneWay}"
                                        TextWrapping="Wrap"
                                        Visibility="{x:Bind ((local:SessionNodeViewModel)Content).StateToolTipVisibility, Mode=OneWay}" />
+                            <!--  axan #46: how many child rows are tucked away / collapsed  -->
+                            <TextBlock Margin="0,4,0,0"
+                                       Opacity="0.8"
+                                       Text="{x:Bind ((local:SessionNodeViewModel)Content).FoldToolTip, Mode=OneWay}"
+                                       TextWrapping="Wrap"
+                                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).FoldToolTipVisibility, Mode=OneWay}" />
                         </StackPanel>
                     </ToolTipService.ToolTip>
+                    <!--
+                        axan #46: the idle-collapsed marker for a row with children. The chevron
+                        lives in the TreeViewItem ControlTemplate (whose DataContext is the
+                        TreeViewNode, not this view model), so the marker is drawn from here: a
+                        zero-size Canvas at the content's left edge, vertically centred, with the
+                        marker placed back into the chevron slot (lower-right of the chevron).
+                        A Canvas neither clips nor takes layout space. Not hit-testable, so the
+                        chevron underneath still takes the click. Hollow ring (not the filled
+                        unread dot) with the tucked count inside ("9+" cap), dot only when small.
+                    -->
+                    <Canvas Grid.Column="0"
+                            Width="0"
+                            Height="0"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            IsHitTestVisible="False"
+                            Visibility="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckVisibility, Mode=OneWay}">
+                        <Grid Canvas.Left="-13"
+                              Canvas.Top="-2"
+                              Width="16"
+                              Height="16">
+                            <Ellipse Width="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckDotSize, Mode=OneWay}"
+                                     Height="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckDotSize, Mode=OneWay}"
+                                     HorizontalAlignment="Center"
+                                     VerticalAlignment="Center"
+                                     Fill="Transparent"
+                                     Opacity="0.85"
+                                     Stroke="{ThemeResource TreeViewItemForeground}"
+                                     StrokeThickness="1" />
+                            <TextBlock HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeFontSize, Mode=OneWay}"
+                                       Foreground="{ThemeResource TreeViewItemForeground}"
+                                       IsTextScaleFactorEnabled="False"
+                                       LineHeight="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeFontSize, Mode=OneWay}"
+                                       LineStackingStrategy="BlockLineHeight"
+                                       Opacity="0.85"
+                                       Text="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadge, Mode=OneWay}"
+                                       TextLineBounds="Tight"
+                                       Visibility="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeVisibility, Mode=OneWay}" />
+                        </Grid>
+                    </Canvas>
                     <!--  axan: sidebar.iconSize sizes the icon box; the state dot stays 9px in its corner  -->
                     <Grid Grid.Column="0"
                           Width="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
                           Height="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
                           Margin="0,0,8,0"
                           VerticalAlignment="Center">
-                        <ContentPresenter Width="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
-                                          Height="{x:Bind ((local:SessionNodeViewModel)Content).IconSize, Mode=OneWay}"
+                        <!--  axan #48: sidebar.iconOverflow grows the presenter and pulls it back with a negative margin, so a large glyph is drawn whole over the padding without moving the row  -->
+                        <ContentPresenter Width="{x:Bind ((local:SessionNodeViewModel)Content).IconPresenterSize, Mode=OneWay}"
+                                          Height="{x:Bind ((local:SessionNodeViewModel)Content).IconPresenterSize, Mode=OneWay}"
+                                          Margin="{x:Bind ((local:SessionNodeViewModel)Content).IconPresenterMargin, Mode=OneWay}"
+                                          HorizontalContentAlignment="Center"
+                                          VerticalContentAlignment="Center"
+                                          IsHitTestVisible="{x:Bind ((local:SessionNodeViewModel)Content).IconHitTestVisible, Mode=OneWay}"
                                           Content="{x:Bind ((local:SessionNodeViewModel)Content).Icon, Mode=OneWay}" />
                         <Ellipse Width="9"
                                  Height="9"
@@ -126,12 +179,17 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0"
-                                       FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
-                                       Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
-                                       Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabel, Mode=OneWay}"
-                                       TextTrimming="CharacterEllipsis"
-                                       TextWrapping="NoWrap" />
+                            <!--  axan #49: the marquee host clips the message while sidebar.stateLineMarquee scrolls it (selected row only)  -->
+                            <Grid Grid.Column="0"
+                                  Loaded="_OnStateLineHostLoaded"
+                                  SizeChanged="_OnStateLineHostSizeChanged"
+                                  Unloaded="_OnStateLineHostUnloaded">
+                                <TextBlock FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
+                                           Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
+                                           Text="{x:Bind ((local:SessionNodeViewModel)Content).SubLabel, Mode=OneWay}"
+                                           TextTrimming="CharacterEllipsis"
+                                           TextWrapping="NoWrap" />
+                            </Grid>
                             <TextBlock Grid.Column="1"
                                        FontSize="{x:Bind ((local:SessionNodeViewModel)Content).StateLineFontSize, Mode=OneWay}"
                                        Foreground="{x:Bind ((local:SessionNodeViewModel)Content).LabelBrush, Mode=OneWay}"
@@ -189,6 +247,7 @@
                     -->
                     <Grid Margin="0,0,8,0"
                           VerticalAlignment="Center"
+                          ToolTipService.ToolTip="{x:Bind ((local:SessionNodeViewModel)Content).HeaderToolTip, Mode=OneWay}"
                           Visibility="{x:Bind ((local:SessionNodeViewModel)Content).SeparatorHeaderVisibility, Mode=OneWay}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -204,6 +263,43 @@
                                    FontSize="10"
                                    Opacity="0.6"
                                    Text="{x:Bind ((local:SessionNodeViewModel)Content).CollapseGlyph, Mode=OneWay}" />
+                        <!--
+                            axan #46: the idle-collapsed marker, same ring + count as a session
+                            row's (see the session Grid above), overlaid on the chevron's
+                            lower-right from a zero-size Canvas so it takes no layout space.
+                        -->
+                        <Canvas Grid.Column="0"
+                                Width="0"
+                                Height="0"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False"
+                                Visibility="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckVisibility, Mode=OneWay}">
+                            <Grid Canvas.Left="2"
+                                  Canvas.Top="-2"
+                                  Width="16"
+                                  Height="16">
+                                <Ellipse Width="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckDotSize, Mode=OneWay}"
+                                         Height="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckDotSize, Mode=OneWay}"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center"
+                                         Fill="Transparent"
+                                         Opacity="0.85"
+                                         Stroke="{ThemeResource TreeViewItemForeground}"
+                                         StrokeThickness="1" />
+                                <TextBlock HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeFontSize, Mode=OneWay}"
+                                           Foreground="{ThemeResource TreeViewItemForeground}"
+                                           IsTextScaleFactorEnabled="False"
+                                           LineHeight="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeFontSize, Mode=OneWay}"
+                                           LineStackingStrategy="BlockLineHeight"
+                                           Opacity="0.85"
+                                           Text="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadge, Mode=OneWay}"
+                                           TextLineBounds="Tight"
+                                           Visibility="{x:Bind ((local:SessionNodeViewModel)Content).IdleTuckBadgeVisibility, Mode=OneWay}" />
+                            </Grid>
+                        </Canvas>
                         <TextBlock Grid.Column="1"
                                    VerticalAlignment="Center"
                                    FontSize="12"
@@ -543,13 +639,18 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
+                                    <!--  axan #48: the icon box follows sidebar.iconSize (the Icon element already does) and sidebar.iconOverflow, like the tree's rows  -->
                                     <Grid Grid.Column="0"
-                                          Width="16"
-                                          Height="16"
+                                          Width="{x:Bind IconSize, Mode=OneWay}"
+                                          Height="{x:Bind IconSize, Mode=OneWay}"
                                           Margin="0,0,8,0"
                                           VerticalAlignment="Center">
-                                        <ContentPresenter Width="16"
-                                                          Height="16"
+                                        <ContentPresenter Width="{x:Bind IconPresenterSize, Mode=OneWay}"
+                                                          Height="{x:Bind IconPresenterSize, Mode=OneWay}"
+                                                          Margin="{x:Bind IconPresenterMargin, Mode=OneWay}"
+                                                          HorizontalContentAlignment="Center"
+                                                          VerticalContentAlignment="Center"
+                                                          IsHitTestVisible="{x:Bind IconHitTestVisible, Mode=OneWay}"
                                                           Content="{x:Bind Icon, Mode=OneWay}" />
                                         <Ellipse Width="9"
                                                  Height="9"
@@ -563,7 +664,9 @@
                                     </Grid>
                                     <StackPanel Grid.Column="1"
                                                 VerticalAlignment="Center">
-                                        <TextBlock Foreground="{x:Bind LabelBrush, Mode=OneWay}"
+                                        <!--  axan #47: the label and state line follow the row size settings like the tree's rows  -->
+                                        <TextBlock FontSize="{x:Bind LabelFontSize, Mode=OneWay}"
+                                                   Foreground="{x:Bind LabelBrush, Mode=OneWay}"
                                                    Text="{x:Bind Label, Mode=OneWay}"
                                                    TextTrimming="CharacterEllipsis"
                                                    TextWrapping="NoWrap" />
@@ -575,14 +678,19 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0"
-                                                       FontSize="11"
-                                                       Foreground="{x:Bind LabelBrush, Mode=OneWay}"
-                                                       Text="{x:Bind SubLabel, Mode=OneWay}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       TextWrapping="NoWrap" />
+                                            <!--  axan #49: the marquee host (see the tree template)  -->
+                                            <Grid Grid.Column="0"
+                                                  Loaded="_OnStateLineHostLoaded"
+                                                  SizeChanged="_OnStateLineHostSizeChanged"
+                                                  Unloaded="_OnStateLineHostUnloaded">
+                                                <TextBlock FontSize="{x:Bind StateLineFontSize, Mode=OneWay}"
+                                                           Foreground="{x:Bind LabelBrush, Mode=OneWay}"
+                                                           Text="{x:Bind SubLabel, Mode=OneWay}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           TextWrapping="NoWrap" />
+                                            </Grid>
                                             <TextBlock Grid.Column="1"
-                                                       FontSize="11"
+                                                       FontSize="{x:Bind StateLineFontSize, Mode=OneWay}"
                                                        Foreground="{x:Bind LabelBrush, Mode=OneWay}"
                                                        Text="{x:Bind SubLabelAge, Mode=OneWay}"
                                                        TextWrapping="NoWrap" />
@@ -760,9 +868,14 @@
                                             Orientation="Vertical"
                                             HorizontalAlignment="Center"
                                             Spacing="1">
-                                    <ContentPresenter Width="16"
-                                                      Height="16"
+                                    <!--  axan #48: sized like the tree's icon (sidebar.iconSize / iconOverflow); the Viewbox scales the cell  -->
+                                    <ContentPresenter Width="{x:Bind IconPresenterSize, Mode=OneWay}"
+                                                      Height="{x:Bind IconPresenterSize, Mode=OneWay}"
+                                                      Margin="{x:Bind IconPresenterMargin, Mode=OneWay}"
                                                       HorizontalAlignment="Center"
+                                                      HorizontalContentAlignment="Center"
+                                                      VerticalContentAlignment="Center"
+                                                      IsHitTestVisible="{x:Bind IconHitTestVisible, Mode=OneWay}"
                                                       Content="{x:Bind Icon, Mode=OneWay}" />
                                     <TextBlock Text="{x:Bind local:SessionNodeViewModel.Initials(Label), Mode=OneWay}"
                                                FontSize="11"

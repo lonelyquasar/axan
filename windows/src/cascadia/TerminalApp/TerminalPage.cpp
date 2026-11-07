@@ -346,6 +346,9 @@ namespace winrt::TerminalApp::implementation
         // tab-selection path (which drives the content swap + keeps the strip in sync).
         _tabs.VectorChanged({ get_weak(), &TerminalPage::_OnSessionsCollectionChanged });
         SessionTree().ItemInvoked({ get_weak(), &TerminalPage::_OnSessionTreeItemInvoked });
+        // axan #46: a manual expand/collapse of a session row sets/clears its idle hold.
+        SessionTree().Expanding({ get_weak(), &TerminalPage::_OnSessionTreeExpanding });
+        SessionTree().Collapsed({ get_weak(), &TerminalPage::_OnSessionTreeCollapsed });
         // axan #16: after a drag-and-drop reparent, expand the target so a former leaf shows
         // its new child instead of swallowing it.
         SessionTree().DragItemsCompleted({ get_weak(), &TerminalPage::_OnSessionTreeDragItemsCompleted });
@@ -4070,6 +4073,9 @@ namespace winrt::TerminalApp::implementation
         _SyncHoistOverridesFromSettings();
         // axan: sidebar.statusAfterSeen / stateGlyphs may have changed.
         _RecomputeAllNodeStates();
+        // axan #49: sidebar.stateLineMarquee / disableAnimations may have changed. (The
+        // hoisted group already re-evaluated sidebar.hoistPreview in _SyncHoistOverridesFromSettings.)
+        _RefreshStateLineMarquees("settings reloaded");
 
         // Reload the current value of alwaysOnTop from the settings file. This
         // will let the user hot-reload this setting, but any runtime changes to

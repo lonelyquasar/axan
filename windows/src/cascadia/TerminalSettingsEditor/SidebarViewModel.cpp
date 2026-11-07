@@ -13,6 +13,7 @@
 #include <AxanHoistRule.h> // axan #34: sidebar.hoistStates
 #include <AxanIdleEffects.h> // axan: sidebar.idleEffects
 #include <AxanGlyphScale.h> // axan: sidebar.iconFontScale defaults, icon -> font family
+#include <AxanGlyphWeight.h> // axan #48: sidebar.iconFontWeight names
 
 #include <optional>
 #include <set>
@@ -310,8 +311,10 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     // second one. A value this page writes is stored under the row's spelling (the kFonts
     // spelling for a built-in family) and replaces any other spelling of the same family.
 
-    // The key the map stores for a family in some spelling, if any.
-    static std::optional<winrt::hstring> _findFamilyKey(const IMap<winrt::hstring, double>& map, std::wstring_view family)
+    // The key the map stores for a family in some spelling, if any. (axan #48: either map,
+    // sidebar.iconFontScale or sidebar.iconFontWeight.)
+    template<typename V>
+    static std::optional<winrt::hstring> _findFamilyKey(const IMap<winrt::hstring, V>& map, std::wstring_view family)
     {
         if (map)
         {
@@ -327,7 +330,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     }
 
     // Drops every spelling of a family from the map.
-    static void _removeFamily(const IMap<winrt::hstring, double>& map, std::wstring_view family)
+    template<typename V>
+    static void _removeFamily(const IMap<winrt::hstring, V>& map, std::wstring_view family)
     {
         while (const auto key = _findFamilyKey(map, family))
         {
@@ -353,6 +357,17 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             }
         };
         if (const auto map = _GlobalSettings.SidebarIconFontScale())
+        {
+            for (const auto& kv : map)
+            {
+                if (!kv.Key().empty())
+                {
+                    others.emplace(kv.Key().c_str());
+                }
+            }
+        }
+        // axan #48: a family named only in sidebar.iconFontWeight gets a row too.
+        if (const auto map = _GlobalSettings.SidebarIconFontWeight())
         {
             for (const auto& kv : map)
             {
@@ -440,6 +455,66 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         auto map = _copyMap(_GlobalSettings.SidebarIconFontScale());
         _removeFamily(map, family);
         _StoreIconFontScales(map);
+    }
+
+    // ---- axan #48: sidebar.iconFontWeight / sidebar.iconOverflow ----
+    //
+    // Same family-name rules as the scales above. A value is stored by its canonical name
+    // (AxanGlyphWeight::WeightName); "normal" is stored as "no override".
+
+    winrt::hstring SidebarViewModel::SidebarIconFontWeight(const winrt::hstring& family) const
+    {
+        const auto map = _GlobalSettings.SidebarIconFontWeight();
+        if (const auto key = _findFamilyKey(map, family))
+        {
+            const auto canonical = Axan::GlyphWeight::CanonicalWeightName(map.Lookup(*key));
+            if (!canonical.empty())
+            {
+                return winrt::hstring{ canonical };
+            }
+        }
+        return winrt::hstring{ Axan::GlyphWeight::kNormalName };
+    }
+
+    void SidebarViewModel::_StoreIconFontWeights(const IMap<winrt::hstring, winrt::hstring>& map)
+    {
+        if (map.Size() == 0)
+        {
+            _GlobalSettings.ClearSidebarIconFontWeight();
+        }
+        else
+        {
+            _GlobalSettings.SidebarIconFontWeight(map);
+        }
+    }
+
+    void SidebarViewModel::SetSidebarIconFontWeight(const winrt::hstring& family, const winrt::hstring& weight)
+    {
+        const auto parsed = Axan::GlyphWeight::ParseWeight(weight);
+        if (family.empty() || !parsed)
+        {
+            return;
+        }
+        auto map = _copyMap(_GlobalSettings.SidebarIconFontWeight());
+        _removeFamily(map, family);
+        if (*parsed != Axan::GlyphWeight::kNormal)
+        {
+            map.Insert(winrt::hstring{ Axan::GlyphScale::CanonicalFamily(family) }, winrt::hstring{ Axan::GlyphWeight::WeightName(*parsed) });
+        }
+        _StoreIconFontWeights(map);
+    }
+
+    bool SidebarViewModel::IsSidebarIconFontSet(const winrt::hstring& family) const
+    {
+        return IsSidebarIconFontScaleSet(family) || _findFamilyKey(_GlobalSettings.SidebarIconFontWeight(), family).has_value();
+    }
+
+    void SidebarViewModel::ResetSidebarIconFont(const winrt::hstring& family)
+    {
+        ResetSidebarIconFontScale(family);
+        auto map = _copyMap(_GlobalSettings.SidebarIconFontWeight());
+        _removeFamily(map, family);
+        _StoreIconFontWeights(map);
     }
 
     void SidebarViewModel::ResetSidebarStateGlyph(const winrt::hstring& key)

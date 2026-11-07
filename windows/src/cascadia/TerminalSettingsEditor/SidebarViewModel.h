@@ -66,6 +66,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarMatchesProfileTransparency);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarIdleAfterMinutes); // axan #31
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarNeedsYouGroup); // axan #34
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarHoistPreview); // axan #49
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateLineMarquee); // axan #49
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarStateLabels);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarShowAgentName);
 
@@ -97,6 +99,19 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             _SetSize(value, Axan::SidebarSizes::kStateGlyphSize, L"SidebarStateGlyphSize", L"HasSidebarStateGlyphSize", _GlobalSettings.SidebarStateGlyphSize(), [&](double v) { _GlobalSettings.SidebarStateGlyphSize(v); });
         }
         bool HasSidebarStateGlyphSize() const { return _GlobalSettings.HasSidebarStateGlyphSize(); }
+        // axan #47: the sizes the "smaller" idle effect gives a row.
+        double SidebarIdleLabelFontSize() const { return _GlobalSettings.SidebarIdleLabelFontSize(); }
+        void SidebarIdleLabelFontSize(double value)
+        {
+            _SetSize(value, Axan::SidebarSizes::kIdleLabelFontSize, L"SidebarIdleLabelFontSize", L"HasSidebarIdleLabelFontSize", _GlobalSettings.SidebarIdleLabelFontSize(), [&](double v) { _GlobalSettings.SidebarIdleLabelFontSize(v); });
+        }
+        bool HasSidebarIdleLabelFontSize() const { return _GlobalSettings.HasSidebarIdleLabelFontSize(); }
+        double SidebarIdleRowHeight() const { return _GlobalSettings.SidebarIdleRowHeight(); }
+        void SidebarIdleRowHeight(double value)
+        {
+            _SetSize(value, Axan::SidebarSizes::kIdleRowHeight, L"SidebarIdleRowHeight", L"HasSidebarIdleRowHeight", _GlobalSettings.SidebarIdleRowHeight(), [&](double v) { _GlobalSettings.SidebarIdleRowHeight(v); });
+        }
+        bool HasSidebarIdleRowHeight() const { return _GlobalSettings.HasSidebarIdleRowHeight(); }
 
         // axan: sidebar.iconFontScale (see the idl)
         winrt::Windows::Foundation::Collections::IVectorView<winrt::hstring> SidebarIconFontFamilies() const;
@@ -105,6 +120,12 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         bool IsSidebarIconFontScaleSet(const winrt::hstring& family) const;
         void SetSidebarIconFontScale(const winrt::hstring& family, double value);
         void ResetSidebarIconFontScale(const winrt::hstring& family);
+        // axan #48: sidebar.iconFontWeight and sidebar.iconOverflow (see the idl)
+        winrt::hstring SidebarIconFontWeight(const winrt::hstring& family) const;
+        void SetSidebarIconFontWeight(const winrt::hstring& family, const winrt::hstring& weight);
+        bool IsSidebarIconFontSet(const winrt::hstring& family) const;
+        void ResetSidebarIconFont(const winrt::hstring& family);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(_GlobalSettings, SidebarIconOverflow);
         // Not projected: icon strings in use outside the globals (the live sidebar's icon
         // overrides, every profile's icon), whose families the list also shows. MainPage sets
         // it before navigating.
@@ -128,6 +149,7 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
         std::vector<winrt::hstring> _extraIconSources;
         void _StoreIconFontScales(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, double>& map);
+        void _StoreIconFontWeights(const winrt::Windows::Foundation::Collections::IMap<winrt::hstring, winrt::hstring>& map); // axan #48
 
         // sidebar.stateGlyphs helpers. nullopt = the key is absent (default glyph).
         std::optional<std::wstring> _StateGlyphConfigured(std::wstring_view key) const;
