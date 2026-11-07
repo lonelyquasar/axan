@@ -159,7 +159,20 @@ try {
   # FAILED redeploy leaves the PREVIOUS registration in place, which used to make this
   # script report "PACKAGE DEPLOYED" over a stale build (seen live: layout copy failed
   # with ERROR_USER_MAPPED_FILE, exit 5, yet the old June package still answered).
-  if ($dcode -ne 0) { Note "RESULT: DEPLOY FAILED ($dcode) - the previously registered build is still active"; exit $dcode }
+  if ($dcode -ne 0) {
+    # Issue #43: DEP0700 0x80073CF6 with inner 0x80070020 (sharing violation while
+    # registering the activatableClass collector) is NOT a running instance. Nothing
+    # holds the layout; the package's activation store on the system side is stuck,
+    # the OLD registration is gone too, and only a reboot has cleared it (elevation
+    # does not). Say so instead of the generic "still active" line, which is wrong here.
+    $tail = Get-Content -Path $wrap -Raw -ErrorAction SilentlyContinue
+    if ($tail -match '0x80070020') {
+      Note "RESULT: DEPLOY FAILED ($dcode) - registration refused with 0x80070020 (issue #43); the package is now UNREGISTERED. Reboot, then rerun this script. Before rebooting, from an elevated shell, 'handle.exe -a sh.axan.Axan' would identify the holder."
+    } else {
+      Note "RESULT: DEPLOY FAILED ($dcode) - the previously registered build is still active"
+    }
+    exit $dcode
+  }
 
   $pkg = Get-AppxPackage -Name 'sh.axan.Axan*'
   if ($pkg) {
