@@ -72,6 +72,18 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         }
     }
 
+    // The README section on session state: OSC 7501 (the Program Status Protocol) and its
+    // fallbacks, which the status glyphs below reflect. GitHub's anchor for the heading
+    // "### Session state in the sidebar".
+    static constexpr std::wstring_view kStatusGlyphsDocsUrl{ L"https://github.com/lonelyquasar/axan#session-state-in-the-sidebar" };
+
+    safe_void_coroutine Sidebar::StatusGlyphsInfo_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        auto lifetime = get_strong();
+        const winrt::Windows::Foundation::Uri uri{ kStatusGlyphsDocsUrl };
+        co_await winrt::Windows::System::Launcher::LaunchUriAsync(uri);
+    }
+
     // axan: the same picker the Startup page's icon button opens, led by a "Default" cell
     // (the state's built-in glyph; removes the key). "No icon" stores "" (show nothing for
     // that state). Every choice applies immediately and dismisses.

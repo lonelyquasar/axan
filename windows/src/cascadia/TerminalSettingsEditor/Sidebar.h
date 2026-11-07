@@ -24,6 +24,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         // axan #34: sidebar.hoistStates. The checkboxes are built in code-behind (one per
         // AxanHoistRule.h name) and re-synced after a reset.
         void HoistStatesReset_Click(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs& args);
+        // The Status glyphs header's info button: opens the OSC 7501 docs in the browser.
+        safe_void_coroutine StatusGlyphsInfo_Click(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs& args);
 
         til::property_changed_event PropertyChanged;
         WINRT_OBSERVABLE_PROPERTY(Editor::SidebarViewModel, ViewModel, PropertyChanged.raise, nullptr);

@@ -107,8 +107,25 @@
                             Value="{x:Bind ViewModel.SidebarIdleAfterMinutes, Mode=TwoWay}" />
         </local:SettingContainer>
 
-        <TextBlock x:Uid="Sidebar_GlyphsHeader"
-                   Style="{StaticResource TextBlockSubHeaderStyle}" />
+        <!--
+            The header carries an info button: its tooltip says where the states come from
+            (OSC 7501 reports, with OSC 133 and the bell as fallbacks) and a click opens the
+            README section that documents them (StatusGlyphsInfo_Click).
+        -->
+        <StackPanel Orientation="Horizontal"
+                    Spacing="4">
+            <TextBlock x:Uid="Sidebar_GlyphsHeader"
+                       VerticalAlignment="Bottom"
+                       Style="{StaticResource TextBlockSubHeaderStyle}" />
+            <HyperlinkButton x:Uid="Sidebar_StatusGlyphsInfo"
+                             Margin="0,0,0,2"
+                             Padding="4"
+                             VerticalAlignment="Bottom"
+                             Click="StatusGlyphsInfo_Click">
+                <FontIcon FontSize="14"
+                          Glyph="&#xE946;" />
+            </HyperlinkButton>
+        </StackPanel>
         <!--
             axan: sidebar.stateGlyphs. The right-edge icon a row shows for its slot state: the
             same picker as the Startup page's icon button, plus a Default cell. The text beside

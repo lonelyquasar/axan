@@ -845,8 +845,16 @@
     <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
   </data>
   <data name="Sidebar_GlyphsHeader.Text" xml:space="preserve">
-    <value>Glyphs</value>
-    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
+    <value>Status glyphs</value>
+    <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page. The right-edge icons a sidebar row shows for its session's state.</comment>
+  </data>
+  <data name="Sidebar_StatusGlyphsInfo.[using:Windows.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>These glyphs show the state a program reports over OSC 7501 (the Program Status Protocol), with shell integration and the bell as fallbacks. Click to open the documentation.</value>
+    <comment>axan: Tooltip on the info button next to the "Status glyphs" header on the Sessions &gt; Sidebar settings page. "OSC 7501" is a terminal escape sequence name; do not translate.</comment>
+  </data>
+  <data name="Sidebar_StatusGlyphsInfo.[using:Windows.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>About status glyphs: open the OSC 7501 documentation</value>
+    <comment>axan: Screen reader name of the info button next to the "Status glyphs" header on the Sessions &gt; Sidebar settings page.</comment>
   </data>
   <data name="Nav_StartupSessions.Content" xml:space="preserve">
     <value>Startup sessions</value>
