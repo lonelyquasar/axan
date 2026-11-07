@@ -16,6 +16,7 @@
 #include <AxanHoistRule.h> // axan #34: sidebar.hoistStates vocabulary
 #include <AxanIdleEffects.h> // axan: sidebar.idleEffects vocabulary
 #include <AxanGlyphScale.h> // axan: sidebar.iconFontScale range
+#include <AxanGlyphWeight.h> // axan #48: sidebar.iconFontWeight names
 
 using namespace winrt;
 using namespace winrt::Windows::UI::Xaml;
@@ -58,7 +59,8 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
         {
             Grid row;
             row.ColumnSpacing(12);
-            for (const auto width : { WUX::GridLength{ 1, WUX::GridUnitType::Star }, WUX::GridLength{ 1, WUX::GridUnitType::Auto }, WUX::GridLength{ 1, WUX::GridUnitType::Auto } })
+            // name | scale | weight (axan #48) | reset
+            for (const auto width : { WUX::GridLength{ 1, WUX::GridUnitType::Star }, WUX::GridLength{ 1, WUX::GridUnitType::Auto }, WUX::GridLength{ 1, WUX::GridUnitType::Auto }, WUX::GridLength{ 1, WUX::GridUnitType::Auto } })
             {
                 ColumnDefinition column;
                 column.Width(width);
@@ -89,13 +91,53 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
             Grid::SetColumn(box, 1);
             row.Children().Append(box);
 
+            // axan #48: sidebar.iconFontWeight. Each item's Tag is the canonical name stored.
+            ComboBox weight;
+            weight.VerticalAlignment(WUX::VerticalAlignment::Center);
+            weight.MinWidth(110);
+            const auto currentWeight = vm.SidebarIconFontWeight(family);
+            int32_t selected = 0;
+            int32_t index = 0;
+            for (const auto& [name, label] : { std::pair{ Axan::GlyphWeight::kNormalName, RS_(L"Globals_SidebarIconFontWeightNormal") },
+                                               std::pair{ Axan::GlyphWeight::kSemiBoldName, RS_(L"Globals_SidebarIconFontWeightSemibold") },
+                                               std::pair{ Axan::GlyphWeight::kBoldName, RS_(L"Globals_SidebarIconFontWeightBold") } })
+            {
+                ComboBoxItem item;
+                item.Content(winrt::box_value(label));
+                item.Tag(winrt::box_value(winrt::hstring{ name }));
+                weight.Items().Append(item);
+                if (name == std::wstring_view{ currentWeight })
+                {
+                    selected = index;
+                }
+                ++index;
+            }
+            weight.SelectedIndex(selected);
+            Automation::AutomationProperties::SetName(weight, RS_fmt(L"Globals_SidebarIconFontWeightName", std::wstring_view{ family }));
+            Grid::SetColumn(weight, 2);
+            row.Children().Append(weight);
+
             Button reset;
             reset.Content(winrt::box_value(RS_(L"Globals_SidebarIconFontScaleReset")));
             reset.VerticalAlignment(WUX::VerticalAlignment::Center);
-            reset.Visibility(vm.IsSidebarIconFontScaleSet(family) ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+            reset.Visibility(vm.IsSidebarIconFontSet(family) ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
             Automation::AutomationProperties::SetName(reset, RS_fmt(L"Globals_SidebarIconFontScaleResetName", std::wstring_view{ family }));
-            Grid::SetColumn(reset, 2);
+            Grid::SetColumn(reset, 3);
             row.Children().Append(reset);
+
+            weight.SelectionChanged([vm, family, weakReset = winrt::make_weak(reset)](const IInspectable& sender, const SelectionChangedEventArgs&) {
+                const auto combo = sender.try_as<ComboBox>();
+                const auto item = combo ? combo.SelectedItem().try_as<ComboBoxItem>() : nullptr;
+                if (!item)
+                {
+                    return;
+                }
+                vm.SetSidebarIconFontWeight(family, winrt::unbox_value<winrt::hstring>(item.Tag()));
+                if (const auto r = weakReset.get())
+                {
+                    r.Visibility(vm.IsSidebarIconFontSet(family) ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+                }
+            });
 
             box.ValueChanged([vm, family, weakReset = winrt::make_weak(reset)](const MUXC::NumberBox&, const MUXC::NumberBoxValueChangedEventArgs& args) {
                 const auto value = args.NewValue();
@@ -106,14 +148,19 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
                 vm.SetSidebarIconFontScale(family, value);
                 if (const auto r = weakReset.get())
                 {
-                    r.Visibility(vm.IsSidebarIconFontScaleSet(family) ? WUX::Visibility::Visible : WUX::Visibility::Collapsed);
+                    r.Visibility(vm.IsSidebarIconFontSet(family) ? WUX::Visibility::Visible : WUX::Visibility::Collapsed); // axan #48: scale or weight
                 }
             });
-            reset.Click([vm, family, weakBox = winrt::make_weak(box)](const IInspectable& sender, const RoutedEventArgs&) {
-                vm.ResetSidebarIconFontScale(family);
+            // axan #48: Reset clears the family's scale and weight.
+            reset.Click([vm, family, weakBox = winrt::make_weak(box), weakWeight = winrt::make_weak(weight)](const IInspectable& sender, const RoutedEventArgs&) {
+                vm.ResetSidebarIconFont(family);
                 if (const auto b = weakBox.get())
                 {
                     b.Value(vm.SidebarIconFontScale(family));
+                }
+                if (const auto w = weakWeight.get())
+                {
+                    w.SelectedIndex(0); // Normal; its handler writes nothing new
                 }
                 if (const auto r = sender.try_as<Button>())
                 {
@@ -192,6 +239,16 @@ namespace winrt::Microsoft::Terminal::Settings::Editor::implementation
     {
         auto lifetime = get_strong();
         const winrt::Windows::Foundation::Uri uri{ kStatusGlyphsDocsUrl };
+        co_await winrt::Windows::System::Launcher::LaunchUriAsync(uri);
+    }
+
+    // axan #49: the "Preview state" submenu is documented in the same file as the states, in
+    // its "What the row shows" section.
+    static constexpr std::wstring_view kPreviewStatesDocsUrl{ L"https://github.com/lonelyquasar/axan/blob/main/docs/program-status-osc-7501.md#5-what-the-row-shows" };
+    safe_void_coroutine Sidebar::PreviewStatesInfo_Click(const IInspectable& /*sender*/, const RoutedEventArgs& /*args*/)
+    {
+        auto lifetime = get_strong();
+        const winrt::Windows::Foundation::Uri uri{ kPreviewStatesDocsUrl };
         co_await winrt::Windows::System::Launcher::LaunchUriAsync(uri);
     }
 

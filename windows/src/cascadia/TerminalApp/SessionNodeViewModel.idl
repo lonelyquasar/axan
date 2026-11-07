@@ -115,9 +115,11 @@ namespace TerminalApp
 
         // axan #31: idle de-emphasis. An idle node with no input/output for the configured
         // sidebar.idleAfterMinutes is de-emphasised. sidebar.idleEffects picks how: "dim"
-        // (RowOpacity), "smaller" (LabelFontSize 12 vs 14 and a shorter RowMinHeight), "gray"
-        // (a coloured node's Icon / LabelBrush go neutral gray), "collapse" (the page closes
-        // the expander of an all-idle subtree; see AxanIdleEffects.h). needs-you /
+        // (RowOpacity), "smaller" (LabelFontSize and RowMinHeight become sidebar.idleLabelFontSize
+        // and sidebar.idleRowHeight, axan #47), "gray"
+        // (a coloured node's Icon / LabelBrush go neutral gray), "collapse" (the page tucks
+        // away idle rows under expanded section headers and parent rows, axan #46; see
+        // AxanIdleEffects.h). needs-you /
         // done-unseen / error are never de-emphasised; any activity or a working/running
         // state promotes the row back on the next update. No animation.
         Boolean IsDeEmphasised { get; };
@@ -126,6 +128,15 @@ namespace TerminalApp
         // sidebar.iconSize (the node icon's box). LabelFontSize follows sidebar.labelFontSize.
         Double StateLineFontSize { get; };
         Double IconSize { get; };
+        // axan #48: sidebar.iconOverflow. The icon's ContentPresenter is IconPresenterSize
+        // square with IconPresenterMargin (negative while overflow is on), so it stays centred
+        // on the IconSize box and takes no more layout room, but a glyph scaled past the box is
+        // drawn whole instead of cut at its edge. Off: IconSize and a zero margin (the box).
+        // IconHitTestVisible is false while overflowing so a spilled glyph never takes a click
+        // meant for the row next to it.
+        Double IconPresenterSize { get; };
+        Windows.UI.Xaml.Thickness IconPresenterMargin { get; };
+        Boolean IconHitTestVisible { get; };
         Double RowOpacity { get; };
         Double RowMinHeight { get; };
 
@@ -146,5 +157,22 @@ namespace TerminalApp
         Windows.UI.Xaml.Visibility SectionBadgeVisibility { get; };
         void ActivateSectionBadge();
         Boolean IsSectionHidden { get; };
+
+        // axan #46: the "collapse" idle effect's idle-collapsed state, shared by section
+        // headers and session rows with children. The page hides idle members/children (via
+        // IsSectionHidden, never by closing the expander) and shows a small hollow dot in the
+        // expander slot (IdleTuckVisibility, IdleTuckDotSize) with the hidden count as a badge
+        // inside it (IdleTuckBadge "1".."9" / "9+", IdleTuckBadgeFontSize; Collapsed below a
+        // state-line size of 9). FoldToolTip is the hidden-row count in words ("4 idle
+        // sessions tucked away"; "" = nothing hidden) for the row tooltip; HeaderToolTip is the
+        // same text boxed for a section header (null = no tooltip).
+        Windows.UI.Xaml.Visibility IdleTuckVisibility { get; };
+        String IdleTuckBadge { get; };
+        Windows.UI.Xaml.Visibility IdleTuckBadgeVisibility { get; };
+        Double IdleTuckDotSize { get; };
+        Double IdleTuckBadgeFontSize { get; };
+        String FoldToolTip { get; };
+        Windows.UI.Xaml.Visibility FoldToolTipVisibility { get; };
+        Object HeaderToolTip { get; };
     }
 }

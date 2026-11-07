@@ -892,6 +892,34 @@
     <value>Idle sessions</value>
     <comment>axan #38: Section header on the Sessions &gt; Sidebar settings page.</comment>
   </data>
+  <data name="Sidebar_PreviewStatesHeader.Text" xml:space="preserve">
+    <value>Preview states</value>
+    <comment>axan #49: Section header on the Sessions &gt; Sidebar settings page, for the options of the sidebar's "Preview state" menu.</comment>
+  </data>
+  <data name="Sidebar_PreviewStatesDescription.Text" xml:space="preserve">
+    <value>Right-click a session in the sidebar and pick a state under Preview state to see how its row looks in that state, without a program reporting it. A preview is display only and is never saved. Clear preview, a new report from the session, or a real state change ends it.</value>
+    <comment>axan #49: Explanation under the "Preview states" header on the Sessions &gt; Sidebar settings page. "Preview state" and "Clear preview" are the names of sidebar context menu items.</comment>
+  </data>
+  <data name="Sidebar_PreviewStatesInfo.Content" xml:space="preserve">
+    <value>Read about session states and previews</value>
+    <comment>axan #49: Link under the "Preview states" header on the Sessions &gt; Sidebar settings page; opens the documentation in the browser.</comment>
+  </data>
+  <data name="Globals_SidebarHoistPreview.Header" xml:space="preserve">
+    <value>Hoist previewed rows</value>
+    <comment>axan #49: Header for a toggle: the hoisted group treats a previewed row as if it were in the previewed state.</comment>
+  </data>
+  <data name="Globals_SidebarHoistPreview.HelpText" xml:space="preserve">
+    <value>The hoisted group uses a row's previewed state instead of its real one, so you can try out which states it lists. A session's own hoist setting still applies. When off, previews never change the group.</value>
+    <comment>axan #49: A description for the "Hoist previewed rows" setting. Presented near "Globals_SidebarHoistPreview.Header".</comment>
+  </data>
+  <data name="Globals_SidebarStateLineMarquee.Header" xml:space="preserve">
+    <value>Scroll long state lines</value>
+    <comment>axan #49: Header for a toggle: a state line too long for its sidebar row scrolls back and forth instead of being cut off.</comment>
+  </data>
+  <data name="Globals_SidebarStateLineMarquee.HelpText" xml:space="preserve">
+    <value>A state line too long for its row scrolls slowly back and forth instead of ending in "…". Applies to rows in the hoisted group and to the selected row. Off when Windows animation effects are turned off.</value>
+    <comment>axan #49: A description for the "Scroll long state lines" setting. Presented near "Globals_SidebarStateLineMarquee.Header".</comment>
+  </data>
   <data name="Sidebar_TextAndIconsHeader.Text" xml:space="preserve">
     <value>Text and icons</value>
     <comment>axan: Section header on the Sessions &gt; Sidebar settings page. The sizes of a sidebar row's text and icons.</comment>
@@ -901,7 +929,7 @@
     <comment>axan: Header for a number box: the font size of a sidebar row's title.</comment>
   </data>
   <data name="Globals_SidebarLabelFontSize.HelpText" xml:space="preserve">
-    <value>Font size of each session's name in the sidebar. An idle row drawn smaller takes 2 off. Default 14.</value>
+    <value>Font size of each session's name in the sidebar. Default 14.</value>
     <comment>axan: A description for the "session name size" setting. Presented near "Globals_SidebarLabelFontSize.Header".</comment>
   </data>
   <data name="Globals_SidebarStateLineFontSize.Header" xml:space="preserve">
@@ -928,6 +956,22 @@
     <value>Size of the status glyph at the right edge of a session's row. Default 12.</value>
     <comment>axan: A description for the "status glyph size" setting. Presented near "Globals_SidebarStateGlyphSize.Header".</comment>
   </data>
+  <data name="Globals_SidebarIdleLabelFontSize.Header" xml:space="preserve">
+    <value>Idle session name size</value>
+    <comment>axan #47: Header for a number box: the font size of an idle sidebar row's title when the "Smaller" idle effect is on.</comment>
+  </data>
+  <data name="Globals_SidebarIdleLabelFontSize.HelpText" xml:space="preserve">
+    <value>Font size of an idle session's name when the "Smaller" idle effect is on. This is an absolute size and is not clamped to the active row size. Default 12.</value>
+    <comment>axan #47: A description for the "idle session name size" setting. Presented near "Globals_SidebarIdleLabelFontSize.Header". "Smaller" is the label of an idle-effect checkbox on the same page.</comment>
+  </data>
+  <data name="Globals_SidebarIdleRowHeight.Header" xml:space="preserve">
+    <value>Idle row height</value>
+    <comment>axan #47: Header for a number box: the height of an idle sidebar row when the "Smaller" idle effect is on.</comment>
+  </data>
+  <data name="Globals_SidebarIdleRowHeight.HelpText" xml:space="preserve">
+    <value>Height of an idle session's row, in pixels, when the "Smaller" idle effect is on. This is an absolute size and is not clamped to the active row size. Default 24.</value>
+    <comment>axan #47: A description for the "idle row height" setting. Presented near "Globals_SidebarIdleRowHeight.Header". "Smaller" is the label of an idle-effect checkbox on the same page.</comment>
+  </data>
   <data name="Globals_SidebarIconFontScale.Header" xml:space="preserve">
     <value>Icon fonts</value>
     <comment>axan: Header for a list of font families, each with a number box: how big each font's glyphs draw as sidebar icons.</comment>
@@ -943,6 +987,30 @@
   <data name="Globals_SidebarIconFontScaleResetName" xml:space="preserve">
     <value>Reset {0}</value>
     <comment>axan: Accessible name of the reset button for a font family's icon scale. {0} is the font family name, e.g. "Segoe UI Historic".</comment>
+  </data>
+  <data name="Globals_SidebarIconFontWeightNormal" xml:space="preserve">
+    <value>Normal</value>
+    <comment>axan #48: Item in a font family's icon weight drop-down: the font's regular weight.</comment>
+  </data>
+  <data name="Globals_SidebarIconFontWeightSemibold" xml:space="preserve">
+    <value>Semibold</value>
+    <comment>axan #48: Item in a font family's icon weight drop-down: semibold (synthesised when the font has no such face).</comment>
+  </data>
+  <data name="Globals_SidebarIconFontWeightBold" xml:space="preserve">
+    <value>Bold</value>
+    <comment>axan #48: Item in a font family's icon weight drop-down: bold (synthesised when the font has no bold face).</comment>
+  </data>
+  <data name="Globals_SidebarIconFontWeightName" xml:space="preserve">
+    <value>{0} weight</value>
+    <comment>axan #48: Accessible name of a font family's icon weight drop-down. {0} is the font family name, e.g. "Segoe UI Historic".</comment>
+  </data>
+  <data name="Globals_SidebarIconOverflow.Header" xml:space="preserve">
+    <value>Let large glyphs overflow the icon box</value>
+    <comment>axan #48: Header for a toggle: a sidebar icon glyph scaled larger than its box is drawn whole instead of being cut at the box edge.</comment>
+  </data>
+  <data name="Globals_SidebarIconOverflow.HelpText" xml:space="preserve">
+    <value>The row height is unchanged; glyphs may overlap the padding.</value>
+    <comment>axan #48: A description for the "overflow the icon box" setting. Presented near "Globals_SidebarIconOverflow.Header".</comment>
   </data>
   <data name="Sidebar_GlyphsHeader.Text" xml:space="preserve">
     <value>Status glyphs</value>

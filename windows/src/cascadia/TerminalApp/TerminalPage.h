@@ -582,6 +582,31 @@ namespace winrt::TerminalApp::implementation
         void _OnNeedsYouItemClick(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::Controls::ItemClickEventArgs& args);
         void _SetNeedsYouGroupEnabled(bool enabled);
         void _AppendNeedsYouGroupToggle(const winrt::Windows::UI::Xaml::Controls::MenuFlyout& flyout);
+        // axan #49: sidebar.stateLineMarquee. Each state-line host (the clipping Grid around
+        // the SubLabel TextBlock, in the tree's and the hoisted group's templates) registers
+        // on Loaded and drops out on Unloaded; see AxanSessionTreeView.cpp.
+        struct StateLineMarquee
+        {
+            winrt::Windows::UI::Xaml::FrameworkElement host{ nullptr };
+            winrt::Windows::UI::Xaml::Controls::TextBlock text{ nullptr };
+            winrt::Windows::UI::Xaml::Controls::Primitives::SelectorItem container{ nullptr }; // the tree row's TreeViewItem; null in the hoisted group
+            int64_t textToken{ 0 };
+            int64_t fontToken{ 0 };
+            int64_t selectedToken{ 0 };
+            winrt::Windows::UI::Xaml::Media::Animation::Storyboard storyboard{ nullptr };
+            double distance{ 0 }; // px the running storyboard scrolls (0 = not running)
+        };
+        std::unordered_map<void*, StateLineMarquee> _stateLineMarquees;
+        winrt::Windows::UI::Xaml::Controls::TextBlock _stateLineMeasure{ nullptr };
+        winrt::Windows::UI::ViewManagement::UISettings _marqueeUISettings{ nullptr };
+        winrt::Windows::UI::ViewManagement::UISettings::AnimationsEnabledChanged_revoker _marqueeAnimationsRevoker;
+        void _OnStateLineHostLoaded(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs& args);
+        void _OnStateLineHostUnloaded(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::RoutedEventArgs& args);
+        void _OnStateLineHostSizeChanged(const winrt::Windows::Foundation::IInspectable& sender, const winrt::Windows::UI::Xaml::SizeChangedEventArgs& args);
+        void _UpdateStateLineMarquee(StateLineMarquee& entry, const char* reason);
+        void _StopStateLineMarquee(StateLineMarquee& entry, const char* reason);
+        void _RefreshStateLineMarquees(const char* reason);
+        bool _StateLineMotionAllowed();
         // axan #34: per-entry hoist overrides, seeded from / re-synced with startupSessions.
         winrt::hstring _HoistOverrideForEntry(const winrt::hstring& entryId) const;
         void _SyncHoistOverridesFromSettings();
@@ -589,7 +614,7 @@ namespace winrt::TerminalApp::implementation
         // _AppendNeedsYouGroupToggle) and the re-derive they (and a settings reload) trigger.
         void _SetSidebarStatusSetting(const char* name, const std::function<bool(const winrt::Microsoft::Terminal::Settings::Model::GlobalAppSettings&)>& apply);
         void _RecomputeAllNodeStates();
-        // axan: hand sidebar.iconFontScale to IconPathConverter (process-wide) and rebuild
+        // axan: hand sidebar.iconFontScale (and #48 sidebar.iconFontWeight) to IconPathConverter (process-wide) and rebuild
         // this window's node icons when its generation differs from what this page last applied.
         void _ApplyIconFontScales();
         std::optional<uint64_t> _appliedIconFontScales;
@@ -650,7 +675,17 @@ namespace winrt::TerminalApp::implementation
         // True while the last clock tick ran the collapse pass with the effect on; lets the
         // tick skip the tree walk while the effect is off once it has been undone.
         bool _idleCollapseApplied{ false };
-        void _ApplyIdleCollapse(bool enabled);
+        // axan #46: the tuck itself lives in _RecomputeSections; this re-runs it (and, when
+        // the effect goes off or on, clears every hold so nothing stays tucked or held).
+        void _ApplyIdleCollapse(bool enabled, bool effectChanged);
+        // axan #46: manual expand/collapse of a session row (chevron, keyboard, row click)
+        // sets/clears its idle hold. Expansions the page makes itself go through
+        // _ExpandNodeFromCode so they don't count as manual.
+        void _OnSessionTreeExpanding(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewExpandingEventArgs& args);
+        void _OnSessionTreeCollapsed(const Microsoft::UI::Xaml::Controls::TreeView& sender, const Microsoft::UI::Xaml::Controls::TreeViewCollapsedEventArgs& args);
+        void _ExpandNodeFromCode(const Microsoft::UI::Xaml::Controls::TreeViewNode& node);
+        void _QueueRecomputeSections();
+        uint32_t _expandFromCode{ 0 };
         Windows::UI::Xaml::DispatcherTimer _sessionStateClock{ nullptr };
 
         // axan M13: right-click a session node for its actions (rename label, set/clear icon,

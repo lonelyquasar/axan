@@ -172,6 +172,21 @@ namespace TerminalCoreUnitTests
             VERIFY_IS_FALSE(Wire::MatchProfileName(L"Ubuntu", {}).has_value());
         }
 
+        TEST_METHOD(CustomHexColorRoundTrips)
+        {
+            Log::Comment(L"axan #50: a custom colour is stored as \"#rrggbb\" and survives TOML unchanged");
+            auto e = Session();
+            e.color = "#2e8b57";
+            e.colorTarget = "icon";
+            VERIFY_IS_TRUE(Contains(Wire::ToTomlBlock(e), "\"#2e8b57\""));
+            const auto back = RoundTrip(e);
+            VERIFY_ARE_EQUAL(std::string{ "#2e8b57" }, back.color);
+            VERIFY_ARE_EQUAL(std::string{ "icon" }, back.colorTarget);
+            Log::Comment(L"A palette name is untouched too");
+            e.color = "blue";
+            VERIFY_ARE_EQUAL(std::string{ "blue" }, RoundTrip(e).color);
+        }
+
         TEST_METHOD(ProfileNameAloneIsRead)
         {
             const auto doc = toml::parse("[[startup-sessions]]\nid = \"a\"\nprofile-name = \"Ubuntu\"\n");

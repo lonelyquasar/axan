@@ -64,6 +64,8 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarMatchesProfileTransparency);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Int32, SidebarIdleAfterMinutes); // axan #31
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarNeedsYouGroup); // axan #34
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarHoistPreview); // axan #49
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarStateLineMarquee); // axan #49
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarStateLabels);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarShowAgentName);
         // axan: the "Text and icons" sizes (sidebar.labelFontSize / stateLineFontSize /
@@ -72,6 +74,9 @@ namespace Microsoft.Terminal.Settings.Editor
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarStateLineFontSize);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarIconSize);
         PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarStateGlyphSize);
+        // axan #47: sidebar.idleLabelFontSize / idleRowHeight, the "smaller" idle effect's sizes.
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarIdleLabelFontSize);
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Double, SidebarIdleRowHeight);
 
         // axan: sidebar.iconFontScale, font family -> multiplier for one-character icons
         // (src/inc/AxanGlyphScale.h). Families: the built-in table's families, then (each
@@ -85,5 +90,17 @@ namespace Microsoft.Terminal.Settings.Editor
         Boolean IsSidebarIconFontScaleSet(String family);
         void SetSidebarIconFontScale(String family, Double value);
         void ResetSidebarIconFontScale(String family);
+        // axan #48: sidebar.iconFontWeight, font family -> "normal" | "semibold" | "bold"
+        // (src/inc/AxanGlyphWeight.h). Weight = the effective canonical name ("normal" when
+        // unset or invalid). Set writes the map ("normal" removes the key). IsSidebarIconFontSet
+        // = the family has a scale or a weight override; ResetSidebarIconFont removes both
+        // (the row's Reset button).
+        String SidebarIconFontWeight(String family);
+        void SetSidebarIconFontWeight(String family, String weight);
+        Boolean IsSidebarIconFontSet(String family);
+        void ResetSidebarIconFont(String family);
+        // axan #48: sidebar.iconOverflow, a glyph larger than the icon box is drawn whole over
+        // the row padding instead of cut at the box edge. Default false.
+        PERMANENT_OBSERVABLE_PROJECTED_SETTING(Boolean, SidebarIconOverflow);
     }
 }

@@ -33,9 +33,12 @@ All notable changes to axan are documented here.
 - Idle rows are de-emphasised after `sidebar.idleAfterMinutes` (default 15;
   `0` turns it off); the focused row never is. `sidebar.idleEffects` picks how:
   `dim`, `smaller` (the default pair), `gray` (a coloured session loses its
-  colour) and `collapse` (a session folds its child sessions away once they're
-  all idle, and reopens on activity), with a checkbox each on the Sidebar
-  settings page. Windows only. (#31)
+  colour) and `collapse` (idle sessions under an expanded parent or section
+  header are tucked away while active ones stay in view; a hollow dot with the
+  hidden count sits in the chevron slot, clicking cycles tucked → fully
+  collapsed → expanded, a manual expand holds the node open until you collapse
+  it again, and a tucked session reappears on activity), with a checkbox each
+  on the Sidebar settings page. Windows only. (#31, #46)
 - The right-click menu on empty sidebar space has a Settings item. Windows only.
 - Optional "Needs you" group above the session tree
   (`sidebar.needsYouGroup`, default off) listing sessions that are blocked,
@@ -94,6 +97,29 @@ All notable changes to axan are documented here.
   as if it were in any state (needs answer, done, error, ...), for checking how
   sizes and glyphs look. It is purely visual, marked "Preview" in the tooltip,
   and ends on "Clear preview" or the session's next real report. Windows only.
+- The "smaller" idle effect uses absolute sizes instead of 2 points off and
+  three quarters of the row: `sidebar.idleLabelFontSize` (default 12) and
+  `sidebar.idleRowHeight` (24 px), two more spin boxes under "Text and icons".
+  Neither is clamped to the active row's size. The "Needs you" group's rows
+  follow the name, status-line and icon sizes too, instead of fixed values.
+  Windows only. (#47)
+- Each font under "Icon fonts" also takes a weight (Normal, Semibold, Bold;
+  `sidebar.iconFontWeight`, e.g. `{ "Segoe UI Historic": "bold" }`), so thin
+  historic glyphs can be drawn with a synthesised bold, and a "Let large glyphs
+  overflow the icon box" switch (`sidebar.iconOverflow`) centres an oversized
+  glyph on its box and lets it spill into the padding instead of cropping it;
+  row height is unchanged either way. Windows only. (#48)
+- A "Preview states" group on the Sidebar page explains the Preview state
+  submenu and adds two switches: "Hoist previewed rows"
+  (`sidebar.hoistPreview`) makes the "Needs you" group treat a previewed state
+  as real, so hoisting can be tried out; "Scroll long state lines"
+  (`sidebar.stateLineMarquee`) scrolls a status line that doesn't fit back and
+  forth, for hoisted rows and the selected row, and stays still when Windows
+  animation effects are off. Both default off. Windows only. (#49)
+- The colour swatches in the Edit node card and the Startup sessions panel end
+  with a custom swatch: it opens a box that takes `#RRGGBB`, `#RGB` or
+  `rgb(r, g, b)`, previews the colour as you type, and stores it as `#rrggbb`
+  in the same `color` field, so the TOML round-trips. Windows only. (#50)
 - "Open profile in Settings" is gone from the titlebar app menu, which already
   has Settings, and from a session's right-click menu, where a plain Settings
   item replaces it. It opened Settings without going to the session's profile.

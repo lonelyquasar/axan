@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cwctype>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace Axan::SessionPalette
@@ -138,5 +139,134 @@ namespace Axan::SessionPalette
         color.g = static_cast<uint8_t>((v >> 8) & 0xFF);
         color.b = static_cast<uint8_t>(v & 0xFF);
         return color;
+    }
+
+    // axan #50: parse what a user types into the identity editor's custom colour box and
+    // return the STORED form, lowercase "#rrggbb" (the palette's own hex spelling, and a
+    // value ParseHexColor reads back unchanged). Accepted, after trimming outer whitespace:
+    //   "#RRGGBB", "RRGGBB" (no hash), "#RGB" (each digit doubled), any hex case;
+    //   "rgb(r, g, b)" (keyword ASCII case-insensitive, three decimal 0..255 components,
+    //   optional spaces around each).
+    // Anything else (empty, a palette name, "#AARRGGBB", a bare 3-digit "abc", percentages,
+    // out-of-range or missing components) is nullopt; the caller keeps the previous value.
+    inline std::optional<std::wstring> ParseCustomColor(std::wstring_view s)
+    {
+        const auto isSpace = [](wchar_t c) { return c == L' ' || c == L'\t'; };
+        while (!s.empty() && isSpace(s.front()))
+        {
+            s.remove_prefix(1);
+        }
+        while (!s.empty() && isSpace(s.back()))
+        {
+            s.remove_suffix(1);
+        }
+        if (s.empty())
+        {
+            return std::nullopt;
+        }
+
+        const auto hexVal = [](wchar_t c) -> int {
+            if (c >= L'0' && c <= L'9')
+            {
+                return c - L'0';
+            }
+            if (c >= L'a' && c <= L'f')
+            {
+                return c - L'a' + 10;
+            }
+            if (c >= L'A' && c <= L'F')
+            {
+                return c - L'A' + 10;
+            }
+            return -1;
+        };
+        const auto format = [](unsigned r, unsigned g, unsigned b) {
+            static constexpr wchar_t kDigits[] = L"0123456789abcdef";
+            std::wstring out{ L"#" };
+            for (const auto ch : { r, g, b })
+            {
+                out += kDigits[(ch >> 4) & 0xF];
+                out += kDigits[ch & 0xF];
+            }
+            return out;
+        };
+
+        // rgb(r, g, b)
+        if (s.size() >= 4 && details::AsciiIEquals(s.substr(0, 4), L"rgb("))
+        {
+            if (s.back() != L')')
+            {
+                return std::nullopt;
+            }
+            auto body = s.substr(4, s.size() - 5);
+            unsigned ch[3]{};
+            for (int i = 0; i < 3; ++i)
+            {
+                while (!body.empty() && isSpace(body.front()))
+                {
+                    body.remove_prefix(1);
+                }
+                size_t n = 0;
+                unsigned v = 0;
+                while (n < body.size() && body[n] >= L'0' && body[n] <= L'9')
+                {
+                    if (n >= 3)
+                    {
+                        return std::nullopt; // more than three digits is out of range
+                    }
+                    v = v * 10 + static_cast<unsigned>(body[n] - L'0');
+                    ++n;
+                }
+                if (n == 0 || v > 255)
+                {
+                    return std::nullopt;
+                }
+                ch[i] = v;
+                body.remove_prefix(n);
+                while (!body.empty() && isSpace(body.front()))
+                {
+                    body.remove_prefix(1);
+                }
+                if (i < 2)
+                {
+                    if (body.empty() || body.front() != L',')
+                    {
+                        return std::nullopt;
+                    }
+                    body.remove_prefix(1);
+                }
+            }
+            if (!body.empty())
+            {
+                return std::nullopt; // a fourth component or trailing junk
+            }
+            return format(ch[0], ch[1], ch[2]);
+        }
+
+        // Hex: "#RGB" / "#RRGGBB" / bare "RRGGBB".
+        const bool hash = s.front() == L'#';
+        if (hash)
+        {
+            s.remove_prefix(1);
+        }
+        if (!(s.size() == 6 || (hash && s.size() == 3)))
+        {
+            return std::nullopt;
+        }
+        unsigned d[6]{};
+        for (size_t i = 0; i < s.size(); ++i)
+        {
+            const auto v = hexVal(s[i]);
+            if (v < 0)
+            {
+                return std::nullopt;
+            }
+            d[i] = static_cast<unsigned>(v);
+        }
+        if (s.size() == 3)
+        {
+            return format(d[0] * 17, d[1] * 17, d[2] * 17);
+        }
+        return format(d[0] * 16 + d[1], d[2] * 16 + d[3], d[4] * 16 + d[5]);
     }
 }

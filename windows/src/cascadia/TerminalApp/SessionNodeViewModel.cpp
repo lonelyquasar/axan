@@ -170,7 +170,7 @@ namespace winrt::TerminalApp::implementation
 
     // ----- axan: sizes ---------------------------------------------------------------------
 
-    bool SessionNodeViewModel::SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize)
+    bool SessionNodeViewModel::SetSizes(double labelFontSize, double stateLineFontSize, double iconSize, double stateGlyphSize, double idleLabelFontSize, double idleRowHeight)
     {
         bool changed = false;
         const auto raise = [this](const wchar_t* name) {
@@ -186,12 +186,18 @@ namespace winrt::TerminalApp::implementation
         {
             _stateLineFontSize = stateLineFontSize;
             raise(L"StateLineFontSize");
+            // axan #46: the idle-collapsed badge is sized from (and gated on) this size.
+            raise(L"IdleTuckBadgeFontSize");
+            raise(L"IdleTuckDotSize");
+            raise(L"IdleTuckBadgeVisibility");
             changed = true;
         }
         if (iconSize != _iconSize)
         {
             _iconSize = iconSize;
             raise(L"IconSize");
+            raise(L"IconPresenterSize"); // axan #48: both follow the box
+            raise(L"IconPresenterMargin");
             raise(L"Icon");
             changed = true;
         }
@@ -201,7 +207,54 @@ namespace winrt::TerminalApp::implementation
             raise(L"StateGlyphIcon");
             changed = true;
         }
+        // axan #47: the "smaller" idle effect's sizes (LabelFontSize / RowMinHeight read them
+        // only while that effect applies; raising regardless is harmless).
+        if (idleLabelFontSize != _idleLabelFontSize)
+        {
+            _idleLabelFontSize = idleLabelFontSize;
+            raise(L"LabelFontSize");
+            changed = true;
+        }
+        if (idleRowHeight != _idleRowHeight)
+        {
+            _idleRowHeight = idleRowHeight;
+            raise(L"RowMinHeight");
+            changed = true;
+        }
         return changed;
+    }
+
+    // axan #48: sidebar.iconOverflow. While on, the icon is laid out in a box
+    // kIconOverflowFactor times IconSize, pulled back to IconSize by a negative margin on every
+    // side: the presenter's desired size (size + margins) is still the box, so the row and its
+    // neighbours lay out as before and nothing clips it to the box. The factor matches
+    // AxanGlyphScale::kMaxScale: a glyph at the largest sidebar.iconFontScale is a 36pt font in
+    // a 16px box, whose line box is about 3x the box.
+    static constexpr double kIconOverflowFactor = 3.0;
+
+    bool SessionNodeViewModel::SetIconOverflow(bool overflow)
+    {
+        if (overflow == _iconOverflow)
+        {
+            return false;
+        }
+        _iconOverflow = overflow;
+        for (const auto name : { L"IconPresenterSize", L"IconPresenterMargin", L"IconHitTestVisible", L"Icon" })
+        {
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+        }
+        return true;
+    }
+
+    double SessionNodeViewModel::IconPresenterSize() const noexcept
+    {
+        return _iconOverflow ? _iconSize * kIconOverflowFactor : _iconSize;
+    }
+
+    winrt::Windows::UI::Xaml::Thickness SessionNodeViewModel::IconPresenterMargin() const noexcept
+    {
+        const auto inset = -(IconPresenterSize() - _iconSize) / 2.0;
+        return winrt::Windows::UI::Xaml::Thickness{ inset, inset, inset, inset };
     }
 
     void SessionNodeViewModel::RefreshIcons()
@@ -753,7 +806,14 @@ namespace winrt::TerminalApp::implementation
             // so it scales with the box.
             icon.Width(_iconSize);
             icon.Height(_iconSize);
-            _scaleGlyphIcon(icon, _iconSize / 16.0);
+            // axan #48: a glyph fills the presenter, which is larger than the box while
+            // sidebar.iconOverflow is on; the glyph stays centred and its size is unchanged.
+            // An image keeps the box size (the presenter centres it).
+            if (_scaleGlyphIcon(icon, _iconSize / 16.0) && _iconOverflow)
+            {
+                icon.Width(IconPresenterSize());
+                icon.Height(IconPresenterSize());
+            }
         }
         return icon;
     }
@@ -990,6 +1050,81 @@ namespace winrt::TerminalApp::implementation
         _sectionHidden = hidden;
         PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IsSectionHidden" });
         return true;
+    }
+
+    // ----- axan #46: idle-collapsed indicator ----------------------------------------------
+    // A hollow dot in the expander slot while the automatic idle tuck hides rows here, with
+    // the hidden count as a tiny badge inside it ("9+" cap). Below a state-line size of 9 the
+    // badge would be unreadable, so only the plain dot shows; the tooltip always has the count.
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::IdleTuckVisibility() const noexcept
+    {
+        return _idleTucked > 0 ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    hstring SessionNodeViewModel::IdleTuckBadge() const
+    {
+        if (_idleTucked == 0)
+        {
+            return {};
+        }
+        return _idleTucked > 9 ? hstring{ L"9+" } : hstring{ std::to_wstring(_idleTucked) };
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::IdleTuckBadgeVisibility() const noexcept
+    {
+        return (_idleTucked > 0 && _idleTuckShowsBadge()) ? winrt::Windows::UI::Xaml::Visibility::Visible : winrt::Windows::UI::Xaml::Visibility::Collapsed;
+    }
+
+    double SessionNodeViewModel::IdleTuckBadgeFontSize() const noexcept
+    {
+        // The state-line size scaled down, in half-point steps (11 -> 8.5, 9 -> 7).
+        return std::max(6.0, std::round(_stateLineFontSize * 0.75 * 2.0) / 2.0);
+    }
+
+    double SessionNodeViewModel::IdleTuckDotSize() const noexcept
+    {
+        // Plain dot: 7px. With a badge the circle grows to hold the digit ("9+" overflows it
+        // slightly, which reads fine at this size).
+        return _idleTuckShowsBadge() ? IdleTuckBadgeFontSize() + 5.0 : 7.0;
+    }
+
+    winrt::Windows::UI::Xaml::Visibility SessionNodeViewModel::FoldToolTipVisibility() const noexcept
+    {
+        return _foldToolTip.empty() ? winrt::Windows::UI::Xaml::Visibility::Collapsed : winrt::Windows::UI::Xaml::Visibility::Visible;
+    }
+
+    // The section header's own tooltip: null (no tooltip at all) when nothing is hidden.
+    winrt::Windows::Foundation::IInspectable SessionNodeViewModel::HeaderToolTip() const
+    {
+        return _foldToolTip.empty() ? nullptr : winrt::box_value(_foldToolTip);
+    }
+
+    bool SessionNodeViewModel::SetFold(uint32_t idleTucked, const hstring& toolTip)
+    {
+        bool changed = false;
+        if (idleTucked != _idleTucked)
+        {
+            const bool visibilityChanged = (idleTucked == 0) != (_idleTucked == 0);
+            _idleTucked = idleTucked;
+            PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IdleTuckBadge" });
+            if (visibilityChanged)
+            {
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IdleTuckVisibility" });
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ L"IdleTuckBadgeVisibility" });
+            }
+            changed = true;
+        }
+        if (toolTip != _foldToolTip)
+        {
+            _foldToolTip = toolTip;
+            for (const auto name : { L"FoldToolTip", L"FoldToolTipVisibility", L"HeaderToolTip" })
+            {
+                PropertyChanged.raise(*this, winrt::Windows::UI::Xaml::Data::PropertyChangedEventArgs{ name });
+            }
+            changed = true;
+        }
+        return changed;
     }
 
     // axan #3: flip this VM into separator mode. Called once by the page when it mints a

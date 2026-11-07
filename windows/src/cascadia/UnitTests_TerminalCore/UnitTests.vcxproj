@@ -33,6 +33,7 @@
     <ClCompile Include="AxanEntryTreeOpsTest.cpp" />
     <ClCompile Include="AxanGlyphNamesTest.cpp" />
     <ClCompile Include="AxanGlyphScaleTest.cpp" />
+    <ClCompile Include="AxanSessionPaletteTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\buffer\out\lib\bufferout.vcxproj">
